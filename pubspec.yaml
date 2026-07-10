@@ -1,0 +1,51 @@
+name: phone_ai_assistant
+description: "AI Assistant with MCP support - runs on your phone"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  provider: ^6.1.2
+
+  # Storage
+  shared_preferences: ^2.3.4
+  sqflite: ^2.4.1
+  path_provider: ^2.1.5
+
+  # Networking
+  http: ^1.2.2
+  web_socket_channel: ^3.0.2
+
+  # AI & Data
+  uuid: ^4.5.1
+  flutter_markdown: ^0.7.6
+
+  # Share & Export
+  share_plus: ^10.1.4
+
+  # Voice Input
+  speech_to_text: ^7.0.0
+
+  # Phone Hardware
+  camera: ^0.11.1
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+  geolocator: ^13.0.2
+  sensors_plus: ^6.1.1
+  permission_handler: ^11.3.1
+  flutter_tts: ^4.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

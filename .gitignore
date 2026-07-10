@@ -1,0 +1,44 @@
+# Flutter
+build/
+.dart_tool/
+.packages
+.pub/
+pubspec.lock
+*.iml
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Android
+android/.gradle/
+android/.idea/
+android/*.iml
+local.properties
+
+# Gradle
+.gradle/
+
+# iOS
+ios/.symlinks/
+ios/Pods/
+ios/*.xcworkspace
+ios/*.xcodeproj/xcuserdata
+
+# macOS
+macos/.symlinks/
+macos/Pods/
+
+# Windows
+windows/.symlinks/
+
+# Linux
+linux/.symlinks/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
