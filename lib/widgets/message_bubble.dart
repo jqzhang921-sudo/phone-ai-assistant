@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:provider/provider.dart';
 import '../models/chat_message.dart';
+import '../services/tts_service.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
@@ -12,6 +14,8 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
+    final isAssistant = message.role == MessageRole.assistant;
+    final tts = context.watch<TtsService>();
     final theme = Theme.of(context);
 
     // User bubble: slightly darker than surface; AI bubble: surfaceContainerHighest
@@ -93,6 +97,8 @@ class MessageBubble extends StatelessWidget {
               ],
             ),
           ),
+          if (isAssistant && message.content.trim().isNotEmpty)
+            _buildSpeakerButton(context, tts, theme),
         ],
       ),
     );
@@ -135,6 +141,48 @@ class MessageBubble extends StatelessWidget {
                 },
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpeakerButton(
+      BuildContext context, TtsService tts, ThemeData theme) {
+    final loading = tts.isLoading(message.id);
+    final playing = tts.isPlaying(message.id);
+    // 缩进对齐到气泡下方（头像直径 28 + 间距 8）
+    return Padding(
+      padding: const EdgeInsets.only(left: 36, top: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          final messenger = ScaffoldMessenger.of(context);
+          try {
+            await context
+                .read<TtsService>()
+                .toggle(message.id, message.content);
+          } catch (e) {
+            messenger.showSnackBar(SnackBar(content: Text('$e')));
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: loading
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.primary,
+                  ),
+                )
+              : Icon(
+                  playing
+                      ? Icons.stop_circle_outlined
+                      : Icons.volume_up_outlined,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
         ),
       ),
     );

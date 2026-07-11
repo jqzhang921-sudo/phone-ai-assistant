@@ -662,8 +662,8 @@ class _ChatScreenState extends State<ChatScreen> {
               controller: _textController,
               maxLines: 5,
               minLines: 1,
-              textInputAction: TextInputAction.send,
-              onSubmitted: _isLoading ? null : (_) => _sendMessage(),
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
               decoration: InputDecoration(
                 hintText: '输入消息...',
                 border: OutlineInputBorder(

@@ -1,4 +1,10 @@
 # This is a generated file; do not edit or check into version control.
+audioplayers=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/audioplayers-6.6.0/
+audioplayers_android=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/audioplayers_android-5.2.1/
+audioplayers_darwin=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/audioplayers_darwin-6.4.0/
+audioplayers_linux=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/audioplayers_linux-4.2.1/
+audioplayers_web=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/audioplayers_web-5.2.0/
+audioplayers_windows=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/audioplayers_windows-4.3.0/
 camera=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/camera-0.11.2+1/
 camera_android_camerax=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/camera_android_camerax-0.6.19+1/
 camera_avfoundation=/home/cleo/.pub-cache/hosted/pub.flutter-io.cn/camera_avfoundation-0.9.21+2/

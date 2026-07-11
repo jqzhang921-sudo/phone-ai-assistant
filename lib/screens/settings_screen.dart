@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import '../config/api_keys.dart';
 import '../config/settings.dart';
 import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
+import '../services/tts_service.dart';
 import 'chat_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -24,6 +25,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _keyController = TextEditingController();
   final _endpointController = TextEditingController();
   final _modelController = TextEditingController();
+  final _elevenKeyController = TextEditingController();
+  final _elevenVoiceController = TextEditingController();
 
   // External MCP server state
   List<ExternalMcpServer> _externalServers = [];
@@ -42,6 +45,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _keyController.dispose();
     _endpointController.dispose();
     _modelController.dispose();
+    _elevenKeyController.dispose();
+    _elevenVoiceController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
     super.dispose();
@@ -50,6 +55,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _load() async {
     _configs = await ApiKeyService.loadKeys();
     _settings = await AppSettings.load();
+    _elevenKeyController.text = _settings.elevenLabsApiKey;
+    _elevenVoiceController.text = _settings.elevenLabsVoiceId;
     _externalServers = await ExternalMcpServerService.load();
 
     // Select first config with a missing key
@@ -94,6 +101,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context.read<AiClientProvider>().setClient(aiClient);
       }
     }
+  }
+
+  Future<void> _pasteInto(TextEditingController c) async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final t = data?.text?.trim();
+    if (t != null && t.isNotEmpty) {
+      c.text = t;
+      setState(() {});
+    }
+  }
+
+  Future<void> _saveTts() async {
+    _settings.elevenLabsApiKey = _elevenKeyController.text.trim();
+    _settings.elevenLabsVoiceId = _elevenVoiceController.text.trim();
+    await _settings.save();
   }
 
   Future<void> _saveSettings() async {
@@ -159,47 +181,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // TTS Settings
           _sectionHeader('TTS 语音', Icons.volume_up, theme),
           const SizedBox(height: 8),
-          SwitchListTile(
-            title: const Text('启用 TTS'),
-            subtitle: const Text('AI 回复时朗读文字'),
-            value: _settings.ttsEnabled,
-            onChanged: (v) {
-              setState(() => _settings.ttsEnabled = v);
-              _saveSettings();
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Text('语音来源'),
+                const Spacer(),
+                SegmentedButton<TtsProvider>(
+                  segments: const [
+                    ButtonSegment(
+                        value: TtsProvider.system, label: Text('系统(免费)')),
+                    ButtonSegment(
+                        value: TtsProvider.elevenlabs, label: Text('ElevenLabs')),
+                  ],
+                  selected: {_settings.ttsProvider},
+                  onSelectionChanged: (s) {
+                    setState(() => _settings.ttsProvider = s.first);
+                    _settings.save();
+                  },
+                ),
+              ],
+            ),
           ),
+          if (_settings.ttsProvider == TtsProvider.elevenlabs) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: TextField(
+                controller: _elevenKeyController,
+                obscureText: false,
+                decoration: InputDecoration(
+                  labelText: 'ElevenLabs API Key',
+                  hintText: 'elevenlabs.io → 头像 → API Keys',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.content_paste),
+                    tooltip: '从剪贴板粘贴',
+                    onPressed: () => _pasteInto(_elevenKeyController),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: TextField(
+                controller: _elevenVoiceController,
+                decoration: InputDecoration(
+                  labelText: '音色 ID (Voice ID)',
+                  hintText: '留空用默认 Rachel；elevenlabs.io → Voices 复制 ID',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.content_paste),
+                    tooltip: '从剪贴板粘贴',
+                    onPressed: () => _pasteInto(_elevenVoiceController),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.save),
+                  label: const Text('保存'),
+                  onPressed: () async {
+                    await _saveTts();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('已保存'),
+                            duration: Duration(seconds: 1)),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
           SwitchListTile(
             title: const Text('自动朗读'),
-            subtitle: const Text('AI 回复后自动朗读（需开启 TTS）'),
+            subtitle: Text(_settings.ttsProvider == TtsProvider.elevenlabs
+                ? 'AI 回复后自动朗读（ElevenLabs 会按量扣费）'
+                : 'AI 回复后自动朗读'),
             value: _settings.autoTts,
-            onChanged: _settings.ttsEnabled
-                ? (v) {
-                    setState(() => _settings.autoTts = v);
-                    _saveSettings();
-                  }
-                : null,
+            onChanged: (v) {
+              setState(() => _settings.autoTts = v);
+              _settings.save();
+            },
           ),
-          if (_settings.ttsEnabled)
-            ListTile(
-              leading: const Icon(Icons.record_voice_over),
-              title: const Text('语音引擎'),
-              subtitle: const Text('使用系统默认 TTS 引擎和音色'),
-              onTap: () async {
-                try {
-                  final flutterTts = FlutterTts();
-                  await flutterTts.setLanguage('zh-CN');
-                  await flutterTts.speak('你好，这是语音测试');
-                  // TTS engines are system-managed on Android
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已播放测试语音')),
-                  );
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('TTS 测试失败: $e')),
-                  );
-                }
-              },
-            ),
+          ListTile(
+            leading: const Icon(Icons.play_circle_outline),
+            title: const Text('测试语音'),
+            subtitle: Text(_settings.ttsProvider == TtsProvider.elevenlabs
+                ? '用 ElevenLabs 试读一句（会消耗少量额度）'
+                : '用系统引擎试读一句（需手机已装 TTS 引擎）'),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final tts = context.read<TtsService>();
+              await _saveTts();
+              try {
+                await tts.toggle('__tts_test__', '你好，这是语音测试');
+              } catch (e) {
+                messenger.showSnackBar(SnackBar(content: Text('$e')));
+              }
+            },
+          ),
 
           const Divider(height: 40),
 

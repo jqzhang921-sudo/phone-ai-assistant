@@ -8,6 +8,7 @@ import 'screens/tools_screen.dart';
 import 'services/ai_client.dart';
 import 'services/storage_service.dart';
 import 'services/external_mcp_service.dart';
+import 'services/tts_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AiClientProvider()),
         ChangeNotifierProvider(create: (_) => McpServerProvider()..markInitialized()),
         ChangeNotifierProvider(create: (_) => ExternalMcpProvider()),
+        ChangeNotifierProvider(create: (_) => TtsService()),
       ],
       child: const PhoneAiApp(),
     ),
@@ -91,11 +93,11 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
   ThemeData _buildTheme(Brightness brightness) {
     final colorScheme = brightness == Brightness.light
         ? ColorScheme.fromSeed(
-            seedColor: const Color(0xFF4A90D9),
+            seedColor: const Color(0xFF1FA463),
             brightness: Brightness.light,
           )
         : ColorScheme.fromSeed(
-            seedColor: const Color(0xFF6AB0FF),
+            seedColor: const Color(0xFF4CD98A),
             brightness: Brightness.dark,
           );
 
