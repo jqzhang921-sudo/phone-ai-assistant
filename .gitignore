@@ -42,3 +42,19 @@ linux/.symlinks/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+package-lock.json
+package.json
+
+# Test servers
+test_mcp_server.js
+
+# Logs
+*.log
+flutter_*
+
+# Project specific
+APP_DESIGN.md
+build.sh

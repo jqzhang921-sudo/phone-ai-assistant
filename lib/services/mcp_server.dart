@@ -6,6 +6,7 @@ import 'phone_tools/camera_tool.dart';
 import 'phone_tools/file_tool.dart';
 import 'phone_tools/location_tool.dart';
 import 'phone_tools/sensors_tool.dart';
+import 'phone_tools/time_tool.dart';
 
 typedef ToolExecutor = Future<Map<String, dynamic>> Function(
     Map<String, dynamic> args);
@@ -40,6 +41,7 @@ class McpServer {
     _registerTool(ClipboardTool.definition, ClipboardTool.execute);
     _registerTool(LocationTool.definition, LocationTool.execute);
     _registerTool(SensorTool.definition, SensorTool.execute);
+    _registerTool(TimeTool.definition, TimeTool.execute);
   }
 
   void _registerTool(McpTool tool, ToolExecutor executor) {

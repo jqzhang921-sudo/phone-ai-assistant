@@ -59,7 +59,7 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
     final servers = await ExternalMcpServerService.load();
     for (final server in servers.where((s) => s.enabled)) {
       if (mounted) {
-        context.read<ExternalMcpProvider>().connectTo(server);
+        await context.read<ExternalMcpProvider>().connectTo(server);
       }
     }
   }

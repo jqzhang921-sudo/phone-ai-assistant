@@ -11,9 +11,12 @@ class ExternalMcpClient {
   bool _connected = false;
   final List<McpTool> _tools = [];
   int _msgId = 0;
-  final Map<String, Completer<Map<String, dynamic>>> _pending = {};
+  final Map<String, Completer<Map<String, dynamic>?>> _pending = {};
+
+  String? _lastError;
 
   bool get connected => _connected;
+  String? get lastError => _lastError;
   List<McpTool> get tools => List.unmodifiable(_tools);
 
   ExternalMcpClient({required this.config});
@@ -21,8 +24,16 @@ class ExternalMcpClient {
   Future<bool> connect() async {
     try {
       final uri = Uri.parse(config.url);
-      _channel = WebSocketChannel.connect(uri);
-      await _channel!.ready;
+
+      // Connection timeout using a race
+      try {
+        _channel = WebSocketChannel.connect(uri);
+        await _channel!.ready.timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        _lastError = '连接超时(5s)，请检查服务器是否启动、IP和端口是否正确';
+        _connected = false;
+        return false;
+      }
 
       // Single stream listener for all responses
       _subscription = _channel!.stream.listen((data) {
@@ -66,6 +77,7 @@ class ExternalMcpClient {
       }
       return false;
     } catch (e) {
+      _lastError = '连接失败: $e';
       _connected = false;
       return false;
     }
@@ -75,7 +87,7 @@ class ExternalMcpClient {
       String method, [Map<String, dynamic>? params]) async {
     if (_channel == null) return null;
     final id = 'req_${++_msgId}';
-    final completer = Completer<Map<String, dynamic>>();
+    final completer = Completer<Map<String, dynamic>?>();
     _pending[id] = completer;
 
     final request = {

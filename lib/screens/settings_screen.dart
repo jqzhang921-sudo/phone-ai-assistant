@@ -377,7 +377,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       controller: _mcpUrlController,
                       decoration: const InputDecoration(
                         labelText: 'WebSocket URL',
-                        hintText: 'ws://192.168.1.100:8765/ws',
+                        hintText: 'ws://192.168.1.100:8765',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -402,20 +402,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             final url = _mcpUrlController.text.trim();
                             if (name.isEmpty || url.isEmpty) return;
 
+                            // Show loading
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('⏳ 连接中...'), duration: Duration(seconds: 30)),
+                            );
+
                             final server = ExternalMcpServer(
                               id: const Uuid().v4(),
                               name: name,
                               url: url,
                             );
-                            await ExternalMcpServerService.add(server);
-                            _mcpNameController.clear();
-                            _mcpUrlController.clear();
-                            _showAddMcp = false;
 
-                            // Connect
-                            context
-                                .read<ExternalMcpProvider>()
-                                .connectTo(server);
+                            // Try to connect first
+                            final provider = context.read<ExternalMcpProvider>();
+                            final error = await provider.connectTo(server);
+
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              if (error == null) {
+                                // Success: save and clear
+                                await ExternalMcpServerService.add(server);
+                                _mcpNameController.clear();
+                                _mcpUrlController.clear();
+                                _showAddMcp = false;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('✅ 已连接到 $name'), duration: Duration(seconds: 2)),
+                                );
+                              } else {
+                                // Failure: keep form, show error
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ $error'),
+                                    backgroundColor: Colors.orange,
+                                    duration: Duration(seconds: 5),
+                                  ),
+                                );
+                              }
+                            }
                             _externalServers = await ExternalMcpServerService.load();
                             setState(() {});
                           },

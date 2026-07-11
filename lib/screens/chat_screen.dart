@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../models/mcp_tool.dart';
@@ -31,6 +34,7 @@ class _ChatScreenState extends State<ChatScreen> {
   stt.SpeechToText? _speech;
   bool _isListening = false;
   bool _isLoading = false;
+  bool _titleManuallySet = false;
   List<Conversation> _savedConversations = [];
 
   late Conversation _conversation;
@@ -62,19 +66,23 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _switchConversation(Conversation conv) {
-    _saveConversation();
+    if (_conversation.messages.isNotEmpty) _saveConversation();
     setState(() {
       _conversation = conv;
+      _titleManuallySet = false;
       _isLoading = false;
       _textController.clear();
     });
-    Navigator.of(context).maybePop();
+    Navigator.of(context).maybePop().then((_) {
+      _scrollToBottom();
+    });
   }
 
   void _newConversation() {
     if (_conversation.messages.isNotEmpty) _saveConversation();
     setState(() {
       _conversation = Conversation(id: _uuid.v4());
+      _titleManuallySet = false;
       _isLoading = false;
       _textController.clear();
     });
@@ -85,11 +93,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        // Try again after layout settles
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          }
+        });
       }
     });
   }
@@ -165,15 +175,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _continueChat() async {
-    // Get AI client from provider
     final aiClient = context.read<AiClientProvider>().currentClient;
     final mcpServer = context.read<McpServerProvider>().server;
 
     if (aiClient == null) {
       setState(() {
         _conversation.messages.add(ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
+          id: _uuid.v4(), role: MessageRole.assistant,
           content: '⚠️ 请先在设置中配置 API Key',
         ));
         _isLoading = false;
@@ -181,102 +189,74 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // Recreate AI client with phone tools so it can use camera, GPS, etc.
-    final mcpTools = mcpServer.isRunning
-        ? mcpServer.registeredTools.map((r) => r.tool).toList()
-        : <McpTool>[];
+    // Build client with tools once, reuse for all rounds
+    // Always include local phone tools (regardless of MCP Server toggle)
+    final mcpTools = mcpServer.registeredTools.map((r) => r.tool).toList();
     final externalTools = context.read<ExternalMcpProvider>().allExternalTools;
     final allTools = [...mcpTools, ...externalTools];
     final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
 
-    String? fullResponse;
+    // Loop: keep calling AI and executing tools until AI responds with text
+    int maxRounds = 5;
+    while (maxRounds > 0) {
+      maxRounds--;
 
-    try {
-      await for (final event in clientWithTools.chat(
-        _conversation.messages,
-        systemPrompt: _conversation.systemPrompt ?? '你是一个手机 AI 助手。你可以使用手机上的工具来帮助用户：拍照、查看文件、获取位置等。请根据用户的需求主动使用这些工具。',
-      )) {
-        switch (event.type) {
-          case AiEventType.token:
-            fullResponse = (fullResponse ?? '') + (event.text ?? '');
-            _updateAssistantMessage(fullResponse ?? '');
-            break;
+      String? fullResponse;
+      String? errorText;
 
-          case AiEventType.toolCalls:
-            fullResponse = fullResponse ?? '';
-            _updateAssistantMessage(fullResponse, toolCalls: event.toolCalls ?? []);
-            for (final tc in event.toolCalls ?? []) {
-              final toolResult = await _executeTool(mcpServer, tc);
-              _conversation.messages.add(ChatMessage(
-                id: _uuid.v4(),
-                role: MessageRole.toolResult,
-                content: toolResult,
-                toolCallId: tc.id,
-              ));
-            }
-            await _continueAfterToolCalls(clientWithTools, fullResponse);
-            return;
+      try {
+        await for (final event in clientWithTools.chat(
+          _conversation.messages,
+          systemPrompt: _conversation.systemPrompt ?? '你是一个手机 AI 助手。你可以使用手机上的工具来帮助用户：拍照、查看文件、获取位置等。请根据用户的需求主动使用这些工具。',
+        )) {
+          switch (event.type) {
+            case AiEventType.token:
+              fullResponse = (fullResponse ?? '') + (event.text ?? '');
+              _updateAssistantMessage(fullResponse ?? '');
+              break;
 
-          case AiEventType.done:
-            fullResponse = event.text ?? fullResponse ?? '';
-            _updateAssistantMessage(fullResponse);
-            break;
+            case AiEventType.toolCalls:
+              fullResponse = fullResponse ?? '';
+              // Embed tool calls in the assistant message, then finalize
+              _updateAssistantMessage(fullResponse, toolCalls: event.toolCalls ?? []);
+              _finalizeStreamMessage();
+              for (final tc in event.toolCalls ?? []) {
+                final toolResult = await _executeTool(mcpServer, tc);
+                _conversation.messages.add(ChatMessage(
+                  id: _uuid.v4(), role: MessageRole.toolResult,
+                  content: toolResult, toolCallId: tc.id,
+                ));
+              }
+              // Break out of the stream loop to continue the outer while loop
+              fullResponse = null; // signal that we need another round
+              break;
 
-          case AiEventType.error:
-            _updateAssistantMessage('❌ ${event.error}');
-            break;
+            case AiEventType.done:
+              fullResponse = event.text ?? fullResponse ?? '';
+              _updateAssistantMessage(fullResponse);
+              break;
+
+            case AiEventType.error:
+              // Show friendly message instead of raw error, let conversation continue
+              _updateAssistantMessage(
+                event.error?.contains('400') == true
+                    ? '抱歉，该模型暂不支持图片识别，请用文字描述 🙏'
+                    : event.error?.contains('401') == true
+                        ? 'API 密钥无效或已过期，请在设置中更新 🙏'
+                        : '抱歉，我遇到了一点问题，请再试一次 🙏',
+              );
+              _finalizeStreamMessage();
+              fullResponse = 'done';
+              break;
+          }
         }
+      } catch (e) {
+        _updateAssistantMessage('❌ 发送消息失败: $e');
       }
-    } catch (e) {
-      _updateAssistantMessage('❌ 发送消息失败: $e');
-    }
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    _scrollToBottom();
-    _saveConversation();
-  }
-
-  Future<void> _continueAfterToolCalls(AiClient aiClient, String? responseSoFar) async {
-    final mcpServer = context.read<McpServerProvider>().server;
-    try {
-      await for (final event in aiClient.chat(
-        _conversation.messages,
-        systemPrompt: _conversation.systemPrompt ?? '你是一个手机 AI 助手。你可以使用手机上的工具来帮助用户。',
-      )) {
-        switch (event.type) {
-          case AiEventType.token:
-            responseSoFar = (responseSoFar ?? '') + (event.text ?? '');
-            _updateAssistantMessage(responseSoFar ?? '');
-            break;
-
-          case AiEventType.toolCalls:
-            responseSoFar = responseSoFar ?? '';
-            _updateAssistantMessage(responseSoFar, toolCalls: event.toolCalls ?? []);
-            for (final tc in event.toolCalls ?? []) {
-              final toolResult = await _executeTool(mcpServer, tc);
-              _conversation.messages.add(ChatMessage(
-                id: _uuid.v4(),
-                role: MessageRole.toolResult,
-                content: toolResult,
-                toolCallId: tc.id,
-              ));
-            }
-            await _continueAfterToolCalls(aiClient, responseSoFar);
-            return;
-
-          case AiEventType.done:
-            responseSoFar = event.text ?? responseSoFar ?? '';
-            _updateAssistantMessage(responseSoFar);
-            break;
-
-          case AiEventType.error:
-            _updateAssistantMessage('❌ ${event.error}');
-            break;
-        }
-      }
-    } catch (e) {
-      _updateAssistantMessage('❌ 工具调用后处理失败: $e');
+      // If there was a tool call, the loop continues
+      // If there was an error or done with text, exit
+      if (fullResponse != null || errorText != null) break;
     }
 
     if (!mounted) return;
@@ -310,15 +290,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _updateAssistantMessage(String content, {List<ToolCallInfo>? toolCalls}) {
     setState(() {
-      final existingIdx = _conversation.messages.indexWhere(
-          (m) => m.role == MessageRole.assistant && m.id.startsWith('stream_'));
-      if (existingIdx >= 0) {
-        final existing = _conversation.messages[existingIdx];
-        _conversation.messages[existingIdx] = ChatMessage(
-          id: existing.id,
+      if (_conversation.messages.isNotEmpty &&
+          _conversation.messages.last.role == MessageRole.assistant &&
+          _conversation.messages.last.id.startsWith('stream_')) {
+        _conversation.messages.last = ChatMessage(
+          id: _conversation.messages.last.id,
           role: MessageRole.assistant,
           content: content,
-          toolCalls: toolCalls ?? existing.toolCalls,
+          toolCalls: toolCalls,
         );
       } else {
         _conversation.messages.add(ChatMessage(
@@ -330,6 +309,22 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     });
     _scrollToBottom();
+  }
+
+  void _finalizeStreamMessage() {
+    setState(() {
+      if (_conversation.messages.isNotEmpty &&
+          _conversation.messages.last.role == MessageRole.assistant &&
+          _conversation.messages.last.id.startsWith('stream_')) {
+        final old = _conversation.messages.last;
+        _conversation.messages.last = ChatMessage(
+          id: _uuid.v4(),
+          role: MessageRole.assistant,
+          content: old.content,
+          toolCalls: old.toolCalls,
+        );
+      }
+    });
   }
 
   void _showConversationList() {
@@ -407,7 +402,10 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('取消')),
           FilledButton(onPressed: () {
-            setState(() => _conversation.title = controller.text.trim());
+            setState(() {
+              _conversation.title = controller.text.trim();
+              _titleManuallySet = true;
+            });
             _saveConversation();
             Navigator.of(ctx).pop();
           }, child: const Text('确定')),
@@ -463,8 +461,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final buffer = StringBuffer();
       buffer.writeln('📱 手机 AI 助手 - 对话导出');
       buffer.writeln('标题: ${_conversation.title}');
-      buffer.writeln('时间: ${DateTime.now().toLocal().toIso8601String()}');
+      buffer.writeln('时间: ${DateTime.now().toLocal().toString()}');
       buffer.writeln('${'=' * 40}');
+      buffer.writeln('');
 
       for (final msg in _conversation.messages) {
         String role;
@@ -476,19 +475,21 @@ class _ChatScreenState extends State<ChatScreen> {
           default: role = '📝 系统';
         }
         buffer.writeln('$role: ${msg.content}');
-        if (msg.imageData != null) buffer.writeln('  [图片]');
+        if (msg.imageData != null) buffer.writeln('  [图片附件]');
         buffer.writeln('');
       }
 
-      await Clipboard.setData(ClipboardData(text: buffer.toString()));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ 聊天内容已复制到剪贴板，可以粘贴到任何地方'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      // Save to temp file and share
+      final dir = await getTemporaryDirectory();
+      final fileName =
+          '对话_${_conversation.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}.txt';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsString(buffer.toString());
+
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: '📱 手机 AI 助手 - ${_conversation.title}',
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -499,9 +500,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _saveConversation() {
-    _conversation.title = _conversation.messages.firstOrNull?.content
-            ?.substring(0, (_conversation.messages.first.content.length).clamp(0, 30)) ??
-        '新对话';
+    if (!_titleManuallySet) {
+      _conversation.title = _conversation.messages.firstOrNull?.content
+              ?.substring(0, (_conversation.messages.first.content.length).clamp(0, 30)) ??
+          '新对话';
+    }
     StorageService.saveConversation(_conversation);
   }
 
@@ -726,21 +729,24 @@ class ExternalMcpProvider extends ChangeNotifier {
   List<McpTool> get allExternalTools =>
       _clients.where((c) => c.connected).expand((c) => c.tools).toList();
 
-  Future<void> connectTo(ExternalMcpServer config) async {
-    // Remove existing connection to the same URL
+  /// Returns null on success, or an error message string on failure.
+  Future<String?> connectTo(ExternalMcpServer config) async {
     _clients.removeWhere((c) => c.config.url == config.url);
-    notifyListeners();
-
     _connecting = true;
     notifyListeners();
 
     final client = ExternalMcpClient(config: config);
     final ok = await client.connect();
+    _connecting = false;
+
     if (ok) {
       _clients.add(client);
+      notifyListeners();
+      return null;
+    } else {
+      notifyListeners();
+      return client.lastError ?? '连接失败，请检查服务器是否运行';
     }
-    _connecting = false;
-    notifyListeners();
   }
 
   Future<void> disconnect(String url) async {
