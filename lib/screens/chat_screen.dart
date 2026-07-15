@@ -16,6 +16,8 @@ import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
 import '../services/external_mcp_client.dart';
 import '../services/external_mcp_service.dart';
+import '../search/history_search_delegate.dart';
+import '../search/search_result_model.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 
@@ -101,6 +103,45 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         });
       }
+    });
+  }
+
+  void _openSearch() async {
+    final result = await showSearch<HistorySearchSelection?>(
+      context: context,
+      delegate: HistorySearchDelegate(_savedConversations),
+    );
+    if (result != null && mounted) {
+      _switchToSearchResult(result);
+    }
+  }
+
+  void _switchToSearchResult(HistorySearchSelection selection) {
+    _switchConversation(selection.conversation);
+    if (selection.scrollToMessageIndex != null) {
+      _scrollToMessage(selection.scrollToMessageIndex!);
+    }
+  }
+
+  void _scrollToMessage(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      // Estimate: each message roughly 100px, tool cards ~80px
+      double offset = 0;
+      for (int i = 0; i < index && i < _conversation.messages.length; i++) {
+        final msg = _conversation.messages[i];
+        if (msg.role == MessageRole.toolCall && msg.toolCalls != null) {
+          offset += 80;
+        } else {
+          offset += 100;
+        }
+      }
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      _scrollController.animateTo(
+        offset.clamp(0.0, maxScroll),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -351,6 +392,26 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             const Divider(height: 1),
+            InkWell(
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _openSearch();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.search, size: 20,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 10),
+                    Text('搜索历史对话',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 1),
             Expanded(
               child: _savedConversations.isEmpty
                   ? const Center(child: Text('暂无历史对话'))
@@ -514,12 +575,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: () => Navigator.of(context).pushNamed('/settings'),
+        ),
         title: Text(_conversation.title, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: _openSearch,
+          ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'new') _newConversation();
               else if (v == 'history') _showConversationList();
+              else if (v == 'bookshelf') Navigator.of(context).pushNamed('/bookshelf');
               else if (v == 'rename') _showRenameDialog();
               else if (v == 'export') _exportConversation();
               else if (v == 'system_prompt') _showSystemPromptDialog();
@@ -531,6 +601,10 @@ class _ChatScreenState extends State<ChatScreen> {
               )),
               const PopupMenuItem(value: 'history', child: ListTile(
                 leading: Icon(Icons.history), title: Text('对话历史'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuItem(value: 'bookshelf', child: ListTile(
+                leading: Icon(Icons.menu_book_rounded), title: Text('书架'),
                 dense: true, visualDensity: VisualDensity.compact,
               )),
               const PopupMenuItem(value: 'rename', child: ListTile(
@@ -546,10 +620,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 dense: true, visualDensity: VisualDensity.compact,
               )),
             ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).pushNamed('/settings'),
           ),
         ],
         bottom: PreferredSize(

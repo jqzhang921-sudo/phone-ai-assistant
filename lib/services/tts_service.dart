@@ -139,15 +139,35 @@ class TtsService extends ChangeNotifier {
   String _shortBody(String body) =>
       body.length > 200 ? '${body.substring(0, 200)}…' : body;
 
-  /// 朗读前清洗：去掉括号（及其内容），跳过旁白/动作/注释。
-  /// 覆盖 （） () 【】 []，最后折叠多余空格。
+  /// 朗读前清洗：去掉括号（及其内容），跳过旁白/动作/注释/链接。
+  /// 覆盖 （） () 【】 [] 「」 《》 等，循环直到干净以处理嵌套。
+  static final List<RegExp> _bracketPatterns = [
+    RegExp(r'（[^（）]*）'),   // 中文圆括号
+    RegExp(r'\([^()]*\)'),      // 英文圆括号
+    RegExp(r'【[^【】]*】'),     // 中文方括号
+    RegExp(r'\[[^\[\]]*\]'),    // 英文方括号
+    RegExp(r'「[^「」]*」'),     // 日文引号
+    RegExp(r'《[^《》]*》'),     // 书名号
+    RegExp(r'〈[^〈〉]*〉'),     // 尖书名号
+    RegExp(r'｛[^｛｝]*｝'),     // 全角大括号
+    RegExp(r'\*[^*]+\*'),       // markdown *斜体*
+    RegExp(r'~~[^~]+~~'),        // markdown ~~删除线~~
+  ];
+
   String _cleanForTts(String text) {
     var t = text;
-    t = t.replaceAll(RegExp(r'（[^（）]*）'), ''); // 中文圆括号
-    t = t.replaceAll(RegExp(r'\([^()]*\)'), ''); // 英文圆括号
-    t = t.replaceAll(RegExp(r'【[^【】]*】'), ''); // 中文方括号
-    t = t.replaceAll(RegExp(r'\[[^\[\]]*\]'), ''); // 英文方括号
-    t = t.replaceAll(RegExp(r'[ \t]+'), ' ');
+    // 循环直到不再变化，处理嵌套括号
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (final pattern in _bracketPatterns) {
+        final before = t;
+        t = t.replaceAll(pattern, '');
+        if (t != before) changed = true;
+      }
+    }
+    // 最后折叠多余空格和换行
+    t = t.replaceAll(RegExp(r'\s+'), ' ');
     return t.trim();
   }
 

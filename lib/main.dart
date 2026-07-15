@@ -4,6 +4,7 @@ import 'config/api_keys.dart';
 import 'config/settings.dart';
 import 'screens/chat_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/bookshelf_screen.dart';
 import 'screens/tools_screen.dart';
 import 'services/ai_client.dart';
 import 'services/storage_service.dart';
@@ -82,6 +83,7 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
           initialRoute: '/',
           routes: {
             '/': (_) => const ChatScreen(),
+            '/bookshelf': (_) => const BookshelfScreen(),
             '/settings': (_) => const SettingsScreen(),
             '/tools': (_) => const ToolsScreen(),
           },
