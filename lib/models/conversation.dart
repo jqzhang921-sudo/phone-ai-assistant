@@ -8,6 +8,7 @@ class Conversation {
   final List<ChatMessage> messages;
   String model;
   String? systemPrompt;
+  bool titleManuallySet;
 
   Conversation({
     required this.id,
@@ -17,6 +18,7 @@ class Conversation {
     List<ChatMessage>? messages,
     this.model = 'gpt-4o',
     this.systemPrompt,
+    this.titleManuallySet = false,
   })  : createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now(),
         messages = messages ?? [];
@@ -29,6 +31,7 @@ class Conversation {
         'messages': messages.map((m) => m.toJson()).toList(),
         'model': model,
         'systemPrompt': systemPrompt,
+        'titleManuallySet': titleManuallySet,
       };
 
   factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
@@ -42,5 +45,6 @@ class Conversation {
             [],
         model: json['model'] ?? 'gpt-4o',
         systemPrompt: json['systemPrompt'],
+        titleManuallySet: json['titleManuallySet'] ?? false,
       );
 }

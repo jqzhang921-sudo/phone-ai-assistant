@@ -36,7 +36,6 @@ class _ChatScreenState extends State<ChatScreen> {
   stt.SpeechToText? _speech;
   bool _isListening = false;
   bool _isLoading = false;
-  bool _titleManuallySet = false;
   List<Conversation> _savedConversations = [];
 
   late Conversation _conversation;
@@ -71,7 +70,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_conversation.messages.isNotEmpty) _saveConversation();
     setState(() {
       _conversation = conv;
-      _titleManuallySet = false;
       _isLoading = false;
       _textController.clear();
     });
@@ -84,7 +82,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_conversation.messages.isNotEmpty) _saveConversation();
     setState(() {
       _conversation = Conversation(id: _uuid.v4());
-      _titleManuallySet = false;
       _isLoading = false;
       _textController.clear();
     });
@@ -465,7 +462,7 @@ class _ChatScreenState extends State<ChatScreen> {
           FilledButton(onPressed: () {
             setState(() {
               _conversation.title = controller.text.trim();
-              _titleManuallySet = true;
+              _conversation.titleManuallySet = true;
             });
             _saveConversation();
             Navigator.of(ctx).pop();
@@ -561,7 +558,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _saveConversation() {
-    if (!_titleManuallySet) {
+    if (!_conversation.titleManuallySet) {
       _conversation.title = _conversation.messages.firstOrNull?.content
               ?.substring(0, (_conversation.messages.first.content.length).clamp(0, 30)) ??
           '新对话';
