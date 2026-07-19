@@ -12,8 +12,10 @@ class DiscussionNote {
   }) : createdAt = createdAt ?? DateTime.now();
 
   /// First ~40 chars as summary for list preview
-  String get summary =>
-      content.length > 50 ? '${content.substring(0, 50)}...' : content;
+  String get summary {
+    if (content.isEmpty) return '新笔记（点击展开编辑）';
+    return content.length > 50 ? '${content.substring(0, 50)}...' : content;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
