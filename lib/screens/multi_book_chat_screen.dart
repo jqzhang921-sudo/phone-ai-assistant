@@ -12,14 +12,20 @@ import '../models/discussion_note.dart';
 import '../services/ai_client.dart';
 import '../services/mcp_server.dart';
 import '../services/discussion_generator.dart';
+import '../services/discussion_group_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 import 'chat_screen.dart';
 
 class MultiBookChatScreen extends StatefulWidget {
   final List<Book> books;
+  final String? groupId;
 
-  const MultiBookChatScreen({super.key, required this.books});
+  const MultiBookChatScreen({
+    super.key,
+    required this.books,
+    this.groupId,
+  });
 
   @override
   State<MultiBookChatScreen> createState() => _MultiBookChatScreenState();
@@ -33,7 +39,9 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
   late Conversation _conversation;
 
   String get _conversationId =>
-      'multi_${widget.books.map((b) => b.id).join('_')}';
+      widget.groupId != null
+          ? 'group_${widget.groupId}'
+          : 'multi_${widget.books.map((b) => b.id).join('_')}';
 
   String get _title =>
       widget.books.map((b) => '《${b.title}》').join(' · ');
@@ -152,7 +160,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           switch (event.type) {
             case AiEventType.token:
               fullResponse = (fullResponse ?? '') + (event.text ?? '');
-              _updateAssistantMessage(fullResponse ?? '');
+              _updateAssistantMessage(fullResponse);
               break;
 
             case AiEventType.toolCalls:
@@ -325,6 +333,86 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     }
   }
 
+  Future<void> _showGroupManageSheet() async {
+    if (widget.groupId == null) return;
+
+    final groups = await DiscussionGroupService.listGroups();
+    final group = groups.where((g) => g.id == widget.groupId).firstOrNull;
+    if (group == null) return;
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('管理讨论集合', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 16),
+
+              // Rename
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('重命名'),
+                subtitle: Text(group.name),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  final controller = TextEditingController(text: group.name);
+                  final result = await showDialog<String>(
+                    context: context,
+                    builder: (dctx) => AlertDialog(
+                      title: const Text('重命名集合'),
+                      content: TextField(
+                        controller: controller,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: '输入新名称',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dctx).pop(),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () =>
+                              Navigator.of(dctx).pop(controller.text.trim()),
+                          child: const Text('确定'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (result != null && result.isNotEmpty && mounted) {
+                    await DiscussionGroupService.saveGroup(
+                      id: group.id,
+                      name: result,
+                      bookIds: group.bookIds,
+                    );
+                    if (mounted) setState(() {});
+                  }
+                },
+              ),
+
+              // Book list
+              ListTile(
+                leading: const Icon(Icons.menu_book),
+                title: Text('${widget.books.length}本'),
+                subtitle: Text(widget.books.map((b) => b.title).join('、')),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String get bookCountLabel => '${widget.books.length}本';
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -346,6 +434,14 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
             },
           ),
           title: Text(_title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          actions: [
+            if (widget.groupId != null)
+              IconButton(
+                icon: const Icon(Icons.more_horiz),
+                tooltip: '管理讨论集合',
+                onPressed: _showGroupManageSheet,
+              ),
+          ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(2),
             child: _isLoading ? const LinearProgressIndicator() : const SizedBox.shrink(),

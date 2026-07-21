@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/book.dart';
+import '../services/discussion_group_service.dart';
 import 'book_chat_screen.dart';
 import 'book_discussion_screen.dart';
 import 'multi_book_chat_screen.dart';
@@ -215,15 +216,63 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                   child: FilledButton(
                     onPressed: selected.isEmpty
                         ? null
-                        : () {
+                        : () async {
                             Navigator.of(ctx).pop();
                             final books = _books
                                 .where((b) => selected.contains(b.id))
                                 .toList();
+                            final bookIds = books.map((b) => b.id).toList();
+
+                            // Check for exact match first
+                            final exact =
+                                await DiscussionGroupService.findExactMatch(
+                                    bookIds);
+                            if (exact != null) {
+                              // Directly enter existing group
+                              if (!mounted) return;
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => MultiBookChatScreen(
+                                    books: books,
+                                    groupId: exact.id,
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            // Check for partial overlap
+                            final overlapping =
+                                await DiscussionGroupService
+                                    .findGroupsContaining(bookIds);
+                            String? groupId;
+
+                            if (overlapping.isNotEmpty && mounted) {
+                              groupId = await _showGroupPicker(
+                                  context, overlapping, books);
+                              if (groupId == null) return; // cancelled
+                            }
+
+                            // No overlap or chose "new" → create group
+                            if (groupId == null || groupId == 'new') {
+                              final defaultName = books
+                                  .map((b) => '《${b.title}》')
+                                  .join(' · ');
+                              final group =
+                                  await DiscussionGroupService.saveGroup(
+                                name: defaultName,
+                                bookIds: bookIds,
+                              );
+                              groupId = group.id;
+                            }
+
+                            if (!mounted) return;
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    MultiBookChatScreen(books: books),
+                                builder: (_) => MultiBookChatScreen(
+                                  books: books,
+                                  groupId: groupId,
+                                ),
                               ),
                             );
                           },
@@ -320,6 +369,80 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         ),
       ),
     );
+  }
+
+  /// Show a bottom sheet when book selections partially overlap with existing groups
+  Future<String?> _showGroupPicker(
+    BuildContext context,
+    List<dynamic> overlapping, // DiscussionGroup
+    List<Book> selectedBooks,
+  ) async {
+    return showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            Center(
+              child: Container(
+                width: 32, height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '发现相关讨论集合',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '${selectedBooks.map((b) => '《${b.title}》').join('、')}',
+                maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...overlapping.map((g) => ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: Text(g.name),
+                  subtitle: Text(
+                    '${g.bookIds.where((id) => selectedBooks.any((b) => b.id == id)).length}本重叠'
+                    ' · ${g.bookIds.length}本'
+                    '${_timeAgo(g.updatedAt)}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.of(ctx).pop(g.id),
+                )),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline),
+              title: const Text('新建独立集合'),
+              subtitle: const Text('不关联到已有集合'),
+              onTap: () => Navigator.of(ctx).pop('new'),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays > 0) return ' · ${diff.inDays}天前';
+    if (diff.inHours > 0) return ' · ${diff.inHours}小时前';
+    if (diff.inMinutes > 0) return ' · ${diff.inMinutes}分钟前';
+    return ' · 刚刚';
   }
 
   void _viewCover(BuildContext context, Book book) {
