@@ -9,6 +9,7 @@ import '../models/book.dart';
 import 'book_chat_screen.dart';
 import 'book_discussion_screen.dart';
 import 'multi_book_chat_screen.dart';
+import 'reading_profile_screen.dart';
 
 class BookshelfScreen extends StatefulWidget {
   const BookshelfScreen({super.key});
@@ -289,6 +290,23 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => BookDiscussionScreen(
+                      bookId: book.id,
+                      bookTitle: book.title,
+                      bookAuthor: book.author,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_stories),
+              title: const Text('阅读档案'),
+              subtitle: const Text('AI 提炼你的观点与感受'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ReadingProfileScreen(
                       bookId: book.id,
                       bookTitle: book.title,
                       bookAuthor: book.author,
