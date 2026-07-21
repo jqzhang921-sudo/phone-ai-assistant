@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/discussion_group.dart';
@@ -92,6 +94,24 @@ class DiscussionGroupService {
     groups.add(group);
     await _saveAll(groups);
     return group;
+  }
+
+  /// Last message preview for the picker card — 20-30 chars
+  static Future<String?> lastMessagePreview(String groupId) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final file = File('${appDir.path}/book_conversations/group_$groupId.json');
+      if (!await file.exists()) return null;
+      final data = jsonDecode(await file.readAsString());
+      final messages = data['messages'] as List? ?? [];
+      if (messages.isEmpty) return null;
+      final last = messages.last;
+      final content = last['content'] as String? ?? '';
+      if (content.isEmpty) return null;
+      return content.length > 30 ? '${content.substring(0, 30)}...' : content;
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<void> deleteGroup(String id) async {

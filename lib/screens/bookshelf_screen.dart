@@ -247,9 +247,16 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                                     .findGroupsContaining(bookIds);
                             String? groupId;
 
+                            // Load last-message previews for each group
+                            final previews = <String, String?>{};
+                            for (final g in overlapping) {
+                              previews[g.id] = await DiscussionGroupService
+                                  .lastMessagePreview(g.id);
+                            }
+
                             if (overlapping.isNotEmpty && mounted) {
                               groupId = await _showGroupPicker(
-                                  context, overlapping, books);
+                                  context, overlapping, books, previews);
                               if (groupId == null) return; // cancelled
                             }
 
@@ -376,6 +383,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     BuildContext context,
     List<dynamic> overlapping, // DiscussionGroup
     List<Book> selectedBooks,
+    Map<String, String?> previews,
   ) async {
     return showModalBottomSheet<String>(
       context: context,
@@ -412,17 +420,34 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            ...overlapping.map((g) => ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text(g.name),
-                  subtitle: Text(
-                    '${g.bookIds.where((id) => selectedBooks.any((b) => b.id == id)).length}本重叠'
-                    ' · ${g.bookIds.length}本'
-                    '${_timeAgo(g.updatedAt)}',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () => Navigator.of(ctx).pop(g.id),
-                )),
+            ...overlapping.map((g) {
+                  final preview = previews[g.id];
+                  return ListTile(
+                    leading: const Icon(Icons.folder_outlined),
+                    title: Text(g.name),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${g.bookIds.where((id) => selectedBooks.any((b) => b.id == id)).length}本重叠'
+                          ' · ${g.bookIds.length}本'
+                          '${_timeAgo(g.updatedAt)}',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                        if (preview != null)
+                          Text(
+                            preview,
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                    onTap: () => Navigator.of(ctx).pop(g.id),
+                  );
+                }),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.add_circle_outline),
