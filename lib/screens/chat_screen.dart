@@ -566,57 +566,109 @@ class _ChatScreenState extends State<ChatScreen> {
     StorageService.saveConversation(_conversation);
   }
 
+  Widget _buildDrawer(ThemeData theme) {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            DrawerHeader(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.smartphone, size: 48,
+                      color: theme.colorScheme.primary),
+                  const SizedBox(height: 8),
+                  Text('手机 AI 助手',
+                      style: theme.textTheme.titleLarge),
+                  Text('已保存 ${_conversation.messages.length} 条消息',
+                      style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('新对话'),
+              onTap: () {
+                Navigator.of(context).pop(); // close drawer
+                _newConversation();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('对话历史'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showConversationList();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.menu_book_rounded),
+              title: const Text('我的书架'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/bookshelf');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('重命名'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showRenameDialog();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.psychology),
+              title: const Text('系统提示词'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showSystemPromptDialog();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('导出聊天'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _exportConversation();
+              },
+            ),
+            const Spacer(),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('设置'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/settings');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
+      drawer: _buildDrawer(theme),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.settings),
-          onPressed: () => Navigator.of(context).pushNamed('/settings'),
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(ctx).openDrawer(),
+          ),
         ),
         title: Text(_conversation.title, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: _openSearch,
-          ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'new') _newConversation();
-              else if (v == 'history') _showConversationList();
-              else if (v == 'bookshelf') Navigator.of(context).pushNamed('/bookshelf');
-              else if (v == 'rename') _showRenameDialog();
-              else if (v == 'export') _exportConversation();
-              else if (v == 'system_prompt') _showSystemPromptDialog();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'new', child: ListTile(
-                leading: Icon(Icons.add), title: Text('新对话'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'history', child: ListTile(
-                leading: Icon(Icons.history), title: Text('对话历史'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'bookshelf', child: ListTile(
-                leading: Icon(Icons.menu_book_rounded), title: Text('书架'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'rename', child: ListTile(
-                leading: Icon(Icons.edit), title: Text('重命名'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'system_prompt', child: ListTile(
-                leading: Icon(Icons.psychology), title: Text('系统提示词'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'export', child: ListTile(
-                leading: Icon(Icons.share), title: Text('导出聊天'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-            ],
           ),
         ],
         bottom: PreferredSize(
