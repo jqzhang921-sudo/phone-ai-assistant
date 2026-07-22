@@ -566,99 +566,138 @@ class _ChatScreenState extends State<ChatScreen> {
     StorageService.saveConversation(_conversation);
   }
 
-  Widget _buildDrawer(ThemeData theme) {
-    const warmBg = Color(0xFFF5F1EC);
-    const warmHeader = Color(0xFFECE5DC);
-    const warmFg = Color(0xFF3D4A3C);
+  Widget _buildDashboard(ThemeData theme) {
+    const warmBg = Color(0xFFF5F7F3);
+    const warmFg = Color(0xFF3D5C3A);
+    const darkCard = Color(0xFF1F2A1E);
+    const mutedText = Color(0xFF8A9686);
+
+    final today = DateTime.now();
+    const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    final dateStr = '${today.month}月${today.day}日 · ${weekdays[today.weekday - 1]}';
 
     return Drawer(
+      width: MediaQuery.of(context).size.width * 0.78,
       child: Container(
         color: warmBg,
         child: SafeArea(
-          child: Column(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
             children: [
+              // Header
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('下午好，Cleo',
+                            style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w700,
+                                color: darkCard)),
+                        const SizedBox(height: 4),
+                        Text(dateStr,
+                            style: TextStyle(fontSize: 13, color: mutedText)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE3EBE0),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, size: 18, color: warmFg),
+                      onPressed: () => Navigator.of(context).pop(),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+
+              // Daily summary card
               Container(
                 width: double.infinity,
-                color: warmHeader,
-                padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: darkCard, borderRadius: BorderRadius.circular(20),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.auto_awesome, size: 36, color: warmFg),
+                    Text('今日小结',
+                        style: TextStyle(fontSize: 12, color: warmFg.withValues(alpha: 0.6))),
                     const SizedBox(height: 10),
-                    Text('Cleo',
-                        style: theme.textTheme.headlineSmall
-                            ?.copyWith(color: warmFg, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text('phone-ai-assistant',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: warmFg.withValues(alpha: 0.6))),
+                    Text(
+                      '今天已进行了 ${_conversation.messages.length} 轮对话，'
+                      '帮你处理了多项任务。'
+                      '${_conversation.messages.isNotEmpty ? "最近在聊：${_conversation.title}" : "开始新对话吧！"}',
+                      style: const TextStyle(fontSize: 15, color: Color(0xFFF0F4EE),
+                          height: 1.6),
+                    ),
                   ],
                 ),
               ),
-            ListTile(
-              leading: Icon(Icons.add, color: warmFg),
-              title: Text('新对话', style: TextStyle(color: warmFg)),
-              onTap: () {
-                Navigator.of(context).pop();
-                _newConversation();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.history, color: warmFg),
-              title: Text('对话历史', style: TextStyle(color: warmFg)),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showConversationList();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.menu_book_rounded, color: warmFg),
-              title: Text('我的书架', style: TextStyle(color: warmFg)),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pushNamed('/bookshelf');
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.edit, color: warmFg),
-              title: Text('重命名', style: TextStyle(color: warmFg)),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showRenameDialog();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.psychology, color: warmFg),
-              title: Text('系统提示词', style: TextStyle(color: warmFg)),
-              onTap: () {
-                Navigator.of(context).pop();
-                _showSystemPromptDialog();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.share, color: warmFg),
-              title: Text('导出聊天', style: TextStyle(color: warmFg)),
-              onTap: () {
-                Navigator.of(context).pop();
-                _exportConversation();
-              },
-            ),
-            const Spacer(),
-            Divider(color: warmFg.withValues(alpha: 0.15)),
-            ListTile(
-              leading: Icon(Icons.settings, color: warmFg.withValues(alpha: 0.6)),
-              title: Text('设置', style: TextStyle(color: warmFg.withValues(alpha: 0.6))),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pushNamed('/settings');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+              const SizedBox(height: 16),
+
+              // Quick actions
+              Row(
+                children: [
+                  _dashActionCard(warmFg, Icons.add, '新对话', () {
+                    Navigator.of(context).pop();
+                    _newConversation();
+                  }),
+                  const SizedBox(width: 10),
+                  _dashActionCard(warmFg, Icons.menu_book_rounded, '书架', () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pushNamed('/bookshelf');
+                  }),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Quick links
+              ...[
+                (Icons.history, '对话历史', () { Navigator.of(context).pop(); _showConversationList(); }),
+                (Icons.build_outlined, 'MCP 工具', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/tools'); }),
+                (Icons.settings_outlined, '设置', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/settings'); }),
+              ].map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: ListTile(
+                      leading: Icon(e.$1, color: warmFg, size: 22),
+                      title: Text(e.$2,
+                          style: const TextStyle(fontSize: 15, color: Color(0xFF3D4A3A))),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      onTap: () => e.$3.call(),
+                    ),
+                  )),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _dashActionCard(Color fg, IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: fg, size: 24),
+              const SizedBox(height: 6),
+              Text(label, style: TextStyle(fontSize: 13, color: fg)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -668,19 +707,55 @@ class _ChatScreenState extends State<ChatScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      drawer: _buildDrawer(theme),
+      drawer: _buildDashboard(theme),
       appBar: AppBar(
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
         title: Text(_conversation.title, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: _openSearch,
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'new') _newConversation();
+              else if (v == 'history') _showConversationList();
+              else if (v == 'bookshelf') Navigator.of(context).pushNamed('/bookshelf');
+              else if (v == 'rename') _showRenameDialog();
+              else if (v == 'export') _exportConversation();
+              else if (v == 'system_prompt') _showSystemPromptDialog();
+              else if (v == 'settings') Navigator.of(context).pushNamed('/settings');
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'new', child: ListTile(
+                leading: Icon(Icons.add), title: Text('新对话'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuItem(value: 'history', child: ListTile(
+                leading: Icon(Icons.history), title: Text('对话历史'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuItem(value: 'bookshelf', child: ListTile(
+                leading: Icon(Icons.menu_book_rounded), title: Text('书架'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuItem(value: 'rename', child: ListTile(
+                leading: Icon(Icons.edit), title: Text('重命名'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuItem(value: 'system_prompt', child: ListTile(
+                leading: Icon(Icons.psychology), title: Text('系统提示词'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuItem(value: 'export', child: ListTile(
+                leading: Icon(Icons.share), title: Text('导出聊天'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'settings', child: ListTile(
+                leading: Icon(Icons.settings), title: Text('设置'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+            ],
           ),
         ],
         bottom: PreferredSize(
