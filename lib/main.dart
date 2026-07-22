@@ -44,6 +44,16 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
     _settingsFuture = AppSettings.load();
     _loadSavedApiKeys();
     _connectExternalMcpServers();
+    _autoStartMcpServer();
+  }
+
+  Future<void> _autoStartMcpServer() async {
+    final settings = await _settingsFuture;
+    if (!settings.serverEnabled) return;
+    try {
+      final server = context.read<McpServerProvider>().server;
+      await server.start(settings.webSocketPort);
+    } catch (_) {}
   }
 
   Future<void> _loadSavedApiKeys() async {
