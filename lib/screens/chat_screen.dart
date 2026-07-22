@@ -567,78 +567,89 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildDrawer(ThemeData theme) {
+    const warmBg = Color(0xFFF5F1EC);
+    const warmHeader = Color(0xFFECE5DC);
+    const warmFg = Color(0xFF3D4A3C);
+
     return Drawer(
-      child: SafeArea(
-        child: Column(
-          children: [
-            DrawerHeader(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Icon(Icons.smartphone, size: 48,
-                      color: theme.colorScheme.primary),
-                  const SizedBox(height: 8),
-                  Text('手机 AI 助手',
-                      style: theme.textTheme.titleLarge),
-                  Text('已保存 ${_conversation.messages.length} 条消息',
-                      style: theme.textTheme.bodySmall),
-                ],
+      child: Container(
+        color: warmBg,
+        child: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                color: warmHeader,
+                padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome, size: 36, color: warmFg),
+                    const SizedBox(height: 10),
+                    Text('Cleo',
+                        style: theme.textTheme.headlineSmall
+                            ?.copyWith(color: warmFg, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('phone-ai-assistant',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: warmFg.withValues(alpha: 0.6))),
+                  ],
+                ),
               ),
-            ),
             ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('新对话'),
+              leading: Icon(Icons.add, color: warmFg),
+              title: Text('新对话', style: TextStyle(color: warmFg)),
               onTap: () {
-                Navigator.of(context).pop(); // close drawer
+                Navigator.of(context).pop();
                 _newConversation();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('对话历史'),
+              leading: Icon(Icons.history, color: warmFg),
+              title: Text('对话历史', style: TextStyle(color: warmFg)),
               onTap: () {
                 Navigator.of(context).pop();
                 _showConversationList();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.menu_book_rounded),
-              title: const Text('我的书架'),
+              leading: Icon(Icons.menu_book_rounded, color: warmFg),
+              title: Text('我的书架', style: TextStyle(color: warmFg)),
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).pushNamed('/bookshelf');
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('重命名'),
+              leading: Icon(Icons.edit, color: warmFg),
+              title: Text('重命名', style: TextStyle(color: warmFg)),
               onTap: () {
                 Navigator.of(context).pop();
                 _showRenameDialog();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.psychology),
-              title: const Text('系统提示词'),
+              leading: Icon(Icons.psychology, color: warmFg),
+              title: Text('系统提示词', style: TextStyle(color: warmFg)),
               onTap: () {
                 Navigator.of(context).pop();
                 _showSystemPromptDialog();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.share),
-              title: const Text('导出聊天'),
+              leading: Icon(Icons.share, color: warmFg),
+              title: Text('导出聊天', style: TextStyle(color: warmFg)),
               onTap: () {
                 Navigator.of(context).pop();
                 _exportConversation();
               },
             ),
             const Spacer(),
-            const Divider(),
+            Divider(color: warmFg.withValues(alpha: 0.15)),
             ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('设置'),
+              leading: Icon(Icons.settings, color: warmFg.withValues(alpha: 0.6)),
+              title: Text('设置', style: TextStyle(color: warmFg.withValues(alpha: 0.6))),
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).pushNamed('/settings');
@@ -647,6 +658,7 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
       ),
     );
   }
