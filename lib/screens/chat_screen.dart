@@ -680,7 +680,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(left: 16, bottom: 16),
+              padding: const EdgeInsets.only(left: 4, bottom: 16),
               child: IconButton(
                 icon: Icon(Icons.settings_outlined,
                     color: warmFg.withValues(alpha: 0.35), size: 20),
