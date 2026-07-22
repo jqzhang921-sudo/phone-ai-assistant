@@ -581,9 +581,12 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Container(
         color: warmBg,
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+          child: Column(
             children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  children: [
               // Header
               Row(
                 children: [
@@ -673,23 +676,25 @@ class _ChatScreenState extends State<ChatScreen> {
                       onTap: () => e.$3.call(),
                     ),
                   )),
-              const Spacer(),
-              Padding(
-                padding: const EdgeInsets.only(left: 8, bottom: 12),
-                child: IconButton(
-                  icon: Icon(Icons.settings_outlined,
-                      color: warmFg.withValues(alpha: 0.35), size: 20),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pushNamed('/settings');
-                  },
-                  tooltip: '设置',
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 12, bottom: 12),
+              child: IconButton(
+                icon: Icon(Icons.settings_outlined,
+                    color: warmFg.withValues(alpha: 0.35), size: 20),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pushNamed('/settings');
+                },
+                tooltip: '设置',
+              ),
+            ),
+          ],
         ),
       ),
+    ),
     );
   }
 
