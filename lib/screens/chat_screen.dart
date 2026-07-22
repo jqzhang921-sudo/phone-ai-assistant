@@ -642,25 +642,9 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Quick actions
-              Row(
-                children: [
-                  _dashActionCard(warmFg, Icons.add, '新对话', () {
-                    Navigator.of(context).pop();
-                    _newConversation();
-                  }),
-                  const SizedBox(width: 10),
-                  _dashActionCard(warmFg, Icons.menu_book_rounded, '书架', () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pushNamed('/bookshelf');
-                  }),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Quick links
+              // Quick access
               ...[
-                (Icons.history, '对话历史', () { Navigator.of(context).pop(); _showConversationList(); }),
+                (Icons.menu_book_rounded, '我的书架', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/bookshelf'); }),
                 (Icons.build_outlined, 'MCP 工具', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/tools'); }),
                 (Icons.settings_outlined, '设置', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/settings'); }),
               ].map((e) => Padding(
@@ -674,27 +658,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       onTap: () => e.$3.call(),
                     ),
                   )),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _dashActionCard(Color fg, IconData icon, String label, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: fg, size: 24),
-              const SizedBox(height: 6),
-              Text(label, style: TextStyle(fontSize: 13, color: fg)),
             ],
           ),
         ),
