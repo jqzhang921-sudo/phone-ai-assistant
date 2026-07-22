@@ -582,6 +582,7 @@ class _ChatScreenState extends State<ChatScreen> {
         color: warmBg,
         child: SafeArea(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: ListView(
