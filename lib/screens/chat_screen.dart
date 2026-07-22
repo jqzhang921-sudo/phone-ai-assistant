@@ -193,65 +193,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _showQuoteDialog() async {
-    final quoteCtrl = TextEditingController();
-    final commentCtrl = TextEditingController();
-
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('引用批注'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: quoteCtrl,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                labelText: '引用文字',
-                hintText: '粘贴你想讨论的段落...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: commentCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '你的想法',
-                hintText: '关于这段文字，你想说什么？',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop({
-              'quote': quoteCtrl.text.trim(),
-              'comment': commentCtrl.text.trim(),
-            }),
-            child: const Text('发送'),
-          ),
-        ],
-      ),
-    );
-
-    if (result == null) return;
-    final quote = result['quote'] ?? '';
-    final comment = result['comment'] ?? '';
-    if (quote.isEmpty && comment.isEmpty) return;
-
-    _textController.text = comment.isNotEmpty
-        ? '> $quote\n\n$comment'
-        : '> $quote';
-    _sendMessage();
-  }
-
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _isLoading) return;
@@ -918,12 +859,6 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Quote / annotation
-          IconButton(
-            icon: const Icon(Icons.format_quote_outlined),
-            onPressed: _isLoading ? null : _showQuoteDialog,
-            tooltip: '引用批注',
-          ),
           // Image picker
           IconButton(
             icon: const Icon(Icons.image_outlined),
