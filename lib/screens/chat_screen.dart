@@ -674,11 +674,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   )),
               const Spacer(),
-              Align(
-                alignment: Alignment.bottomLeft,
+              Padding(
+                padding: const EdgeInsets.only(left: 8, bottom: 12),
                 child: IconButton(
                   icon: Icon(Icons.settings_outlined,
-                      color: warmFg.withValues(alpha: 0.4), size: 22),
+                      color: warmFg.withValues(alpha: 0.35), size: 20),
                   onPressed: () {
                     Navigator.of(context).pop();
                     Navigator.of(context).pushNamed('/settings');
