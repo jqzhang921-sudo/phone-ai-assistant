@@ -642,11 +642,26 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Quick access
+              // Quick actions
+              Row(
+                children: [
+                  _dashActionCard(warmFg, Icons.add, '新对话', () {
+                    Navigator.of(context).pop();
+                    _newConversation();
+                  }),
+                  const SizedBox(width: 10),
+                  _dashActionCard(warmFg, Icons.menu_book_rounded, '书架', () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pushNamed('/bookshelf');
+                  }),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Quick links
               ...[
-                (Icons.menu_book_rounded, '我的书架', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/bookshelf'); }),
+                (Icons.history, '对话历史', () { Navigator.of(context).pop(); _showConversationList(); }),
                 (Icons.build_outlined, 'MCP 工具', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/tools'); }),
-                (Icons.settings_outlined, '设置', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/settings'); }),
               ].map((e) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: ListTile(
@@ -658,6 +673,40 @@ class _ChatScreenState extends State<ChatScreen> {
                       onTap: () => e.$3.call(),
                     ),
                   )),
+              const Spacer(),
+              Align(
+                alignment: Alignment.bottomLeft,
+                child: IconButton(
+                  icon: Icon(Icons.settings_outlined,
+                      color: warmFg.withValues(alpha: 0.4), size: 22),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pushNamed('/settings');
+                  },
+                  tooltip: '设置',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dashActionCard(Color fg, IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: fg, size: 24),
+              const SizedBox(height: 6),
+              Text(label, style: TextStyle(fontSize: 13, color: fg)),
             ],
           ),
         ),
@@ -686,7 +735,6 @@ class _ChatScreenState extends State<ChatScreen> {
               else if (v == 'rename') _showRenameDialog();
               else if (v == 'export') _exportConversation();
               else if (v == 'system_prompt') _showSystemPromptDialog();
-              else if (v == 'settings') Navigator.of(context).pushNamed('/settings');
             },
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'new', child: ListTile(
@@ -711,11 +759,6 @@ class _ChatScreenState extends State<ChatScreen> {
               )),
               const PopupMenuItem(value: 'export', child: ListTile(
                 leading: Icon(Icons.share), title: Text('导出聊天'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'settings', child: ListTile(
-                leading: Icon(Icons.settings), title: Text('设置'),
                 dense: true, visualDensity: VisualDensity.compact,
               )),
             ],
