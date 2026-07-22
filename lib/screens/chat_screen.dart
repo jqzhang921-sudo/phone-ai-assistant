@@ -196,11 +196,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _showQuoteDialog() async {
     final quoteCtrl = TextEditingController();
     final commentCtrl = TextEditingController();
-    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
-    if (clipboard?.text != null && clipboard!.text!.isNotEmpty) {
-      quoteCtrl.text = clipboard.text!;
-      commentCtrl.text = '（我的想法）';
-    }
 
     final result = await showDialog<Map<String, String>>(
       context: context,
