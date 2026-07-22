@@ -7,6 +7,7 @@ import '../config/api_keys.dart';
 import '../config/settings.dart';
 import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
+import '../services/phone_tools/search_tool.dart';
 import '../services/tts_service.dart';
 import 'chat_screen.dart';
 
@@ -27,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _modelController = TextEditingController();
   final _elevenKeyController = TextEditingController();
   final _elevenVoiceController = TextEditingController();
+  final _tavilyKeyController = TextEditingController();
 
   // External MCP server state
   List<ExternalMcpServer> _externalServers = [];
@@ -47,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _modelController.dispose();
     _elevenKeyController.dispose();
     _elevenVoiceController.dispose();
+    _tavilyKeyController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
     super.dispose();
@@ -57,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _settings = await AppSettings.load();
     _elevenKeyController.text = _settings.elevenLabsApiKey;
     _elevenVoiceController.text = _settings.elevenLabsVoiceId;
+    _tavilyKeyController.text = await SearchTool.getStoredKey() ?? '';
     _externalServers = await ExternalMcpServerService.load();
 
     // Select first config with a missing key
@@ -285,6 +289,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 messenger.showSnackBar(SnackBar(content: Text('$e')));
               }
             },
+          ),
+
+          const Divider(height: 40),
+
+          // Tavily 联网搜索
+          _sectionHeader('联网搜索', Icons.travel_explore, theme),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: TextField(
+              controller: _tavilyKeyController,
+              decoration: InputDecoration(
+                labelText: 'Tavily API Key',
+                hintText: 'tavily.com → Dashboard → API Keys',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.save),
+                  tooltip: '保存',
+                  onPressed: () async {
+                    await SearchTool.saveKey(_tavilyKeyController.text.trim());
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Tavily Key 已保存'),
+                            duration: Duration(seconds: 1)),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ),
           ),
 
           const Divider(height: 40),
