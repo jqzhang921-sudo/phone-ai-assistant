@@ -49,7 +49,9 @@ class WereadService {
         body: jsonEncode(body));
     final data = jsonDecode(resp.body);
     if (data['errcode'] != null && data['errcode'] != 0) {
-      throw Exception(data['errmsg'] ?? '微信读书 API 错误');
+      final msg = data['errmsg'] ?? 'unknown';
+      print('[weread] API error: $api → $msg (body keys: ${body.keys})');
+      throw Exception(msg);
     }
     return data is Map<String, dynamic> ? [data] : [];
   }
@@ -127,7 +129,8 @@ class WereadService {
         }
       }
       return buf.toString().trim().isNotEmpty ? buf.toString() : null;
-    } catch (_) {
+    } catch (e) {
+      print('[weread] highlights error for $wereadBookId: $e');
       return null;
     }
   }
@@ -149,7 +152,8 @@ class WereadService {
         buf.writeln('- ${content.toString().trim()}');
       }
       return buf.toString().trim().isNotEmpty ? buf.toString() : null;
-    } catch (_) {
+    } catch (e) {
+      print('[weread] thoughts error for $wereadBookId: $e');
       return null;
     }
   }
