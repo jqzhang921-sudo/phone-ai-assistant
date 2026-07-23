@@ -25,6 +25,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   final _picker = ImagePicker();
   List<Book> _books = [];
   bool _loaded = false;
+  ReadingStatus? _filterStatus; // null = show all
 
   static const _storageKey = 'bookshelf_books';
 
@@ -751,7 +752,12 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           else if (_books.isEmpty)
             _emptyState(theme)
           else
-            _bookGrid(theme),
+            Column(
+              children: [
+                _buildFilterChips(theme),
+                Expanded(child: _bookGrid(theme)),
+              ],
+            ),
           // Discussing chip — bottom-left
           if (_books.isNotEmpty)
             Positioned(
@@ -772,6 +778,43 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     );
   }
 
+  Widget _buildFilterChips(ThemeData theme) {
+    final filtered = _filterStatus == null
+        ? _books
+        : _books.where((b) => b.status == _filterStatus).toList();
+    final allCount = _books.length;
+    final readingCount = _books.where((b) => b.status == ReadingStatus.reading).length;
+    final doneCount = _books.where((b) => b.status == ReadingStatus.done).length;
+    final wantCount = _books.where((b) => b.status == ReadingStatus.wantToRead).length;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          _filterChip(theme, '全部 ($allCount)', null),
+          const SizedBox(width: 8),
+          _filterChip(theme, '在读 ($readingCount)', ReadingStatus.reading),
+          const SizedBox(width: 8),
+          _filterChip(theme, '已读 ($doneCount)', ReadingStatus.done),
+          const SizedBox(width: 8),
+          _filterChip(theme, '想读 ($wantCount)', ReadingStatus.wantToRead),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(ThemeData theme, String label, ReadingStatus? status) {
+    final active = _filterStatus == status;
+    return FilterChip(
+      label: Text(label),
+      selected: active,
+      onSelected: (_) => setState(() => _filterStatus = active ? null : status),
+      selectedColor: theme.colorScheme.primaryContainer,
+      checkmarkColor: theme.colorScheme.primary,
+    );
+  }
+
   Widget _emptyState(ThemeData theme) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -788,7 +831,11 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         ),
       );
 
-  Widget _bookGrid(ThemeData theme) => GridView.builder(
+  Widget _bookGrid(ThemeData theme) {
+    final filtered = _filterStatus == null
+        ? _books
+        : _books.where((b) => b.status == _filterStatus).toList();
+    return GridView.builder(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
@@ -796,9 +843,10 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           crossAxisSpacing: 12,
           childAspectRatio: 0.48,
         ),
-        itemCount: _books.length,
-        itemBuilder: (ctx, i) => _bookCard(theme, _books[i]),
-      );
+        itemCount: filtered.length,
+        itemBuilder: (ctx, i) => _bookCard(theme, filtered[i]),
+    );
+  }
 
   Widget _bookCard(ThemeData theme, Book book) {
     final hasCover =
