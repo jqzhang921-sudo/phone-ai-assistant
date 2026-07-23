@@ -98,6 +98,7 @@ class WereadService {
         author: b['author'],
         coverPath: null,
         status: finishReading == 1 ? ReadingStatus.done : ReadingStatus.reading,
+        wereadBookId: b['bookId'] as String?,
       ));
     }
     return imported;

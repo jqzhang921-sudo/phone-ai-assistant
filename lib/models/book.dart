@@ -33,7 +33,8 @@ class Book {
   String? author;
   String? coverPath;
   ReadingStatus status;
-  final DateTime createdAt; // added date
+  final DateTime createdAt;
+  String? wereadBookId;
 
   Book({
     required this.id,
@@ -42,6 +43,7 @@ class Book {
     this.coverPath,
     this.status = ReadingStatus.wantToRead,
     DateTime? createdAt,
+    this.wereadBookId,
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -51,6 +53,7 @@ class Book {
         'coverPath': coverPath,
         'status': status.name,
         'createdAt': createdAt.toIso8601String(),
+        if (wereadBookId != null) 'wereadBookId': wereadBookId,
       };
 
   factory Book.fromJson(Map<String, dynamic> json) => Book(
@@ -60,5 +63,6 @@ class Book {
         coverPath: json['coverPath'] as String?,
         status: ReadingStatus.fromString(json['status'] ?? ''),
         createdAt: DateTime.parse(json['createdAt']),
+        wereadBookId: json['wereadBookId'] as String?,
       );
 }
