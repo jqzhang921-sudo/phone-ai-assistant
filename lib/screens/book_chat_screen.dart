@@ -13,18 +13,21 @@ import '../services/mcp_server.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 import '../services/discussion_generator.dart';
+import '../services/weread_service.dart';
 import 'chat_screen.dart';
 
 class BookChatScreen extends StatefulWidget {
   final String bookId;
   final String bookTitle;
   final String? bookAuthor;
+  final String? wereadBookId;
 
   const BookChatScreen({
     super.key,
     required this.bookId,
     required this.bookTitle,
     this.bookAuthor,
+    this.wereadBookId,
   });
 
   @override
@@ -58,6 +61,23 @@ class _BookChatScreenState extends State<BookChatScreen> {
       systemPrompt: _systemPrompt,
     );
     _loadConversation();
+    if (widget.wereadBookId != null) _injectWereadHighlights();
+  }
+
+  Future<void> _injectWereadHighlights() async {
+    final highlights = await WereadService.fetchHighlights(widget.wereadBookId!);
+    if (highlights == null) return;
+    // Only inject if this is a fresh conversation
+    if (_conversation.messages.isNotEmpty) return;
+    setState(() {
+      _conversation.messages.add(ChatMessage(
+        id: _uuid.v4(),
+        role: MessageRole.assistant,
+        content: '这是你在微信读书中对《${widget.bookTitle}》的划线和笔记。'
+            '我们可以从这里开始讨论：\n\n$highlights',
+      ));
+    });
+    _saveConversation();
   }
 
   @override

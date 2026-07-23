@@ -395,6 +395,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                       bookId: book.id,
                       bookTitle: book.title,
                       bookAuthor: book.author,
+                      wereadBookId: book.wereadBookId,
                     ),
                   ),
                 );

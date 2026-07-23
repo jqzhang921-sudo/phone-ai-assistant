@@ -103,4 +103,54 @@ class WereadService {
     }
     return imported;
   }
+
+  /// Fetch the user's own highlights and bookmarks for a book.
+  /// Returns a formatted text block ready to insert into a discussion.
+  static Future<String?> fetchHighlights(String wereadBookId) async {
+    try {
+      final data = await _call('/book/bookmarklist', {'bookId': wereadBookId});
+      if (data.isEmpty) return null;
+      final chapters = (data.first['chapters'] as List?) ?? [];
+      if (chapters.isEmpty) return null;
+
+      final buf = StringBuffer();
+      buf.writeln('【以下内容来自微信读书划线/笔记】');
+      for (final ch in chapters) {
+        final chapterTitle = ch['title'] as String? ?? '';
+        final marks = (ch['bookmarks'] as List?) ?? [];
+        if (marks.isEmpty) continue;
+        if (chapterTitle.isNotEmpty) buf.writeln('\n## $chapterTitle');
+        for (final m in marks) {
+          final text = m['markText'] ?? m['content'] ?? '';
+          if (text.toString().trim().isEmpty) continue;
+          buf.writeln('- ${text.toString().trim()}');
+        }
+      }
+      return buf.toString().trim().isNotEmpty ? buf.toString() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetch the user's own thoughts / reviews for a book.
+  static Future<String?> fetchThoughts(String wereadBookId) async {
+    try {
+      final data =
+          await _call('/review/list/mine', {'bookid': wereadBookId});
+      if (data.isEmpty) return null;
+      final reviews = (data.first['reviews'] as List?) ?? [];
+      if (reviews.isEmpty) return null;
+
+      final buf = StringBuffer();
+      buf.writeln('【以下内容来自微信读书个人想法】');
+      for (final r in reviews) {
+        final content = r['review']?['content'] ?? '';
+        if (content.toString().trim().isEmpty) continue;
+        buf.writeln('- ${content.toString().trim()}');
+      }
+      return buf.toString().trim().isNotEmpty ? buf.toString() : null;
+    } catch (_) {
+      return null;
+    }
+  }
 }
