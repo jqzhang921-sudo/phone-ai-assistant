@@ -100,11 +100,22 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       final imported = await WereadService.fetchBooks();
       if (!mounted) return;
 
-      // Skip duplicates
-      final existingIds = _books.map((b) => b.title).toSet();
-      final newBooks = imported.where((b) => !existingIds.contains(b.title)).toList();
+      // Update existing books with wereadBookId, add new books
+      int updated = 0, added = 0;
+      for (final ib in imported) {
+        final idx = _books.indexWhere((b) => b.title == ib.title);
+        if (idx >= 0) {
+          if (_books[idx].wereadBookId == null && ib.wereadBookId != null) {
+            _books[idx].wereadBookId = ib.wereadBookId;
+            updated++;
+          }
+        } else {
+          _books.add(ib);
+          added++;
+        }
+      }
 
-      if (newBooks.isEmpty) {
+      if (added == 0 && updated == 0) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('没有新书，书架已是最新')),
@@ -113,11 +124,13 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         return;
       }
 
-      setState(() => _books.addAll(newBooks));
       await _saveBooks();
       if (mounted) {
+        final parts = <String>[];
+        if (added > 0) parts.add('新增 $added 本');
+        if (updated > 0) parts.add('更新 $updated 本');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入了 ${newBooks.length} 本书')),
+          SnackBar(content: Text(parts.join('，'))),
         );
       }
     } catch (e) {
