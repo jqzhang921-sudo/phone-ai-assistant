@@ -112,21 +112,15 @@ class WereadService {
     try {
       final data = await _call('/book/bookmarklist', {'bookId': wereadBookId});
       if (data.isEmpty) return null;
-      final chapters = (data.first['chapters'] as List?) ?? [];
-      if (chapters.isEmpty) return null;
+      final updated = (data.first['updated'] as List?) ?? [];
+      if (updated.isEmpty) return null;
 
       final buf = StringBuffer();
       buf.writeln('【以下内容来自微信读书划线/笔记】');
-      for (final ch in chapters) {
-        final chapterTitle = ch['title'] as String? ?? '';
-        final marks = (ch['bookmarks'] as List?) ?? [];
-        if (marks.isEmpty) continue;
-        if (chapterTitle.isNotEmpty) buf.writeln('\n## $chapterTitle');
-        for (final m in marks) {
-          final text = m['markText'] ?? m['content'] ?? '';
-          if (text.toString().trim().isEmpty) continue;
-          buf.writeln('- ${text.toString().trim()}');
-        }
+      for (final m in updated) {
+        final text = m['markText'] as String? ?? '';
+        if (text.trim().isEmpty) continue;
+        buf.writeln('- $text');
       }
       return buf.toString().trim().isNotEmpty ? buf.toString() : null;
     } catch (e) {
