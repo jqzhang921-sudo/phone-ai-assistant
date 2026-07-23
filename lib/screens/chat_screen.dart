@@ -14,6 +14,7 @@ import '../models/mcp_tool.dart';
 import '../services/ai_client.dart';
 import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
+import '../services/weread_service.dart';
 import '../services/external_mcp_client.dart';
 import '../services/external_mcp_service.dart';
 import '../search/history_search_delegate.dart';
@@ -646,6 +647,10 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               const SizedBox(height: 16),
 
+              // Reading stats card
+              _buildStatsCard(warmFg),
+              const SizedBox(height: 16),
+
               // Quick actions
               Row(
                 children: [
@@ -696,6 +701,54 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     ),
+    );
+  }
+
+  Widget _buildStatsCard(Color fg) {
+    return FutureBuilder<WereadStats>(
+      future: WereadService.fetchReadingStats(),
+      builder: (ctx, snap) {
+        final stats = snap.data;
+        if (snap.hasError || stats == null) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.bar_chart_rounded, size: 18, color: fg),
+                  const SizedBox(width: 6),
+                  Text('阅读统计', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: fg)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _statItem(fg, '${stats.finishedThisMonth}', '本月读完'),
+                  _statItem(fg, '${stats.currentlyReading}', '在读'),
+                  _statItem(fg, '${stats.finishedThisYear}', '今年读完'),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _statItem(Color fg, String num, String label) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(num, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: fg)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(fontSize: 11, color: fg.withValues(alpha: 0.6))),
+        ],
+      ),
     );
   }
 
