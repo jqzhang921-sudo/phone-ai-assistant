@@ -377,7 +377,23 @@ class _BookChatScreenState extends State<BookChatScreen> {
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) async {
-              if (v == 'delete') {
+              if (v == 'refresh') {
+                if (widget.wereadBookId == null) return;
+                final highlights = await WereadService.fetchHighlights(widget.wereadBookId!);
+                if (highlights == null) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('没有新的划线')));
+                  return;
+                }
+                setState(() {
+                  _conversation.messages.add(ChatMessage(
+                    id: _uuid.v4(),
+                    role: MessageRole.assistant,
+                    content: '【已同步微信读书最新划线/笔记】\n\n$highlights',
+                  ));
+                });
+                _saveConversation();
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('划线已刷新')));
+              } else if (v == 'delete') {
                 final ok = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -403,6 +419,11 @@ class _BookChatScreenState extends State<BookChatScreen> {
               }
             },
             itemBuilder: (ctx) => [
+              PopupMenuItem(value: 'refresh', child: ListTile(
+                leading: Icon(Icons.sync, color: widget.wereadBookId != null ? null : Theme.of(ctx).disabledColor),
+                title: Text('刷新划线', style: widget.wereadBookId != null ? null : TextStyle(color: Theme.of(ctx).disabledColor)),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
               const PopupMenuItem(value: 'delete', child: ListTile(
                 leading: Icon(Icons.delete_outline), title: Text('删除讨论'),
                 dense: true, visualDensity: VisualDensity.compact,
