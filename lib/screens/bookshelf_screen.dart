@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/book.dart';
 import '../services/discussion_group_service.dart';
+import '../services/weread_service.dart';
 import 'book_chat_screen.dart';
 import 'book_discussion_screen.dart';
 import 'multi_book_chat_screen.dart';
@@ -64,6 +65,67 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     final prefs = await SharedPreferences.getInstance();
     final list = _books.map((b) => b.toJson()).toList();
     await prefs.setString(_storageKey, jsonEncode(list));
+  }
+
+  Future<void> _importFromWeread() async {
+    // Check/save key
+    var key = await WereadService.getKey();
+    if (key == null || key.isEmpty) {
+      final ctrl = TextEditingController();
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('微信读书 API Key'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              hintText: 'wrk-...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      key = ctrl.text.trim();
+      if (key.isEmpty) return;
+      await WereadService.saveKey(key);
+    }
+
+    try {
+      final imported = await WereadService.fetchBooks();
+      if (!mounted) return;
+
+      // Skip duplicates
+      final existingIds = _books.map((b) => b.title).toSet();
+      final newBooks = imported.where((b) => !existingIds.contains(b.title)).toList();
+
+      if (newBooks.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('没有新书，书架已是最新')),
+          );
+        }
+        return;
+      }
+
+      setState(() => _books.addAll(newBooks));
+      await _saveBooks();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入了 ${newBooks.length} 本书')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败: $e')),
+        );
+      }
+    }
   }
 
   // ── Add ──────────────────────────────────────────────
@@ -672,7 +734,16 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('我的书架')),
+      appBar: AppBar(
+        title: const Text('我的书架'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cloud_download_outlined),
+            tooltip: '从微信读书导入',
+            onPressed: _importFromWeread,
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           if (!_loaded)
