@@ -374,6 +374,42 @@ class _BookChatScreenState extends State<BookChatScreen> {
           },
         ),
         title: Text('《${widget.bookTitle}》'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (v) async {
+              if (v == 'delete') {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('删除讨论'),
+                    content: const Text('确定要删除当前讨论记录吗？删除后重新打开将导入微信读书划线。'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                      FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  final dir = await _bookConvDir;
+                  final file = File('${dir.path}/book_${widget.bookId}.json');
+                  await file.delete();
+                  if (mounted) {
+                    _conversation.messages.clear();
+                    setState(() {});
+                    // Re-inject highlights
+                    if (widget.wereadBookId != null) _injectWereadHighlights();
+                  }
+                }
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(value: 'delete', child: ListTile(
+                leading: Icon(Icons.delete_outline), title: Text('删除讨论'),
+                dense: true, visualDensity: VisualDensity.compact,
+              )),
+            ],
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(2),
           child: _isLoading
