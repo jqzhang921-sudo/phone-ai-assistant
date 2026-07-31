@@ -1,6 +1,6 @@
 # phone_ai_assistant
 
-A new Flutter project.
+A new Flutter project.以书架讨论功能为主，适合读书爱好者。
 
 ## Getting Started
 
