@@ -51,7 +51,10 @@ class AiClient {
               ],
             });
           } else {
-            apiMessages.add({'role': 'user', 'content': msg.content});
+            final ts = msg.timestamp != null
+                ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
+                : msg.content;
+            apiMessages.add({'role': 'user', 'content': ts});
           }
           break;
         case MessageRole.assistant:
@@ -215,13 +218,23 @@ class AiClient {
     for (final msg in messages) {
       switch (msg.role) {
         case MessageRole.user:
-          apiMessages.add({'role': 'user', 'content': msg.content});
+          apiMessages.add({
+            'role': 'user',
+            'content': msg.timestamp != null
+                ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
+                : msg.content,
+          });
           break;
         case MessageRole.assistant:
           if (msg.toolCalls != null && msg.toolCalls!.isNotEmpty) {
             final content = <Map<String, dynamic>>[];
             if (msg.content.isNotEmpty) {
-              content.add({'type': 'text', 'text': msg.content});
+              content.add({
+                'type': 'text',
+                'text': msg.timestamp != null
+                    ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
+                    : msg.content,
+              });
             }
             for (final tc in msg.toolCalls!) {
               content.add({
@@ -233,7 +246,12 @@ class AiClient {
             }
             apiMessages.add({'role': 'assistant', 'content': content});
           } else {
-            apiMessages.add({'role': 'assistant', 'content': msg.content});
+            apiMessages.add({
+              'role': 'assistant',
+              'content': msg.timestamp != null
+                  ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
+                  : msg.content,
+            });
           }
           break;
         case MessageRole.toolResult:
