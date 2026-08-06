@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/reading_profile.dart';
 import '../services/reading_profile_generator.dart';
-import 'chat_screen.dart'; // AiClientProvider
+import '../services/app_providers.dart';
 
 class ReadingProfileScreen extends StatefulWidget {
   final String bookId;
@@ -40,8 +40,9 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
     final raw = prefs.getString(_storageKey);
     if (raw != null) {
       setState(() {
-        _profile =
-            ReadingProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        _profile = ReadingProfile.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
       });
     }
     setState(() => _loaded = true);
@@ -56,9 +57,9 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
     final aiClient = context.read<AiClientProvider>().currentClient;
     if (aiClient == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先在设置中配置 API Key')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请先在设置中配置 API Key')));
       }
       return;
     }
@@ -77,16 +78,16 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
         await _saveProfile(profile);
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('还没有讨论记录，先去聊聊这本书吧')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('还没有讨论记录，先去聊聊这本书吧')));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('生成失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('生成失败: $e')));
       }
     } finally {
       if (mounted) setState(() => _generating = false);
@@ -96,20 +97,21 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
   Future<void> _confirmRegenerate() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('重新生成'),
-        content: const Text('重新生成会覆盖当前的阅读档案，确定吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('重新生成'),
+            content: const Text('重新生成会覆盖当前的阅读档案，确定吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('确定'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
     );
     if (confirm == true && mounted) _generate();
   }
@@ -132,17 +134,24 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
       ),
       body: _buildBody(theme),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _generating
-            ? null
-            : (_profile == null ? _generate : _confirmRegenerate),
-        icon: _generating
-            ? const SizedBox(
-                width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : const Icon(Icons.auto_awesome),
-        label: Text(_generating
-            ? '生成中...'
-            : (_profile == null ? '生成阅读档案' : '重新生成')),
+        onPressed:
+            _generating
+                ? null
+                : (_profile == null ? _generate : _confirmRegenerate),
+        icon:
+            _generating
+                ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+                : const Icon(Icons.auto_awesome),
+        label: Text(
+          _generating ? '生成中...' : (_profile == null ? '生成阅读档案' : '重新生成'),
+        ),
       ),
     );
   }
@@ -170,8 +179,11 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_stories, size: 64,
-                color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+            Icon(
+              Icons.auto_stories,
+              size: 64,
+              color: theme.colorScheme.primary.withValues(alpha: 0.3),
+            ),
             const SizedBox(height: 12),
             Text('还没有阅读档案', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -194,14 +206,20 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
           icon: Icons.lightbulb_outline,
           title: '核心观点',
           color: Colors.deepPurple,
-          children: profile.coreOpinions.isEmpty
-              ? [const Text('暂无', style: TextStyle(color: Colors.grey))]
-              : profile.coreOpinions
-                  .map((o) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text('• $o', style: theme.textTheme.bodyMedium),
-                      ))
-                  .toList(),
+          children:
+              profile.coreOpinions.isEmpty
+                  ? [const Text('暂无', style: TextStyle(color: Colors.grey))]
+                  : profile.coreOpinions
+                      .map(
+                        (o) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '• $o',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      )
+                      .toList(),
         ),
         const SizedBox(height: 12),
         _sectionCard(
@@ -209,14 +227,20 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
           icon: Icons.help_outline,
           title: '未解问题',
           color: Colors.deepOrange,
-          children: profile.unresolvedQuestions.isEmpty
-              ? [const Text('暂无疑问 ✨', style: TextStyle(color: Colors.grey))]
-              : profile.unresolvedQuestions
-                  .map((q) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text('• $q', style: theme.textTheme.bodyMedium),
-                      ))
-                  .toList(),
+          children:
+              profile.unresolvedQuestions.isEmpty
+                  ? [const Text('暂无疑问 ✨', style: TextStyle(color: Colors.grey))]
+                  : profile.unresolvedQuestions
+                      .map(
+                        (q) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '• $q',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      )
+                      .toList(),
         ),
         const SizedBox(height: 12),
         _sectionCard(
@@ -235,8 +259,9 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
         Center(
           child: Text(
             '生成于 $dateStr',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
         const SizedBox(height: 80),
@@ -261,8 +286,10 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
               children: [
                 Icon(icon, size: 22, color: color),
                 const SizedBox(width: 8),
-                Text(title,
-                    style: theme.textTheme.titleSmall?.copyWith(color: color)),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(color: color),
+                ),
               ],
             ),
             const SizedBox(height: 10),

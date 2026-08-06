@@ -18,13 +18,30 @@ class MessageBubble extends StatelessWidget {
     final tts = context.watch<TtsService>();
     final theme = Theme.of(context);
 
-    // User bubble: slightly darker than surface; AI bubble: surfaceContainerHighest
-    final bgColor = isUser
-        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7)
-        : theme.colorScheme.surfaceContainerHighest;
+    final scheme = theme.colorScheme;
+    // 半透明气泡：浅色系，贴近"毛玻璃"质感，聊天背景图可透出
+    final bgColor =
+        isUser
+            ? scheme.surfaceContainerHighest.withValues(alpha: 0.55)
+            : scheme.surface.withValues(alpha: 0.75);
+    final textColor = isUser ? scheme.onPrimaryContainer : scheme.onSurface;
+    final radius =
+        isUser
+            ? const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(6),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+            )
+            : const BorderRadius.only(
+              topLeft: Radius.circular(6),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+            );
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -41,10 +58,15 @@ class MessageBubble extends StatelessWidget {
                 Flexible(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: bgColor,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: radius,
+                      border: Border.all(
+                        color: scheme.outline.withValues(alpha: 0.15),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,17 +87,13 @@ class MessageBubble extends StatelessWidget {
                         if (isUser)
                           Text(
                             message.content,
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                            ),
+                            style: TextStyle(color: textColor),
                           )
                         else
                           MarkdownBody(
                             data: message.content,
                             styleSheet: MarkdownStyleSheet(
-                              p: TextStyle(
-                                color: theme.colorScheme.onSurface,
-                              ),
+                              p: TextStyle(color: textColor),
                               code: TextStyle(
                                 backgroundColor:
                                     theme.colorScheme.surfaceContainerHigh,
@@ -97,6 +115,20 @@ class MessageBubble extends StatelessWidget {
               ],
             ),
           ),
+          // 时间戳
+          Padding(
+            padding: EdgeInsets.only(
+              left: isUser ? 0 : 36,
+              right: isUser ? 36 : 0,
+              top: 4,
+            ),
+            child: Text(
+              'time: ${_formatTimestamp(message.timestamp)}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurface.withValues(alpha: 0.45),
+              ),
+            ),
+          ),
           if (isAssistant && message.content.trim().isNotEmpty)
             _buildSpeakerButton(context, tts, theme),
         ],
@@ -104,50 +136,60 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  String _formatTimestamp(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} '
+        '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+  }
+
   void _showCopyMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: const Text('复制消息'),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: message.content));
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ 已复制'),
-                    duration: Duration(seconds: 1),
+      builder:
+          (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.copy),
+                  title: const Text('复制消息'),
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: message.content));
+                    Navigator.of(ctx).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('✅ 已复制'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                ),
+                if (message.imageData != null)
+                  ListTile(
+                    leading: const Icon(Icons.image),
+                    title: const Text('复制图片'),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: message.content));
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ 已复制'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+              ],
             ),
-            if (message.imageData != null)
-              ListTile(
-                leading: const Icon(Icons.image),
-                title: const Text('复制图片'),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: message.content));
-                  Navigator.of(ctx).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ 已复制'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
   Widget _buildSpeakerButton(
-      BuildContext context, TtsService tts, ThemeData theme) {
+    BuildContext context,
+    TtsService tts,
+    ThemeData theme,
+  ) {
     final loading = tts.isLoading(message.id);
     final playing = tts.isPlaying(message.id);
     // 缩进对齐到气泡下方（头像直径 28 + 间距 8）
@@ -158,31 +200,33 @@ class MessageBubble extends StatelessWidget {
         onTap: () async {
           final messenger = ScaffoldMessenger.of(context);
           try {
-            await context
-                .read<TtsService>()
-                .toggle(message.id, message.content);
+            await context.read<TtsService>().toggle(
+              message.id,
+              message.content,
+            );
           } catch (e) {
             messenger.showSnackBar(SnackBar(content: Text('$e')));
           }
         },
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: loading
-              ? SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
+          child:
+              loading
+                  ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.primary,
+                    ),
+                  )
+                  : Icon(
+                    playing
+                        ? Icons.stop_circle_outlined
+                        : Icons.volume_up_outlined,
+                    size: 18,
                     color: theme.colorScheme.primary,
                   ),
-                )
-              : Icon(
-                  playing
-                      ? Icons.stop_circle_outlined
-                      : Icons.volume_up_outlined,
-                  size: 18,
-                  color: theme.colorScheme.primary,
-                ),
         ),
       ),
     );
@@ -191,15 +235,17 @@ class MessageBubble extends StatelessWidget {
   Widget _buildAvatar(ThemeData theme, {required bool isUser}) {
     return CircleAvatar(
       radius: 14,
-      backgroundColor: isUser
-          ? theme.colorScheme.surfaceContainerHighest
-          : theme.colorScheme.primaryContainer,
+      backgroundColor:
+          isUser
+              ? theme.colorScheme.surfaceContainerHighest
+              : theme.colorScheme.primaryContainer,
       child: Icon(
         isUser ? Icons.person : Icons.smart_toy,
         size: 16,
-        color: isUser
-            ? theme.colorScheme.onSurfaceVariant
-            : theme.colorScheme.onPrimaryContainer,
+        color:
+            isUser
+                ? theme.colorScheme.onSurfaceVariant
+                : theme.colorScheme.onPrimaryContainer,
       ),
     );
   }

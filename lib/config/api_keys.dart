@@ -35,6 +35,12 @@ class ApiKeyConfig {
           model: 'claude-sonnet-5',
         ),
         ApiKeyConfig(
+          provider: 'mimo',
+          name: 'MIMO Vision',
+          endpoint: 'https://api.mimo.com/v1',
+          model: 'mimo-vision',
+        ),
+        ApiKeyConfig(
           provider: 'custom',
           name: '自定义',
           endpoint: '',

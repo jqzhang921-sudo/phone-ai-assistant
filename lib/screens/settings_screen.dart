@@ -9,7 +9,7 @@ import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
 import '../services/tts_service.dart';
-import 'chat_screen.dart';
+import '../services/app_providers.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -64,7 +64,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _externalServers = await ExternalMcpServerService.load();
 
     // Select first config with a missing key
-    final missingKey = _configs.where((c) => c.apiKey == null || c.apiKey!.isEmpty).firstOrNull;
+    final missingKey =
+        _configs
+            .where((c) => c.apiKey == null || c.apiKey!.isEmpty)
+            .firstOrNull;
     if (missingKey != null) {
       _selectConfig(missingKey);
     }
@@ -99,9 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // Update AI client in provider
       if (_keyController.text.trim().isNotEmpty) {
-        final aiClient = AiClient(
-          config: config,
-        );
+        final aiClient = AiClient(config: config);
         context.read<AiClientProvider>().setClient(aiClient);
       }
     }
@@ -136,9 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = Theme.of(context);
 
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -155,17 +154,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             height: 40,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: _configs.map((config) {
-                final selected = config.provider == _selectedProvider;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(config.name),
-                    selected: selected,
-                    onSelected: (_) => _selectConfig(config),
-                  ),
-                );
-              }).toList(),
+              children:
+                  _configs.map((config) {
+                    final selected = config.provider == _selectedProvider;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(config.name),
+                        selected: selected,
+                        onSelected: (_) => _selectConfig(config),
+                      ),
+                    );
+                  }).toList(),
             ),
           ),
           const SizedBox(height: 16),
@@ -194,9 +194,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SegmentedButton<TtsProvider>(
                   segments: const [
                     ButtonSegment(
-                        value: TtsProvider.system, label: Text('系统(免费)')),
+                      value: TtsProvider.system,
+                      label: Text('系统(免费)'),
+                    ),
                     ButtonSegment(
-                        value: TtsProvider.elevenlabs, label: Text('ElevenLabs')),
+                      value: TtsProvider.elevenlabs,
+                      label: Text('ElevenLabs'),
+                    ),
                   ],
                   selected: {_settings.ttsProvider},
                   onSelectionChanged: (s) {
@@ -253,8 +257,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                            content: Text('已保存'),
-                            duration: Duration(seconds: 1)),
+                          content: Text('已保存'),
+                          duration: Duration(seconds: 1),
+                        ),
                       );
                     }
                   },
@@ -264,9 +269,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
           SwitchListTile(
             title: const Text('自动朗读'),
-            subtitle: Text(_settings.ttsProvider == TtsProvider.elevenlabs
-                ? 'AI 回复后自动朗读（ElevenLabs 会按量扣费）'
-                : 'AI 回复后自动朗读'),
+            subtitle: Text(
+              _settings.ttsProvider == TtsProvider.elevenlabs
+                  ? 'AI 回复后自动朗读（ElevenLabs 会按量扣费）'
+                  : 'AI 回复后自动朗读',
+            ),
             value: _settings.autoTts,
             onChanged: (v) {
               setState(() => _settings.autoTts = v);
@@ -276,9 +283,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.play_circle_outline),
             title: const Text('测试语音'),
-            subtitle: Text(_settings.ttsProvider == TtsProvider.elevenlabs
-                ? '用 ElevenLabs 试读一句（会消耗少量额度）'
-                : '用系统引擎试读一句（需手机已装 TTS 引擎）'),
+            subtitle: Text(
+              _settings.ttsProvider == TtsProvider.elevenlabs
+                  ? '用 ElevenLabs 试读一句（会消耗少量额度）'
+                  : '用系统引擎试读一句（需手机已装 TTS 引擎）',
+            ),
             onTap: () async {
               final messenger = ScaffoldMessenger.of(context);
               final tts = context.read<TtsService>();
@@ -312,8 +321,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                            content: Text('Tavily Key 已保存'),
-                            duration: Duration(seconds: 1)),
+                          content: Text('Tavily Key 已保存'),
+                          duration: Duration(seconds: 1),
+                        ),
                       );
                     }
                   },
@@ -329,8 +339,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           SwitchListTile(
             title: const Text('启用 MCP Server'),
-            subtitle: Text(
-                '允许其他设备通过端口 ${_settings.webSocketPort} 连接'),
+            subtitle: Text('允许其他设备通过端口 ${_settings.webSocketPort} 连接'),
             value: _settings.serverEnabled,
             onChanged: (v) async {
               setState(() => _settings.serverEnabled = v);
@@ -340,8 +349,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (!ok && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('启动 MCP Server 失败，请检查端口'),
-                        backgroundColor: Colors.red),
+                      content: Text('启动 MCP Server 失败，请检查端口'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                   setState(() => _settings.serverEnabled = false);
                 }
@@ -364,7 +374,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     isDense: true,
                   ),
                   controller: TextEditingController(
-                      text: _settings.webSocketPort.toString()),
+                    text: _settings.webSocketPort.toString(),
+                  ),
                   onSubmitted: (v) {
                     _settings.webSocketPort = int.tryParse(v) ?? 8765;
                     _saveSettings();
@@ -394,26 +405,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    ...mcpProv.clients.map((c) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.check_circle,
-                                  size: 14, color: Colors.green),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  '${c.config.name} (${c.config.url})',
-                                  style: theme.textTheme.bodySmall,
-                                ),
+                    ...mcpProv.clients.map(
+                      (c) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${c.config.name} (${c.config.url})',
+                                style: theme.textTheme.bodySmall,
                               ),
-                              Text(
-                                '${c.tools.length} 工具',
-                                style: theme.textTheme.labelSmall,
-                              ),
-                            ],
-                          ),
-                        )),
+                            ),
+                            Text(
+                              '${c.tools.length} 工具',
+                              style: theme.textTheme.labelSmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                   ],
                 );
@@ -423,58 +439,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           // Server list
-          ..._externalServers.map((server) => Card(
-                margin: const EdgeInsets.only(bottom: 6),
-                child: ListTile(
-                  dense: true,
-                  leading: Icon(
-                    Icons.dns_outlined,
-                    color: server.enabled
-                        ? theme.colorScheme.primary
-                        : Colors.grey,
-                  ),
-                  title: Text(server.name,
-                      style: const TextStyle(fontSize: 14)),
-                  subtitle: Text(server.url,
-                      style: const TextStyle(fontSize: 11)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Switch(
-                        value: server.enabled,
-                        onChanged: (v) async {
-                          server.enabled = v;
-                          await ExternalMcpServerService.save(_externalServers);
-                          if (v) {
-                            context
-                                .read<ExternalMcpProvider>()
-                                .connectTo(server);
-                          } else {
-                            context
-                                .read<ExternalMcpProvider>()
-                                .disconnect(server.url);
-                          }
-                          setState(() {});
-                        },
-                        materialTapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        onPressed: () async {
-                          await ExternalMcpServerService.remove(server.id);
-                          context
-                              .read<ExternalMcpProvider>()
-                              .disconnect(server.url);
-                          _externalServers = await ExternalMcpServerService.load();
-                          setState(() {});
-                        },
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
-                  ),
+          ..._externalServers.map(
+            (server) => Card(
+              margin: const EdgeInsets.only(bottom: 6),
+              child: ListTile(
+                dense: true,
+                leading: Icon(
+                  Icons.dns_outlined,
+                  color:
+                      server.enabled ? theme.colorScheme.primary : Colors.grey,
                 ),
-              )),
+                title: Text(server.name, style: const TextStyle(fontSize: 14)),
+                subtitle: Text(
+                  server.url,
+                  style: const TextStyle(fontSize: 11),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Switch(
+                      value: server.enabled,
+                      onChanged: (v) async {
+                        server.enabled = v;
+                        await ExternalMcpServerService.save(_externalServers);
+                        if (v) {
+                          context.read<ExternalMcpProvider>().connectTo(server);
+                        } else {
+                          context.read<ExternalMcpProvider>().disconnect(
+                            server.url,
+                          );
+                        }
+                        setState(() {});
+                      },
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      onPressed: () async {
+                        await ExternalMcpServerService.remove(server.id);
+                        context.read<ExternalMcpProvider>().disconnect(
+                          server.url,
+                        );
+                        _externalServers =
+                            await ExternalMcpServerService.load();
+                        setState(() {});
+                      },
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
 
           // Add new server
           if (_showAddMcp)
@@ -525,7 +541,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                             // Show loading
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('⏳ 连接中...'), duration: Duration(seconds: 30)),
+                              const SnackBar(
+                                content: Text('⏳ 连接中...'),
+                                duration: Duration(seconds: 30),
+                              ),
                             );
 
                             final server = ExternalMcpServer(
@@ -535,11 +554,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             );
 
                             // Try to connect first
-                            final provider = context.read<ExternalMcpProvider>();
+                            final provider =
+                                context.read<ExternalMcpProvider>();
                             final error = await provider.connectTo(server);
 
                             if (mounted) {
-                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(
+                                context,
+                              ).hideCurrentSnackBar();
                               if (error == null) {
                                 // Success: save and clear
                                 await ExternalMcpServerService.add(server);
@@ -547,7 +569,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 _mcpUrlController.clear();
                                 _showAddMcp = false;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('✅ 已连接到 $name'), duration: Duration(seconds: 2)),
+                                  SnackBar(
+                                    content: Text('✅ 已连接到 $name'),
+                                    duration: Duration(seconds: 2),
+                                  ),
                                 );
                               } else {
                                 // Failure: keep form, show error
@@ -560,7 +585,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 );
                               }
                             }
-                            _externalServers = await ExternalMcpServerService.load();
+                            _externalServers =
+                                await ExternalMcpServerService.load();
                             setState(() {});
                           },
                         ),
@@ -636,9 +662,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         Icon(icon, size: 20, color: theme.colorScheme.primary),
         const SizedBox(width: 8),
-        Text(title,
-            style: theme.textTheme.titleMedium
-                ?.copyWith(color: theme.colorScheme.primary)),
+        Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
       ],
     );
   }

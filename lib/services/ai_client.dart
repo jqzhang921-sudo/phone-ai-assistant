@@ -5,14 +5,30 @@ import '../config/api_keys.dart';
 import '../models/chat_message.dart';
 import '../models/mcp_tool.dart';
 
+/// 把时间戳格式化并拼在消息内容前面，让模型能看到每条消息的发生时间。
+String _withTimestamp(String content, DateTime t) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final ts =
+      '${t.year}-${two(t.month)}-${two(t.day)} '
+      '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
+  return '[time: $ts]\n$content';
+}
+
+/// 系统级提示：时间戳只是元数据，模型不应复述。
+const _timeMetaInstruction =
+    '注意：消息内容中可能带有 [time: ...] 前缀，这是系统自动注入的发送时间元数据，'
+    '仅供你了解对话时间线。绝对不要在回复中输出、模仿或重复 [time: ...] 这类标记。';
+
 class AiClient {
   final ApiKeyConfig config;
   final List<McpTool>? tools;
 
   AiClient({required this.config, this.tools});
 
-  Stream<AiStreamEvent> chat(List<ChatMessage> messages,
-      {String? systemPrompt}) {
+  Stream<AiStreamEvent> chat(
+    List<ChatMessage> messages, {
+    String? systemPrompt,
+  }) {
     switch (config.provider) {
       case 'openai':
         return _openaiChat(messages, systemPrompt: systemPrompt);
@@ -23,15 +39,20 @@ class AiClient {
     }
   }
 
-  Stream<AiStreamEvent> _openaiChat(List<ChatMessage> messages,
-      {String? systemPrompt}) async* {
+  Stream<AiStreamEvent> _openaiChat(
+    List<ChatMessage> messages, {
+    String? systemPrompt,
+  }) async* {
     final endpoint = config.endpoint ?? 'https://api.openai.com/v1';
     final model = config.model ?? 'gpt-4o';
 
     final apiMessages = <Map<String, dynamic>>[];
 
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      apiMessages.add({'role': 'system', 'content': systemPrompt});
+      apiMessages.add({
+        'role': 'system',
+        'content': '$systemPrompt\n\n$_timeMetaInstruction',
+      });
     }
 
     for (final msg in messages) {
@@ -41,20 +62,23 @@ class AiClient {
             apiMessages.add({
               'role': 'user',
               'content': [
-                {'type': 'text', 'text': msg.content},
+                {
+                  'type': 'text',
+                  'text': _withTimestamp(msg.content, msg.timestamp),
+                },
                 {
                   'type': 'image_url',
                   'image_url': {
-                    'url': 'data:image/jpeg;base64,${msg.imageData}'
-                  }
+                    'url': 'data:image/jpeg;base64,${msg.imageData}',
+                  },
                 },
               ],
             });
           } else {
-            final ts = msg.timestamp != null
-                ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
-                : msg.content;
-            apiMessages.add({'role': 'user', 'content': ts});
+            apiMessages.add({
+              'role': 'user',
+              'content': _withTimestamp(msg.content, msg.timestamp),
+            });
           }
           break;
         case MessageRole.assistant:
@@ -62,20 +86,29 @@ class AiClient {
             final contentText = msg.content ?? '';
             apiMessages.add({
               'role': 'assistant',
-              'content': contentText.isEmpty ? null : contentText,
-              'tool_calls': msg.toolCalls!
-                  .map((t) => {
-                        'id': t.id,
-                        'type': 'function',
-                        'function': {
-                          'name': t.name,
-                          'arguments': jsonEncode(t.arguments),
+              'content':
+                  contentText.isEmpty
+                      ? null
+                      : _withTimestamp(contentText, msg.timestamp),
+              'tool_calls':
+                  msg.toolCalls!
+                      .map(
+                        (t) => {
+                          'id': t.id,
+                          'type': 'function',
+                          'function': {
+                            'name': t.name,
+                            'arguments': jsonEncode(t.arguments),
+                          },
                         },
-                      })
-                  .toList(),
+                      )
+                      .toList(),
             });
           } else {
-            apiMessages.add({'role': 'assistant', 'content': msg.content});
+            apiMessages.add({
+              'role': 'assistant',
+              'content': _withTimestamp(msg.content, msg.timestamp),
+            });
           }
           break;
         case MessageRole.toolResult:
@@ -104,20 +137,26 @@ class AiClient {
     };
 
     if (tools != null && tools!.isNotEmpty) {
-      body['tools'] = tools!
-          .map((t) => {
-                'type': 'function',
-                'function': {
-                  'name': t.name,
-                  'description': t.description,
-                  'parameters': t.inputSchema,
+      body['tools'] =
+          tools!
+              .map(
+                (t) => {
+                  'type': 'function',
+                  'function': {
+                    'name': t.name,
+                    'description': t.description,
+                    'parameters': t.inputSchema,
+                  },
                 },
-              })
-          .toList();
+              )
+              .toList();
     }
 
     try {
-      final request = http.Request('POST', Uri.parse('$endpoint/chat/completions'));
+      final request = http.Request(
+        'POST',
+        Uri.parse('$endpoint/chat/completions'),
+      );
       request.headers.addAll({
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ${config.apiKey}',
@@ -161,20 +200,20 @@ class AiClient {
                 toolCalls ??= [];
 
                 while (toolCalls!.length <= idx) {
-                  toolCalls!.add(ToolCallInfo(
-                    id: '', name: '', arguments: {},
-                  ));
+                  toolCalls!.add(ToolCallInfo(id: '', name: '', arguments: {}));
                 }
 
                 if (tc['id'] != null) {
                   toolCalls![idx] = ToolCallInfo(
-                    id: tc['id'], name: toolCalls![idx].name,
+                    id: tc['id'],
+                    name: toolCalls![idx].name,
                     arguments: toolCalls![idx].arguments,
                   );
                 }
                 if (tc['function']?['name'] != null) {
                   toolCalls![idx] = ToolCallInfo(
-                    id: toolCalls![idx].id, name: tc['function']['name'],
+                    id: toolCalls![idx].id,
+                    name: tc['function']['name'],
                     arguments: toolCalls![idx].arguments,
                   );
                 }
@@ -209,8 +248,10 @@ class AiClient {
     }
   }
 
-  Stream<AiStreamEvent> _anthropicChat(List<ChatMessage> messages,
-      {String? systemPrompt}) async* {
+  Stream<AiStreamEvent> _anthropicChat(
+    List<ChatMessage> messages, {
+    String? systemPrompt,
+  }) async* {
     final endpoint = config.endpoint ?? 'https://api.anthropic.com/v1';
     final model = config.model ?? 'claude-sonnet-5';
 
@@ -220,9 +261,7 @@ class AiClient {
         case MessageRole.user:
           apiMessages.add({
             'role': 'user',
-            'content': msg.timestamp != null
-                ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
-                : msg.content,
+            'content': _withTimestamp(msg.content, msg.timestamp),
           });
           break;
         case MessageRole.assistant:
@@ -231,9 +270,7 @@ class AiClient {
             if (msg.content.isNotEmpty) {
               content.add({
                 'type': 'text',
-                'text': msg.timestamp != null
-                    ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
-                    : msg.content,
+                'text': _withTimestamp(msg.content, msg.timestamp),
               });
             }
             for (final tc in msg.toolCalls!) {
@@ -248,9 +285,7 @@ class AiClient {
           } else {
             apiMessages.add({
               'role': 'assistant',
-              'content': msg.timestamp != null
-                  ? '[${msg.timestamp.toIso8601String()}] ${msg.content}'
-                  : msg.content,
+              'content': _withTimestamp(msg.content, msg.timestamp),
             });
           }
           break;
@@ -262,7 +297,7 @@ class AiClient {
                 'type': 'tool_result',
                 'tool_use_id': msg.toolCallId,
                 'content': msg.content,
-              }
+              },
             ],
           });
           break;
@@ -285,17 +320,20 @@ class AiClient {
     };
 
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      body['system'] = systemPrompt;
+      body['system'] = '$systemPrompt\n\n$_timeMetaInstruction';
     }
 
     if (tools != null && tools!.isNotEmpty) {
-      body['tools'] = tools!
-          .map((t) => {
-                'name': t.name,
-                'description': t.description,
-                'input_schema': t.inputSchema,
-              })
-          .toList();
+      body['tools'] =
+          tools!
+              .map(
+                (t) => {
+                  'name': t.name,
+                  'description': t.description,
+                  'input_schema': t.inputSchema,
+                },
+              )
+              .toList();
     }
 
     try {
@@ -311,7 +349,9 @@ class AiClient {
 
       if (response.statusCode != 200) {
         final error = await response.stream.bytesToString();
-        yield AiStreamEvent.error('Claude API 错误 (${response.statusCode}): $error');
+        yield AiStreamEvent.error(
+          'Claude API 错误 (${response.statusCode}): $error',
+        );
         return;
       }
 
@@ -339,14 +379,15 @@ class AiClient {
               final block = json['content_block'];
               if (block?['type'] == 'tool_use') {
                 toolCalls ??= [];
-                toolCalls!.add(ToolCallInfo(
-                  id: block['id'],
-                  name: block['name'],
-                  arguments: Map<String, dynamic>.from(block['input'] ?? {}),
-                ));
+                toolCalls!.add(
+                  ToolCallInfo(
+                    id: block['id'],
+                    name: block['name'],
+                    arguments: Map<String, dynamic>.from(block['input'] ?? {}),
+                  ),
+                );
               }
-            } else if (type == 'message_delta') {
-            }
+            } else if (type == 'message_delta') {}
           } catch (_) {}
         }
       }
@@ -368,8 +409,12 @@ class AiStreamEvent {
   final List<ToolCallInfo>? toolCalls;
   final String? error;
 
-  const AiStreamEvent._(
-      {required this.type, this.text, this.toolCalls, this.error});
+  const AiStreamEvent._({
+    required this.type,
+    this.text,
+    this.toolCalls,
+    this.error,
+  });
 
   factory AiStreamEvent.token(String text) =>
       AiStreamEvent._(type: AiEventType.token, text: text);

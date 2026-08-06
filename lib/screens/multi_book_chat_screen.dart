@@ -15,17 +15,13 @@ import '../services/discussion_generator.dart';
 import '../services/discussion_group_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
-import 'chat_screen.dart';
+import '../services/app_providers.dart';
 
 class MultiBookChatScreen extends StatefulWidget {
   final List<Book> books;
   final String? groupId;
 
-  const MultiBookChatScreen({
-    super.key,
-    required this.books,
-    this.groupId,
-  });
+  const MultiBookChatScreen({super.key, required this.books, this.groupId});
 
   @override
   State<MultiBookChatScreen> createState() => _MultiBookChatScreenState();
@@ -43,14 +39,15 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           ? 'group_${widget.groupId}'
           : 'multi_${widget.books.map((b) => b.id).join('_')}';
 
-  String get _title =>
-      widget.books.map((b) => '《${b.title}》').join(' · ');
+  String get _title => widget.books.map((b) => '《${b.title}》').join(' · ');
 
   String get _systemPrompt {
-    final names = widget.books.map((b) {
-      final a = b.author != null ? '（${b.author}）' : '';
-      return '《${b.title}》$a';
-    }).join('、');
+    final names = widget.books
+        .map((b) {
+          final a = b.author != null ? '（${b.author}）' : '';
+          return '《${b.title}》$a';
+        })
+        .join('、');
     return '我们正在一起聊这几本书：$names。'
         '你可以分享对这些书的看法，也可以对比它们之间的异同，'
         '像两个读过这些书的朋友在聊天一样，而不是单纯回答问题。'
@@ -110,18 +107,15 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     });
   }
 
-
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _isLoading) return;
     _textController.clear();
 
     setState(() {
-      _conversation.messages.add(ChatMessage(
-        id: _uuid.v4(),
-        role: MessageRole.user,
-        content: text,
-      ));
+      _conversation.messages.add(
+        ChatMessage(id: _uuid.v4(), role: MessageRole.user, content: text),
+      );
       _isLoading = true;
     });
     _scrollToBottom();
@@ -135,17 +129,22 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
 
     if (aiClient == null) {
       setState(() {
-        _conversation.messages.add(ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
-          content: '请先在设置中配置 API Key',
-        ));
+        _conversation.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: '请先在设置中配置 API Key',
+          ),
+        );
         _isLoading = false;
       });
       return;
     }
 
-    final allTools = [...mcpServer.registeredTools.map((r) => r.tool), ...externalTools];
+    final allTools = [
+      ...mcpServer.registeredTools.map((r) => r.tool),
+      ...externalTools,
+    ];
     final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
 
     int maxRounds = 5;
@@ -166,16 +165,21 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
 
             case AiEventType.toolCalls:
               fullResponse = fullResponse ?? '';
-              _updateAssistantMessage(fullResponse, toolCalls: event.toolCalls ?? []);
+              _updateAssistantMessage(
+                fullResponse,
+                toolCalls: event.toolCalls ?? [],
+              );
               _finalizeStreamMessage();
               for (final tc in event.toolCalls ?? []) {
                 final toolResult = await _executeTool(mcpServer, tc);
-                _conversation.messages.add(ChatMessage(
-                  id: _uuid.v4(),
-                  role: MessageRole.toolResult,
-                  content: toolResult,
-                  toolCallId: tc.id,
-                ));
+                _conversation.messages.add(
+                  ChatMessage(
+                    id: _uuid.v4(),
+                    role: MessageRole.toolResult,
+                    content: toolResult,
+                    toolCallId: tc.id,
+                  ),
+                );
               }
               fullResponse = null;
               break;
@@ -190,8 +194,8 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
                 event.error?.contains('400') == true
                     ? '抱歉，该模型暂不支持图片识别'
                     : event.error?.contains('401') == true
-                        ? 'API 密钥无效或已过期，请在设置中更新'
-                        : '抱歉，我遇到了一点问题，请再试一次',
+                    ? 'API 密钥无效或已过期，请在设置中更新'
+                    : '抱歉，我遇到了一点问题，请再试一次',
               );
               _finalizeStreamMessage();
               fullResponse = 'done';
@@ -212,10 +216,11 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
   }
 
   Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
-    final executor = mcpServer.registeredTools
-        .where((r) => r.tool.name == tc.name)
-        .firstOrNull
-        ?.executor;
+    final executor =
+        mcpServer.registeredTools
+            .where((r) => r.tool.name == tc.name)
+            .firstOrNull
+            ?.executor;
     if (executor != null) {
       final result = await executor(tc.arguments);
       return result.toString();
@@ -229,7 +234,10 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     return '错误: 工具 ${tc.name} 未找到';
   }
 
-  void _updateAssistantMessage(String content, {List<ToolCallInfo>? toolCalls}) {
+  void _updateAssistantMessage(
+    String content, {
+    List<ToolCallInfo>? toolCalls,
+  }) {
     setState(() {
       if (_conversation.messages.isNotEmpty &&
           _conversation.messages.last.role == MessageRole.assistant &&
@@ -241,12 +249,14 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           toolCalls: toolCalls,
         );
       } else {
-        _conversation.messages.add(ChatMessage(
-          id: 'stream_${_uuid.v4()}',
-          role: MessageRole.assistant,
-          content: content,
-          toolCalls: toolCalls,
-        ));
+        _conversation.messages.add(
+          ChatMessage(
+            id: 'stream_${_uuid.v4()}',
+            role: MessageRole.assistant,
+            content: content,
+            toolCalls: toolCalls,
+          ),
+        );
       }
     });
     _scrollToBottom();
@@ -273,24 +283,25 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
 
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('离开讨论'),
-        content: const Text('要生成本次讨论的 Discussion 笔记吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('no'),
-            child: const Text('不生成'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('离开讨论'),
+            content: const Text('要生成本次讨论的 Discussion 笔记吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('no'),
+                child: const Text('不生成'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('save'),
+                child: const Text('保存对话'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop('generate'),
+                child: const Text('生成 Discussion'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('save'),
-            child: const Text('保存对话'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop('generate'),
-            child: const Text('生成 Discussion'),
-          ),
-        ],
-      ),
     );
 
     if (result == 'generate') {
@@ -328,9 +339,9 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Discussion 笔记已生成')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Discussion 笔记已生成')));
     }
   }
 
@@ -344,71 +355,77 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     if (!mounted) return;
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('管理讨论集合', style: Theme.of(ctx).textTheme.titleMedium),
-              const SizedBox(height: 16),
+      builder:
+          (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('管理讨论集合', style: Theme.of(ctx).textTheme.titleMedium),
+                  const SizedBox(height: 16),
 
-              // Rename
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('重命名'),
-                subtitle: Text(group.name),
-                onTap: () async {
-                  Navigator.of(ctx).pop();
-                  final controller = TextEditingController(text: group.name);
-                  final result = await showDialog<String>(
-                    context: context,
-                    builder: (dctx) => AlertDialog(
-                      title: const Text('重命名集合'),
-                      content: TextField(
-                        controller: controller,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          hintText: '输入新名称',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(dctx).pop(),
-                          child: const Text('取消'),
-                        ),
-                        FilledButton(
-                          onPressed: () =>
-                              Navigator.of(dctx).pop(controller.text.trim()),
-                          child: const Text('确定'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (result != null && result.isNotEmpty && mounted) {
-                    await DiscussionGroupService.saveGroup(
-                      id: group.id,
-                      name: result,
-                      bookIds: group.bookIds,
-                    );
-                    if (mounted) setState(() {});
-                  }
-                },
-              ),
+                  // Rename
+                  ListTile(
+                    leading: const Icon(Icons.edit),
+                    title: const Text('重命名'),
+                    subtitle: Text(group.name),
+                    onTap: () async {
+                      Navigator.of(ctx).pop();
+                      final controller = TextEditingController(
+                        text: group.name,
+                      );
+                      final result = await showDialog<String>(
+                        context: context,
+                        builder:
+                            (dctx) => AlertDialog(
+                              title: const Text('重命名集合'),
+                              content: TextField(
+                                controller: controller,
+                                autofocus: true,
+                                decoration: const InputDecoration(
+                                  hintText: '输入新名称',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(dctx).pop(),
+                                  child: const Text('取消'),
+                                ),
+                                FilledButton(
+                                  onPressed:
+                                      () => Navigator.of(
+                                        dctx,
+                                      ).pop(controller.text.trim()),
+                                  child: const Text('确定'),
+                                ),
+                              ],
+                            ),
+                      );
+                      if (result != null && result.isNotEmpty && mounted) {
+                        await DiscussionGroupService.saveGroup(
+                          id: group.id,
+                          name: result,
+                          bookIds: group.bookIds,
+                        );
+                        if (mounted) setState(() {});
+                      }
+                    },
+                  ),
 
-              // Book list
-              ListTile(
-                leading: const Icon(Icons.menu_book),
-                title: Text('${widget.books.length}本'),
-                subtitle: Text(widget.books.map((b) => b.title).join('、')),
+                  // Book list
+                  ListTile(
+                    leading: const Icon(Icons.menu_book),
+                    title: Text('${widget.books.length}本'),
+                    subtitle: Text(widget.books.map((b) => b.title).join('、')),
+                  ),
+                  const SizedBox(height: 24),
+                ],
               ),
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -445,29 +462,34 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(2),
-            child: _isLoading ? const LinearProgressIndicator() : const SizedBox.shrink(),
+            child:
+                _isLoading
+                    ? const LinearProgressIndicator()
+                    : const SizedBox.shrink(),
           ),
         ),
         body: Column(
           children: [
             Expanded(
-              child: _conversation.messages.isEmpty
-                  ? _buildEmptyState(theme)
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: _conversation.messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = _conversation.messages[index];
-                        if (msg.role == MessageRole.toolCall && msg.toolCalls != null) {
-                          return ToolCallCard(toolCalls: msg.toolCalls!);
-                        }
-                        if (msg.role == MessageRole.toolResult) {
-                          return ToolResultCard(content: msg.content);
-                        }
-                        return MessageBubble(message: msg);
-                      },
-                    ),
+              child:
+                  _conversation.messages.isEmpty
+                      ? _buildEmptyState(theme)
+                      : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _conversation.messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _conversation.messages[index];
+                          if (msg.role == MessageRole.toolCall &&
+                              msg.toolCalls != null) {
+                            return ToolCallCard(toolCalls: msg.toolCalls!);
+                          }
+                          if (msg.role == MessageRole.toolResult) {
+                            return ToolResultCard(content: msg.content);
+                          }
+                          return MessageBubble(message: msg);
+                        },
+                      ),
             ),
             _buildInputArea(theme),
           ],
@@ -477,61 +499,76 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
   }
 
   Widget _buildEmptyState(ThemeData theme) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.menu_book_rounded, size: 64,
-                color: theme.colorScheme.primary.withAlpha(60)),
-            const SizedBox(height: 16),
-            Text(_title, style: theme.textTheme.titleMedium,
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text('开始聊聊这几本书吧',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ],
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.menu_book_rounded,
+          size: 64,
+          color: theme.colorScheme.primary.withAlpha(60),
         ),
-      );
+        const SizedBox(height: 16),
+        Text(
+          _title,
+          style: theme.textTheme.titleMedium,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '开始聊聊这几本书吧',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildInputArea(ThemeData theme) => Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          border: Border(top: BorderSide(color: theme.dividerColor)),
-        ),
-        padding: EdgeInsets.only(
-          left: 12, right: 8, top: 8,
-          bottom: MediaQuery.of(context).padding.bottom + 8,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _textController,
-                maxLines: 5,
-                minLines: 1,
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText: '聊聊这几本书...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  filled: true,
-                  fillColor: theme.colorScheme.surfaceContainerHighest,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                ),
+    decoration: BoxDecoration(
+      color: theme.colorScheme.surface,
+      border: Border(top: BorderSide(color: theme.dividerColor)),
+    ),
+    padding: EdgeInsets.only(
+      left: 12,
+      right: 8,
+      top: 8,
+      bottom: MediaQuery.of(context).padding.bottom + 8,
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _textController,
+            maxLines: 5,
+            minLines: 1,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            decoration: InputDecoration(
+              hintText: '聊聊这几本书...',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide: BorderSide.none,
+              ),
+              filled: true,
+              fillColor: theme.colorScheme.surfaceContainerHighest,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
               ),
             ),
-            const SizedBox(width: 4),
-            IconButton(
-              icon: Icon(_isLoading ? Icons.stop : Icons.send_rounded,
-                  color: theme.colorScheme.primary),
-              onPressed: _isLoading ? null : _sendMessage,
-            ),
-          ],
+          ),
         ),
-      );
+        const SizedBox(width: 4),
+        IconButton(
+          icon: Icon(
+            _isLoading ? Icons.stop : Icons.send_rounded,
+            color: theme.colorScheme.primary,
+          ),
+          onPressed: _isLoading ? null : _sendMessage,
+        ),
+      ],
+    ),
+  );
 }

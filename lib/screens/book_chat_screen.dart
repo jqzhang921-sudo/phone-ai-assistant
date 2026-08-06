@@ -14,7 +14,7 @@ import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 import '../services/discussion_generator.dart';
 import '../services/weread_service.dart';
-import 'chat_screen.dart';
+import '../services/app_providers.dart';
 
 class BookChatScreen extends StatefulWidget {
   final String bookId;
@@ -65,17 +65,22 @@ class _BookChatScreenState extends State<BookChatScreen> {
   }
 
   Future<void> _injectWereadHighlights() async {
-    final highlights = await WereadService.fetchHighlights(widget.wereadBookId!);
+    final highlights = await WereadService.fetchHighlights(
+      widget.wereadBookId!,
+    );
     if (highlights == null) return;
     // Only inject if this is a fresh conversation
     if (_conversation.messages.isNotEmpty) return;
     setState(() {
-      _conversation.messages.add(ChatMessage(
-        id: _uuid.v4(),
-        role: MessageRole.assistant,
-        content: '这是你在微信读书中对《${widget.bookTitle}》的划线和笔记。'
-            '我们可以从这里开始讨论：\n\n$highlights',
-      ));
+      _conversation.messages.add(
+        ChatMessage(
+          id: _uuid.v4(),
+          role: MessageRole.assistant,
+          content:
+              '这是你在微信读书中对《${widget.bookTitle}》的划线和笔记。'
+              '我们可以从这里开始讨论：\n\n$highlights',
+        ),
+      );
     });
     _saveConversation();
   }
@@ -123,7 +128,6 @@ class _BookChatScreenState extends State<BookChatScreen> {
     });
   }
 
-
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _isLoading) return;
@@ -150,17 +154,22 @@ class _BookChatScreenState extends State<BookChatScreen> {
 
     if (aiClient == null) {
       setState(() {
-        _conversation.messages.add(ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
-          content: '请先在设置中配置 API Key',
-        ));
+        _conversation.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: '请先在设置中配置 API Key',
+          ),
+        );
         _isLoading = false;
       });
       return;
     }
 
-    final allTools = [...mcpServer.registeredTools.map((r) => r.tool), ...externalTools];
+    final allTools = [
+      ...mcpServer.registeredTools.map((r) => r.tool),
+      ...externalTools,
+    ];
     final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
 
     int maxRounds = 5;
@@ -180,16 +189,21 @@ class _BookChatScreenState extends State<BookChatScreen> {
               break;
 
             case AiEventType.toolCalls:
-              _updateAssistantMessage(fullResponse ?? '', toolCalls: event.toolCalls ?? []);
+              _updateAssistantMessage(
+                fullResponse ?? '',
+                toolCalls: event.toolCalls ?? [],
+              );
               _finalizeStreamMessage();
               for (final tc in event.toolCalls ?? []) {
                 final toolResult = await _executeTool(mcpServer, tc);
-                _conversation.messages.add(ChatMessage(
-                  id: _uuid.v4(),
-                  role: MessageRole.toolResult,
-                  content: toolResult,
-                  toolCallId: tc.id,
-                ));
+                _conversation.messages.add(
+                  ChatMessage(
+                    id: _uuid.v4(),
+                    role: MessageRole.toolResult,
+                    content: toolResult,
+                    toolCallId: tc.id,
+                  ),
+                );
               }
               fullResponse = null;
               break;
@@ -204,8 +218,8 @@ class _BookChatScreenState extends State<BookChatScreen> {
                 event.error?.contains('400') == true
                     ? '抱歉，该模型暂不支持图片识别'
                     : event.error?.contains('401') == true
-                        ? 'API 密钥无效或已过期，请在设置中更新'
-                        : '抱歉，我遇到了一点问题，请再试一次',
+                    ? 'API 密钥无效或已过期，请在设置中更新'
+                    : '抱歉，我遇到了一点问题，请再试一次',
               );
               _finalizeStreamMessage();
               fullResponse = 'done';
@@ -226,10 +240,11 @@ class _BookChatScreenState extends State<BookChatScreen> {
   }
 
   Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
-    final executor = mcpServer.registeredTools
-        .where((r) => r.tool.name == tc.name)
-        .firstOrNull
-        ?.executor;
+    final executor =
+        mcpServer.registeredTools
+            .where((r) => r.tool.name == tc.name)
+            .firstOrNull
+            ?.executor;
     if (executor != null) {
       final result = await executor(tc.arguments);
       return result.toString();
@@ -245,7 +260,10 @@ class _BookChatScreenState extends State<BookChatScreen> {
     return '错误: 工具 ${tc.name} 未找到';
   }
 
-  void _updateAssistantMessage(String content, {List<ToolCallInfo>? toolCalls}) {
+  void _updateAssistantMessage(
+    String content, {
+    List<ToolCallInfo>? toolCalls,
+  }) {
     setState(() {
       if (_conversation.messages.isNotEmpty &&
           _conversation.messages.last.role == MessageRole.assistant &&
@@ -257,12 +275,14 @@ class _BookChatScreenState extends State<BookChatScreen> {
           toolCalls: toolCalls,
         );
       } else {
-        _conversation.messages.add(ChatMessage(
-          id: 'stream_${_uuid.v4()}',
-          role: MessageRole.assistant,
-          content: content,
-          toolCalls: toolCalls,
-        ));
+        _conversation.messages.add(
+          ChatMessage(
+            id: 'stream_${_uuid.v4()}',
+            role: MessageRole.assistant,
+            content: content,
+            toolCalls: toolCalls,
+          ),
+        );
       }
     });
     _scrollToBottom();
@@ -273,24 +293,25 @@ class _BookChatScreenState extends State<BookChatScreen> {
 
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('离开讨论'),
-        content: const Text('要生成本次讨论的 Discussion 笔记吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('no'),
-            child: const Text('不生成'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('离开讨论'),
+            content: const Text('要生成本次讨论的 Discussion 笔记吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('no'),
+                child: const Text('不生成'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop('save'),
+                child: const Text('保存对话'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop('generate'),
+                child: const Text('生成 Discussion'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('save'),
-            child: const Text('保存对话'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop('generate'),
-            child: const Text('生成 Discussion'),
-          ),
-        ],
-      ),
     );
 
     if (result == 'generate') {
@@ -326,9 +347,9 @@ class _BookChatScreenState extends State<BookChatScreen> {
       await prefs.setString(key, jsonEncode(list));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Discussion 笔记已生成')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Discussion 笔记已生成')));
       }
     }
   }
@@ -363,107 +384,151 @@ class _BookChatScreenState extends State<BookChatScreen> {
         }
       },
       child: Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () async {
-            final shouldPop = await _handleBack();
-            if (shouldPop && mounted) {
-              Navigator.of(context).pop();
-            }
-          },
-        ),
-        title: Text('《${widget.bookTitle}》'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              if (v == 'refresh') {
-                if (widget.wereadBookId == null) return;
-                final highlights = await WereadService.fetchHighlights(widget.wereadBookId!);
-                if (highlights == null) {
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('没有新的划线')));
-                  return;
-                }
-                setState(() {
-                  _conversation.messages.add(ChatMessage(
-                    id: _uuid.v4(),
-                    role: MessageRole.assistant,
-                    content: '【已同步微信读书最新划线/笔记】\n\n$highlights',
-                  ));
-                });
-                _saveConversation();
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('划线已刷新')));
-              } else if (v == 'delete') {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('删除讨论'),
-                    content: const Text('确定要删除当前讨论记录吗？删除后重新打开将导入微信读书划线。'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                      FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
-                    ],
-                  ),
-                );
-                if (ok == true) {
-                  final dir = await _bookConvDir;
-                  final file = File('${dir.path}/book_${widget.bookId}.json');
-                  await file.delete();
-                  if (mounted) {
-                    _conversation.messages.clear();
-                    setState(() {});
-                    // Re-inject highlights
-                    if (widget.wereadBookId != null) _injectWereadHighlights();
-                  }
-                }
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              final shouldPop = await _handleBack();
+              if (shouldPop && mounted) {
+                Navigator.of(context).pop();
               }
             },
-            itemBuilder: (ctx) => [
-              PopupMenuItem(value: 'refresh', child: ListTile(
-                leading: Icon(Icons.sync, color: widget.wereadBookId != null ? null : Theme.of(ctx).disabledColor),
-                title: Text('刷新划线', style: widget.wereadBookId != null ? null : TextStyle(color: Theme.of(ctx).disabledColor)),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'delete', child: ListTile(
-                leading: Icon(Icons.delete_outline), title: Text('删除讨论'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-            ],
           ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(2),
-          child: _isLoading
-              ? const LinearProgressIndicator()
-              : const SizedBox.shrink(),
+          title: Text('《${widget.bookTitle}》'),
+          actions: [
+            PopupMenuButton<String>(
+              onSelected: (v) async {
+                if (v == 'refresh') {
+                  if (widget.wereadBookId == null) return;
+                  final highlights = await WereadService.fetchHighlights(
+                    widget.wereadBookId!,
+                  );
+                  if (highlights == null) {
+                    if (mounted)
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(const SnackBar(content: Text('没有新的划线')));
+                    return;
+                  }
+                  setState(() {
+                    _conversation.messages.add(
+                      ChatMessage(
+                        id: _uuid.v4(),
+                        role: MessageRole.assistant,
+                        content: '【已同步微信读书最新划线/笔记】\n\n$highlights',
+                      ),
+                    );
+                  });
+                  _saveConversation();
+                  if (mounted)
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('划线已刷新')));
+                } else if (v == 'delete') {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder:
+                        (ctx) => AlertDialog(
+                          title: const Text('删除讨论'),
+                          content: const Text('确定要删除当前讨论记录吗？删除后重新打开将导入微信读书划线。'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('取消'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('删除'),
+                            ),
+                          ],
+                        ),
+                  );
+                  if (ok == true) {
+                    final dir = await _bookConvDir;
+                    final file = File('${dir.path}/book_${widget.bookId}.json');
+                    await file.delete();
+                    if (mounted) {
+                      _conversation.messages.clear();
+                      setState(() {});
+                      // Re-inject highlights
+                      if (widget.wereadBookId != null)
+                        _injectWereadHighlights();
+                    }
+                  }
+                }
+              },
+              itemBuilder:
+                  (ctx) => [
+                    PopupMenuItem(
+                      value: 'refresh',
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.sync,
+                          color:
+                              widget.wereadBookId != null
+                                  ? null
+                                  : Theme.of(ctx).disabledColor,
+                        ),
+                        title: Text(
+                          '刷新划线',
+                          style:
+                              widget.wereadBookId != null
+                                  ? null
+                                  : TextStyle(
+                                    color: Theme.of(ctx).disabledColor,
+                                  ),
+                        ),
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('删除讨论'),
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(2),
+            child:
+                _isLoading
+                    ? const LinearProgressIndicator()
+                    : const SizedBox.shrink(),
+          ),
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child:
+                  _conversation.messages.isEmpty
+                      ? _buildEmptyState(theme)
+                      : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _conversation.messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _conversation.messages[index];
+                          if (msg.role == MessageRole.toolCall &&
+                              msg.toolCalls != null) {
+                            return ToolCallCard(toolCalls: msg.toolCalls!);
+                          }
+                          if (msg.role == MessageRole.toolResult) {
+                            return ToolResultCard(content: msg.content);
+                          }
+                          return MessageBubble(message: msg);
+                        },
+                      ),
+            ),
+            _buildInputArea(theme),
+          ],
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _conversation.messages.isEmpty
-                ? _buildEmptyState(theme)
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _conversation.messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = _conversation.messages[index];
-                      if (msg.role == MessageRole.toolCall &&
-                          msg.toolCalls != null) {
-                        return ToolCallCard(toolCalls: msg.toolCalls!);
-                      }
-                      if (msg.role == MessageRole.toolResult) {
-                        return ToolResultCard(content: msg.content);
-                      }
-                      return MessageBubble(message: msg);
-                    },
-                  ),
-          ),
-          _buildInputArea(theme),
-        ],
-      ),
-    ),
     );
   }
 
@@ -472,8 +537,11 @@ class _BookChatScreenState extends State<BookChatScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.menu_book_rounded,
-              size: 80, color: theme.colorScheme.primary.withAlpha(60)),
+          Icon(
+            Icons.menu_book_rounded,
+            size: 80,
+            color: theme.colorScheme.primary.withAlpha(60),
+          ),
           const SizedBox(height: 16),
           Text(
             '《${widget.bookTitle}》',
@@ -483,8 +551,9 @@ class _BookChatScreenState extends State<BookChatScreen> {
           const SizedBox(height: 8),
           Text(
             '开始聊聊这本书吧',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -521,8 +590,10 @@ class _BookChatScreenState extends State<BookChatScreen> {
                 ),
                 filled: true,
                 fillColor: theme.colorScheme.surfaceContainerHighest,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
             ),
           ),

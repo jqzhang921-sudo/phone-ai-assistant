@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'config/api_keys.dart';
 import 'config/settings.dart';
-import 'screens/chat_screen.dart';
-import 'screens/settings_screen.dart';
-import 'screens/bookshelf_screen.dart';
-import 'screens/tools_screen.dart';
+import 'config/app_theme.dart';
+import 'screens/home_shell.dart';
 import 'services/ai_client.dart';
+import 'services/app_providers.dart';
 import 'services/storage_service.dart';
 import 'services/external_mcp_service.dart';
 import 'services/tts_service.dart';
@@ -19,7 +18,9 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AiClientProvider()),
-        ChangeNotifierProvider(create: (_) => McpServerProvider()..markInitialized()),
+        ChangeNotifierProvider(
+          create: (_) => McpServerProvider()..markInitialized(),
+        ),
         ChangeNotifierProvider(create: (_) => ExternalMcpProvider()),
         ChangeNotifierProvider(create: (_) => TtsService()),
       ],
@@ -86,55 +87,12 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
         return MaterialApp(
           title: '手机 AI 助手',
           debugShowCheckedModeBanner: false,
-          theme: _buildTheme(Brightness.light),
-          darkTheme: _buildTheme(Brightness.dark),
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
           themeMode: settings.themeMode,
-          initialRoute: '/',
-          routes: {
-            '/': (_) => const ChatScreen(),
-            '/bookshelf': (_) => const BookshelfScreen(),
-            '/settings': (_) => const SettingsScreen(),
-            '/tools': (_) => const ToolsScreen(),
-          },
+          home: const HomeShell(),
         );
       },
-    );
-  }
-
-  ThemeData _buildTheme(Brightness brightness) {
-    final colorScheme = brightness == Brightness.light
-        ? ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1FA463),
-            brightness: Brightness.light,
-          )
-        : ColorScheme.fromSeed(
-            seedColor: const Color(0xFF4CD98A),
-            brightness: Brightness.dark,
-          );
-
-    return ThemeData(
-      colorScheme: colorScheme,
-      useMaterial3: true,
-      appBarTheme: AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 1,
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: colorScheme.outlineVariant),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
     );
   }
 }

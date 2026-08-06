@@ -1,29 +1,43 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
-import '../models/mcp_tool.dart';
+import '../config/app_tab.dart';
 import '../services/ai_client.dart';
+import '../services/app_providers.dart';
 import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
+import '../services/vision_service.dart';
 import '../services/weread_service.dart';
-import '../services/external_mcp_client.dart';
-import '../services/external_mcp_service.dart';
 import '../search/history_search_delegate.dart';
 import '../search/search_result_model.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  /// 底部导航切换回调，用于从聊天页跳转到书架 / 工具 / 设置。
+  final void Function(AppTab tab)? onSwitchTab;
+
+  /// 聊天背景变化回调，用于通知 HomeShell 刷新全局背景。
+  final VoidCallback? onBackgroundChanged;
+
+  /// 对话模式变化回调：true=进入对话（隐藏 Tab 栏），false=回到主页。
+  final ValueChanged<bool>? onChatModeChanged;
+
+  const ChatScreen({
+    super.key,
+    this.onSwitchTab,
+    this.onBackgroundChanged,
+    this.onChatModeChanged,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -37,7 +51,10 @@ class _ChatScreenState extends State<ChatScreen> {
   stt.SpeechToText? _speech;
   bool _isListening = false;
   bool _isLoading = false;
+  bool _voiceMode = false;
+  bool _chatMode = false;
   List<Conversation> _savedConversations = [];
+  String? _backgroundImagePath;
 
   late Conversation _conversation;
 
@@ -47,6 +64,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversation = Conversation(id: _uuid.v4());
     _initSpeech();
     _loadConversations();
+    _loadBackground();
   }
 
   @override
@@ -67,16 +85,35 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) setState(() => _savedConversations = convs);
   }
 
+  Future<void> _loadBackground() async {
+    final path = await StorageService.getBackgroundImagePath();
+    if (mounted) setState(() => _backgroundImagePath = path);
+  }
+
+  Future<void> _pickBackground() async {
+    final image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    await StorageService.setBackgroundImagePath(image.path);
+    if (mounted) setState(() => _backgroundImagePath = image.path);
+    widget.onBackgroundChanged?.call();
+  }
+
+  Future<void> _clearBackground() async {
+    await StorageService.setBackgroundImagePath(null);
+    if (mounted) setState(() => _backgroundImagePath = null);
+    widget.onBackgroundChanged?.call();
+  }
+
   void _switchConversation(Conversation conv) {
     if (_conversation.messages.isNotEmpty) _saveConversation();
     setState(() {
       _conversation = conv;
       _isLoading = false;
       _textController.clear();
+      _chatMode = true;
     });
-    Navigator.of(context).maybePop().then((_) {
-      _scrollToBottom();
-    });
+    widget.onChatModeChanged?.call(true);
+    _scrollToBottom();
   }
 
   void _newConversation() {
@@ -85,9 +122,29 @@ class _ChatScreenState extends State<ChatScreen> {
       _conversation = Conversation(id: _uuid.v4());
       _isLoading = false;
       _textController.clear();
+      _chatMode = true;
     });
-    Navigator.of(context).maybePop();
+    widget.onChatModeChanged?.call(true);
     _loadConversations();
+  }
+
+  /// 返回主页：保存当前对话，回到主页模式。
+  void _goHome() {
+    if (_conversation.messages.isNotEmpty) _saveConversation();
+    setState(() {
+      _conversation = Conversation(id: _uuid.v4());
+      _isLoading = false;
+      _chatMode = false;
+      _textController.clear();
+    });
+    widget.onChatModeChanged?.call(false);
+    _loadConversations();
+  }
+
+  void _enterChatMode() {
+    if (_chatMode) return;
+    setState(() => _chatMode = true);
+    widget.onChatModeChanged?.call(true);
   }
 
   void _scrollToBottom() {
@@ -97,7 +154,9 @@ class _ChatScreenState extends State<ChatScreen> {
         // Try again after layout settles
         Future.delayed(const Duration(milliseconds: 100), () {
           if (_scrollController.hasClients) {
-            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+            _scrollController.jumpTo(
+              _scrollController.position.maxScrollExtent,
+            );
           }
         });
       }
@@ -143,23 +202,38 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _pickAndSendImage() async {
+  Future<void> _pickAndSendImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(
-      source: ImageSource.gallery,
+      source: source,
       maxWidth: 1920,
       maxHeight: 1920,
     );
     if (image == null) return;
+    _enterChatMode();
     final bytes = await image.readAsBytes();
     final base64 = base64Encode(bytes);
 
     final text = _textController.text.trim();
     _textController.clear();
 
+    // Try MIMO vision analysis first
+    String? visionResult;
+    try {
+      visionResult = await VisionService.analyze(
+        base64,
+        prompt: text.isNotEmpty ? text : null,
+      );
+    } catch (_) {}
+
+    final content =
+        visionResult != null
+            ? '${text.isNotEmpty ? "$text\n\n" : ""}[图片分析: $visionResult]'
+            : (text.isNotEmpty ? text : '分析这张图片');
+
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.user,
-      content: text.isEmpty ? '分析这张图片' : text,
+      content: content,
       imageData: base64,
     );
 
@@ -172,12 +246,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _startListening() async {
-    if (_speech == null) return;
-    if (_isListening) {
-      _speech!.stop();
-      setState(() => _isListening = false);
-      return;
-    }
+    if (_speech == null || _isListening) return;
 
     final available = await _speech!.initialize();
     if (available) {
@@ -194,9 +263,152 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _stopListening() {
+    if (!_isListening) return;
+    _speech?.stop();
+    setState(() => _isListening = false);
+    // 识别结果已填入输入框，切回文字模式方便编辑 / 发送
+    if (mounted) setState(() => _voiceMode = false);
+  }
+
+  void _showAttachmentMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder:
+          (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        ctx,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      _attachmentItem(
+                        ctx,
+                        Icons.photo_camera_outlined,
+                        '拍照',
+                        () => Navigator.of(ctx).pop(),
+                        action: () => _pickAndSendImage(ImageSource.camera),
+                      ),
+                      _attachmentItem(
+                        ctx,
+                        Icons.photo_library_outlined,
+                        '相册',
+                        () => Navigator.of(ctx).pop(),
+                        action: () => _pickAndSendImage(ImageSource.gallery),
+                      ),
+                      _attachmentItem(
+                        ctx,
+                        Icons.insert_drive_file_outlined,
+                        '文件',
+                        () => Navigator.of(ctx).pop(),
+                        action: _pickAndSendFile,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  Widget _attachmentItem(
+    BuildContext ctx,
+    IconData icon,
+    String label,
+    VoidCallback onClose, {
+    required VoidCallback action,
+  }) {
+    final scheme = Theme.of(ctx).colorScheme;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          onClose();
+          action();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Icon(icon, size: 24, color: scheme.onSurface),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(fontSize: 12, color: scheme.onSurface),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndSendFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles();
+      if (result == null || result.files.isEmpty) return;
+      _enterChatMode();
+      final file = result.files.single;
+      final name = file.name;
+      var content = '';
+      final path = file.path;
+      if (path != null) {
+        final f = File(path);
+        if (await f.exists() && await f.length() < 200 * 1024) {
+          try {
+            final bytes = await f.readAsBytes();
+            content = utf8.decode(bytes, allowMalformed: true);
+          } catch (_) {}
+        }
+      }
+      final trimmed = content.trim();
+      final msgText =
+          trimmed.isNotEmpty
+              ? '📎 文件：$name\n\n${trimmed.length > 2000 ? trimmed.substring(0, 2000) : trimmed}'
+              : '📎 文件：$name（${file.size} 字节，非文本内容，已附带文件名）';
+
+      final userMsg = ChatMessage(
+        id: _uuid.v4(),
+        role: MessageRole.user,
+        content: msgText,
+      );
+      setState(() {
+        _conversation.messages.add(userMsg);
+        _isLoading = true;
+      });
+      _scrollToBottom();
+      _continueChat();
+    } catch (_) {}
+  }
+
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _isLoading) return;
+    _enterChatMode();
     _textController.clear();
 
     final userMsg = ChatMessage(
@@ -219,10 +431,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (aiClient == null) {
       setState(() {
-        _conversation.messages.add(ChatMessage(
-          id: _uuid.v4(), role: MessageRole.assistant,
-          content: '⚠️ 请先在设置中配置 API Key',
-        ));
+        _conversation.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: '⚠️ 请先在设置中配置 API Key',
+          ),
+        );
         _isLoading = false;
       });
       return;
@@ -246,7 +461,9 @@ class _ChatScreenState extends State<ChatScreen> {
       try {
         await for (final event in clientWithTools.chat(
           _conversation.messages,
-          systemPrompt: _conversation.systemPrompt ?? '你是一个手机 AI 助手。你可以使用手机上的工具来帮助用户：拍照、查看文件、获取位置等。请根据用户的需求主动使用这些工具。',
+          systemPrompt:
+              _conversation.systemPrompt ??
+              '你是一个手机 AI 助手。你可以使用手机上的工具来帮助用户：拍照、查看文件、获取位置等。请根据用户的需求主动使用这些工具。',
         )) {
           switch (event.type) {
             case AiEventType.token:
@@ -257,14 +474,21 @@ class _ChatScreenState extends State<ChatScreen> {
             case AiEventType.toolCalls:
               fullResponse = fullResponse ?? '';
               // Embed tool calls in the assistant message, then finalize
-              _updateAssistantMessage(fullResponse, toolCalls: event.toolCalls ?? []);
+              _updateAssistantMessage(
+                fullResponse,
+                toolCalls: event.toolCalls ?? [],
+              );
               _finalizeStreamMessage();
               for (final tc in event.toolCalls ?? []) {
                 final toolResult = await _executeTool(mcpServer, tc);
-                _conversation.messages.add(ChatMessage(
-                  id: _uuid.v4(), role: MessageRole.toolResult,
-                  content: toolResult, toolCallId: tc.id,
-                ));
+                _conversation.messages.add(
+                  ChatMessage(
+                    id: _uuid.v4(),
+                    role: MessageRole.toolResult,
+                    content: toolResult,
+                    toolCallId: tc.id,
+                  ),
+                );
               }
               // Break out of the stream loop to continue the outer while loop
               fullResponse = null; // signal that we need another round
@@ -276,14 +500,8 @@ class _ChatScreenState extends State<ChatScreen> {
               break;
 
             case AiEventType.error:
-              // Show friendly message instead of raw error, let conversation continue
-              _updateAssistantMessage(
-                event.error?.contains('400') == true
-                    ? '抱歉，该模型暂不支持图片识别，请用文字描述 🙏'
-                    : event.error?.contains('401') == true
-                        ? 'API 密钥无效或已过期，请在设置中更新 🙏'
-                        : '抱歉，我遇到了一点问题，请再试一次 🙏',
-              );
+              print('[chat] AI error: ${event.error}');
+              _updateAssistantMessage('⚠️ 错误: ${event.error ?? "未知"}');
               _finalizeStreamMessage();
               fullResponse = 'done';
               break;
@@ -306,10 +524,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
     // Try local MCP server first
-    final executor = mcpServer.registeredTools
-        .where((r) => r.tool.name == tc.name)
-        .firstOrNull
-        ?.executor;
+    final executor =
+        mcpServer.registeredTools
+            .where((r) => r.tool.name == tc.name)
+            .firstOrNull
+            ?.executor;
     if (executor != null) {
       final result = await executor(tc.arguments);
       return result.toString();
@@ -327,7 +546,16 @@ class _ChatScreenState extends State<ChatScreen> {
     return '错误: 工具 ${tc.name} 未找到';
   }
 
-  void _updateAssistantMessage(String content, {List<ToolCallInfo>? toolCalls}) {
+  void _updateAssistantMessage(
+    String content, {
+    List<ToolCallInfo>? toolCalls,
+  }) {
+    // 过滤模型可能复读出来的 [time: ...] 标记（系统注入的时间戳元数据）
+    final cleaned =
+        content
+            .replaceAll(RegExp(r'\[time:[^\]]*\]'), '')
+            .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+            .trimLeft();
     setState(() {
       if (_conversation.messages.isNotEmpty &&
           _conversation.messages.last.role == MessageRole.assistant &&
@@ -335,16 +563,18 @@ class _ChatScreenState extends State<ChatScreen> {
         _conversation.messages.last = ChatMessage(
           id: _conversation.messages.last.id,
           role: MessageRole.assistant,
-          content: content,
+          content: cleaned,
           toolCalls: toolCalls,
         );
       } else {
-        _conversation.messages.add(ChatMessage(
-          id: 'stream_${_uuid.v4()}',
-          role: MessageRole.assistant,
-          content: content,
-          toolCalls: toolCalls,
-        ));
+        _conversation.messages.add(
+          ChatMessage(
+            id: 'stream_${_uuid.v4()}',
+            role: MessageRole.assistant,
+            content: cleaned,
+            toolCalls: toolCalls,
+          ),
+        );
       }
     });
     _scrollToBottom();
@@ -369,78 +599,105 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showConversationList() {
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.6,
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  const Text('对话历史', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  TextButton.icon(
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('新建'),
-                    onPressed: () => _newConversation(),
-                  ),
-                ],
-              ),
+      builder:
+          (ctx) => Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6,
             ),
-            const Divider(height: 1),
-            InkWell(
-              onTap: () {
-                Navigator.of(ctx).pop();
-                _openSearch();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  children: [
-                    Icon(Icons.search, size: 20,
-                        color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(width: 10),
-                    Text('搜索历史对话',
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      const Text(
+                        '对话历史',
                         style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ],
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('新建'),
+                        onPressed: () => _newConversation(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: _savedConversations.isEmpty
-                  ? const Center(child: Text('暂无历史对话'))
-                  : ListView.builder(
-                      itemCount: _savedConversations.length,
-                      itemBuilder: (ctx, i) {
-                        final conv = _savedConversations[i];
-                        final isCurrent = conv.id == _conversation.id;
-                        return ListTile(
-                          title: Text(conv.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(
-                            '${conv.messages.length} 条消息 · ${conv.model}',
-                            style: const TextStyle(fontSize: 11),
+                const Divider(height: 1),
+                InkWell(
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _openSearch();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.search,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '搜索历史对话',
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
-                          selected: isCurrent,
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 18),
-                            onPressed: () async {
-                              await StorageService.deleteConversation(conv.id);
-                              _loadConversations();
-                              if (ctx.mounted) Navigator.of(ctx).pop();
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child:
+                      _savedConversations.isEmpty
+                          ? const Center(child: Text('暂无历史对话'))
+                          : ListView.builder(
+                            itemCount: _savedConversations.length,
+                            itemBuilder: (ctx, i) {
+                              final conv = _savedConversations[i];
+                              final isCurrent = conv.id == _conversation.id;
+                              return ListTile(
+                                title: Text(
+                                  conv.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  '${conv.messages.length} 条消息 · ${conv.model}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                selected: isCurrent,
+                                trailing: IconButton(
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                  ),
+                                  onPressed: () async {
+                                    await StorageService.deleteConversation(
+                                      conv.id,
+                                    );
+                                    _loadConversations();
+                                    if (ctx.mounted) Navigator.of(ctx).pop();
+                                  },
+                                ),
+                                onTap: () => _switchConversation(conv),
+                              );
                             },
                           ),
-                          onTap: () => _switchConversation(conv),
-                        );
-                      },
-                    ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     ).then((_) => _loadConversations());
   }
 
@@ -448,28 +705,35 @@ class _ChatScreenState extends State<ChatScreen> {
     final controller = TextEditingController(text: _conversation.title);
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('重命名对话'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            hintText: '输入对话名称',
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('重命名对话'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '输入对话名称',
+              ),
+              autofocus: true,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _conversation.title = controller.text.trim();
+                    _conversation.titleManuallySet = true;
+                  });
+                  _saveConversation();
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('确定'),
+              ),
+            ],
           ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('取消')),
-          FilledButton(onPressed: () {
-            setState(() {
-              _conversation.title = controller.text.trim();
-              _conversation.titleManuallySet = true;
-            });
-            _saveConversation();
-            Navigator.of(ctx).pop();
-          }, child: const Text('确定')),
-        ],
-      ),
     );
   }
 
@@ -479,41 +743,51 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('系统提示词'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: '设定 AI 的角色、人设、行为规则...',
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('系统提示词'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '设定 AI 的角色、人设、行为规则...',
+                ),
+                maxLines: 6,
+              ),
             ),
-            maxLines: 6,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() => _conversation.systemPrompt = null);
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('重置默认'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _conversation.systemPrompt = controller.text.trim();
+                  });
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('保存'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('取消')),
-          TextButton(onPressed: () {
-            setState(() => _conversation.systemPrompt = null);
-            Navigator.of(ctx).pop();
-          }, child: const Text('重置默认')),
-          FilledButton(onPressed: () {
-            setState(() {
-              _conversation.systemPrompt = controller.text.trim();
-            });
-            Navigator.of(ctx).pop();
-          }, child: const Text('保存')),
-        ],
-      ),
     );
   }
 
   Future<void> _exportConversation() async {
     if (_conversation.messages.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有消息可以导出')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有消息可以导出')));
       return;
     }
     try {
@@ -527,11 +801,16 @@ class _ChatScreenState extends State<ChatScreen> {
       for (final msg in _conversation.messages) {
         String role;
         switch (msg.role) {
-          case MessageRole.user: role = '👤 你';
-          case MessageRole.assistant: role = '🤖 AI';
-          case MessageRole.toolCall: role = '🛠 工具';
-          case MessageRole.toolResult: role = '📋 结果';
-          default: role = '📝 系统';
+          case MessageRole.user:
+            role = '👤 你';
+          case MessageRole.assistant:
+            role = '🤖 AI';
+          case MessageRole.toolCall:
+            role = '🛠 工具';
+          case MessageRole.toolResult:
+            role = '📋 结果';
+          default:
+            role = '📝 系统';
         }
         buffer.writeln('$role: ${msg.content}');
         if (msg.imageData != null) buffer.writeln('  [图片附件]');
@@ -545,166 +824,32 @@ class _ChatScreenState extends State<ChatScreen> {
       final file = File('${dir.path}/$fileName');
       await file.writeAsString(buffer.toString());
 
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: '📱 手机 AI 助手 - ${_conversation.title}',
-      );
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], text: '📱 手机 AI 助手 - ${_conversation.title}');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
       }
     }
   }
 
   void _saveConversation() {
     if (!_conversation.titleManuallySet) {
-      _conversation.title = _conversation.messages.firstOrNull?.content
-              ?.substring(0, (_conversation.messages.first.content.length).clamp(0, 30)) ??
+      _conversation.title =
+          _conversation.messages.firstOrNull?.content?.substring(
+            0,
+            (_conversation.messages.first.content.length).clamp(0, 30),
+          ) ??
           '新对话';
     }
     StorageService.saveConversation(_conversation);
   }
 
-  Widget _buildDashboard(ThemeData theme) {
-    const warmBg = Color(0xFFF5F7F3);
-    const warmFg = Color(0xFF3D5C3A);
-    const darkCard = Color(0xFF1F2A1E);
-    const mutedText = Color(0xFF8A9686);
-
-    final today = DateTime.now();
-    const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-    final dateStr = '${today.month}月${today.day}日 · ${weekdays[today.weekday - 1]}';
-
-    return Drawer(
-      width: MediaQuery.of(context).size.width * 0.78,
-      child: Container(
-        color: warmBg,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                  children: [
-              // Header
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('下午好，Cleo',
-                            style: TextStyle(
-                                fontSize: 22, fontWeight: FontWeight.w700,
-                                color: darkCard)),
-                        const SizedBox(height: 4),
-                        Text(dateStr,
-                            style: TextStyle(fontSize: 13, color: mutedText)),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE3EBE0),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.close, size: 18, color: warmFg),
-                      onPressed: () => Navigator.of(context).pop(),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 22),
-
-              // Daily summary card
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: darkCard, borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('今日小结',
-                        style: TextStyle(fontSize: 12, color: warmFg.withValues(alpha: 0.6))),
-                    const SizedBox(height: 10),
-                    Text(
-                      '今天已进行了 ${_conversation.messages.length} 轮对话，'
-                      '帮你处理了多项任务。'
-                      '${_conversation.messages.isNotEmpty ? "最近在聊：${_conversation.title}" : "开始新对话吧！"}',
-                      style: const TextStyle(fontSize: 15, color: Color(0xFFF0F4EE),
-                          height: 1.6),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Reading stats card
-              _buildStatsCard(warmFg),
-              const SizedBox(height: 16),
-
-              // Quick actions
-              Row(
-                children: [
-                  _dashActionCard(warmFg, Icons.add, '新对话', () {
-                    Navigator.of(context).pop();
-                    _newConversation();
-                  }),
-                  const SizedBox(width: 10),
-                  _dashActionCard(warmFg, Icons.menu_book_rounded, '书架', () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pushNamed('/bookshelf');
-                  }),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Quick links
-              ...[
-                (Icons.history, '对话历史', () { Navigator.of(context).pop(); _showConversationList(); }),
-                (Icons.build_outlined, 'MCP 工具', () { Navigator.of(context).pop(); Navigator.of(context).pushNamed('/tools'); }),
-              ].map((e) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: ListTile(
-                      leading: Icon(e.$1, color: warmFg, size: 22),
-                      title: Text(e.$2,
-                          style: const TextStyle(fontSize: 15, color: Color(0xFF3D4A3A))),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      onTap: () => e.$3.call(),
-                    ),
-                  )),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 16),
-              child: IconButton(
-                icon: Icon(Icons.settings_outlined,
-                    color: warmFg.withValues(alpha: 0.35), size: 20),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.of(context).pushNamed('/settings');
-                },
-                tooltip: '设置',
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-    );
-  }
-
-  Widget _buildStatsCard(Color fg) {
+  Widget _buildStatsCard(ThemeData theme) {
+    final scheme = theme.colorScheme;
     return FutureBuilder<WereadStats>(
       future: WereadService.fetchReadingStats(),
       builder: (ctx, snap) {
@@ -713,24 +858,37 @@ class _ChatScreenState extends State<ChatScreen> {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(18),
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: scheme.outlineVariant),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(Icons.bar_chart_rounded, size: 18, color: fg),
+                  Icon(
+                    Icons.bar_chart_rounded,
+                    size: 18,
+                    color: scheme.secondary,
+                  ),
                   const SizedBox(width: 6),
-                  Text('阅读统计', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: fg)),
+                  Text(
+                    '阅读统计',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Row(
                 children: [
-                  _statItem(fg, '${stats.finishedThisMonth}', '本月读完'),
-                  _statItem(fg, '${stats.currentlyReading}', '在读'),
-                  _statItem(fg, '${stats.finishedThisYear}', '今年读完'),
+                  _statItem(scheme, '${stats.finishedThisMonth}', '本月读完'),
+                  _statItem(scheme, '${stats.currentlyReading}', '在读'),
+                  _statItem(scheme, '${stats.finishedThisYear}', '今年读完'),
                 ],
               ),
             ],
@@ -740,33 +898,58 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _statItem(Color fg, String num, String label) {
+  Widget _statItem(ColorScheme scheme, String num, String label) {
     return Expanded(
       child: Column(
         children: [
-          Text(num, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: fg)),
+          Text(
+            num,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: scheme.primary,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 11, color: fg.withValues(alpha: 0.6))),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
         ],
       ),
     );
   }
 
-  Widget _dashActionCard(Color fg, IconData icon, String label, VoidCallback onTap) {
+  Widget _quickActionCard(
+    ThemeData theme,
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
+    final scheme = theme.colorScheme;
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: fg, size: 24),
-              const SizedBox(height: 6),
-              Text(label, style: TextStyle(fontSize: 13, color: fg)),
-            ],
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              children: [
+                Icon(icon, color: scheme.secondary, size: 24),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -777,290 +960,663 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      drawer: _buildDashboard(theme),
-      appBar: AppBar(
-        title: Text(_conversation.title, overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _openSearch,
+    return PopScope(
+      canPop: !_chatMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _chatMode) _goHome();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        drawer: _buildDrawer(theme),
+        drawerEnableOpenDragGesture: !_chatMode,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          toolbarHeight: _chatMode ? null : 64,
+          leading:
+              _chatMode
+                  ? _topBarIcon(
+                    Icons.arrow_back,
+                    onPressed: _goHome,
+                    tooltip: '返回主页',
+                  )
+                  : _topBarIcon(
+                    Icons.menu_rounded,
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                    tooltip: '菜单',
+                  ),
+          title:
+              !_chatMode
+                  ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '下午好，Cleo',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        _homeDateStr(),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  )
+                  : (_conversation.messages.isNotEmpty
+                      ? Text(
+                        _conversation.title,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                      : null),
+          actions: [
+            _topBarIcon(Icons.search, onPressed: _openSearch, tooltip: '搜索'),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(2),
+            child:
+                _isLoading
+                    ? const LinearProgressIndicator()
+                    : const SizedBox.shrink(),
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'new') _newConversation();
-              else if (v == 'history') _showConversationList();
-              else if (v == 'bookshelf') Navigator.of(context).pushNamed('/bookshelf');
-              else if (v == 'rename') _showRenameDialog();
-              else if (v == 'export') _exportConversation();
-              else if (v == 'system_prompt') _showSystemPromptDialog();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'new', child: ListTile(
-                leading: Icon(Icons.add), title: Text('新对话'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'history', child: ListTile(
-                leading: Icon(Icons.history), title: Text('对话历史'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'bookshelf', child: ListTile(
-                leading: Icon(Icons.menu_book_rounded), title: Text('书架'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'rename', child: ListTile(
-                leading: Icon(Icons.edit), title: Text('重命名'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'system_prompt', child: ListTile(
-                leading: Icon(Icons.psychology), title: Text('系统提示词'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-              const PopupMenuItem(value: 'export', child: ListTile(
-                leading: Icon(Icons.share), title: Text('导出聊天'),
-                dense: true, visualDensity: VisualDensity.compact,
-              )),
-            ],
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(2),
-          child: _isLoading
-              ? const LinearProgressIndicator()
-              : const SizedBox.shrink(),
+        ),
+        body: Column(
+          children: [
+            // 内容区：主页模式显示首页，对话模式显示消息
+            Expanded(
+              child:
+                  _chatMode
+                      ? (_conversation.messages.isEmpty
+                          ? _buildEmptyChatHint(theme)
+                          : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: _conversation.messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = _conversation.messages[index];
+                              if (msg.role == MessageRole.toolCall &&
+                                  msg.toolCalls != null) {
+                                return ToolCallCard(toolCalls: msg.toolCalls!);
+                              }
+                              if (msg.role == MessageRole.toolResult) {
+                                return ToolResultCard(content: msg.content);
+                              }
+                              return MessageBubble(message: msg);
+                            },
+                          ))
+                      : _buildHome(theme),
+            ),
+
+            // Input area
+            _buildInputArea(theme),
+          ],
         ),
       ),
-      body: Column(
-        children: [
-          // Messages area
-          Expanded(
-            child: _conversation.messages.isEmpty
-                ? _buildEmptyState(theme)
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _conversation.messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = _conversation.messages[index];
-                      if (msg.role == MessageRole.toolCall &&
-                          msg.toolCalls != null) {
-                        return ToolCallCard(toolCalls: msg.toolCalls!);
-                      }
-                      if (msg.role == MessageRole.toolResult) {
-                        return ToolResultCard(content: msg.content);
-                      }
-                      return MessageBubble(message: msg);
-                    },
-                  ),
-          ),
-
-          // Input area
-          _buildInputArea(theme),
-        ],
-      ),
-      floatingActionButton: context.watch<McpServerProvider>().server.isRunning
-          ? null
-          : FloatingActionButton.small(
-              onPressed: () => Navigator.of(context).pushNamed('/tools'),
-              tooltip: 'MCP 工具',
-              child: const Icon(Icons.build),
-            ),
     );
   }
 
-  Widget _buildEmptyState(ThemeData theme) {
+  Widget _topBarIcon(
+    IconData icon, {
+    required VoidCallback onPressed,
+    String? tooltip,
+  }) {
+    return IconButton(
+      icon: Icon(
+        icon,
+        shadows: const [
+          Shadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
+        ],
+      ),
+      onPressed: onPressed,
+      tooltip: tooltip,
+    );
+  }
+
+  String _homeDateStr() {
+    final today = DateTime.now();
+    const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    return '${today.month}月${today.day}日 · ${weekdays[today.weekday - 1]}';
+  }
+
+  Widget _buildDrawer(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    return Drawer(
+      backgroundColor: scheme.surface.withValues(alpha: 0.96),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Text(
+                '菜单',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            if (_chatMode) ...[
+              _drawerItem(theme, Icons.edit_outlined, '重命名', () {
+                Navigator.of(context).pop();
+                _showRenameDialog();
+              }),
+              _drawerItem(theme, Icons.psychology_outlined, '系统提示词', () {
+                Navigator.of(context).pop();
+                _showSystemPromptDialog();
+              }),
+              _drawerItem(theme, Icons.share_outlined, '导出聊天', () {
+                Navigator.of(context).pop();
+                _exportConversation();
+              }),
+              _drawerItem(theme, Icons.image_outlined, '设置聊天背景', () {
+                Navigator.of(context).pop();
+                _pickBackground();
+              }),
+              if (_backgroundImagePath != null)
+                _drawerItem(
+                  theme,
+                  Icons.image_not_supported_outlined,
+                  '清除聊天背景',
+                  () {
+                    Navigator.of(context).pop();
+                    _clearBackground();
+                  },
+                ),
+              const Divider(),
+            ],
+            _drawerItem(theme, Icons.add_rounded, '新对话', () {
+              Navigator.of(context).pop();
+              _newConversation();
+            }),
+            _drawerItem(theme, Icons.history_rounded, '对话历史', () {
+              Navigator.of(context).pop();
+              _showConversationList();
+            }),
+            _drawerItem(theme, Icons.menu_book_rounded, '书架', () {
+              Navigator.of(context).pop();
+              widget.onSwitchTab?.call(AppTab.bookshelf);
+            }),
+            _drawerItem(theme, Icons.build_outlined, '工具', () {
+              Navigator.of(context).pop();
+              widget.onSwitchTab?.call(AppTab.tools);
+            }),
+            _drawerItem(theme, Icons.settings_outlined, '设置', () {
+              Navigator.of(context).pop();
+              widget.onSwitchTab?.call(AppTab.settings);
+            }),
+            const Divider(),
+            _drawerItem(theme, Icons.delete_sweep_outlined, '回收站', () {
+              Navigator.of(context).pop();
+              _showTrashSheet();
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem(
+    ThemeData theme,
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
+    final scheme = theme.colorScheme;
+    return ListTile(
+      leading: Icon(icon, color: scheme.onSurfaceVariant),
+      title: Text(label, style: const TextStyle(fontSize: 15)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onTap: onTap,
+    );
+  }
+
+  Future<void> _showTrashSheet() async {
+    var trashed = await StorageService.listTrashedConversations();
+    if (!mounted) return;
+    final scheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setSheet) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '回收站',
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      if (trashed.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            '回收站是空的',
+                            style: TextStyle(color: scheme.onSurfaceVariant),
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: trashed.length,
+                            itemBuilder: (_, i) {
+                              final conv = trashed[i];
+                              return ListTile(
+                                title: Text(
+                                  conv.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                leading: Icon(
+                                  Icons.delete_outline,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () async {
+                                        await StorageService.restoreConversation(
+                                          conv.id,
+                                        );
+                                        if (ctx.mounted)
+                                          Navigator.of(ctx).pop();
+                                        _loadConversations();
+                                      },
+                                      child: const Text('恢复'),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_forever_outlined,
+                                      ),
+                                      tooltip: '彻底删除',
+                                      onPressed: () async {
+                                        await StorageService.permanentlyDeleteConversation(
+                                          conv.id,
+                                        );
+                                        setSheet(
+                                          () =>
+                                              trashed =
+                                                  trashed
+                                                      .where(
+                                                        (c) => c.id != conv.id,
+                                                      )
+                                                      .toList(),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+          ),
+    );
+  }
+
+  Widget _buildEmptyChatHint(ThemeData theme) {
+    final scheme = theme.colorScheme;
     return Center(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.chat_bubble_outline,
-              size: 80, color: theme.colorScheme.primary.withValues(alpha: 0.3)),
-          const SizedBox(height: 16),
-          Text(
-            '手机 AI 助手',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: theme.colorScheme.primary,
-            ),
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 56,
+            color: scheme.onSurface.withValues(alpha: 0.25),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
-            '我可以帮你拍照、查看文件、获取位置...\n试试看！',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            '给 AI 发第一条消息吧',
+            style: TextStyle(color: scheme.onSurfaceVariant),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildHome(ThemeData theme) {
+    final scheme = theme.colorScheme;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      children: [
+        // 今日小结
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.primary.withValues(alpha: 0.25),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '今日小结',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1,
+                  color: scheme.onPrimary.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _conversation.messages.isEmpty
+                    ? '开始新对话吧，我可以帮你拍照、查位置、聊书、找文件。'
+                    : '今天已进行了 ${_conversation.messages.length} 轮对话。最近在聊：${_conversation.title}',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  height: 1.6,
+                  color: scheme.onPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // 阅读统计
+        _buildStatsCard(theme),
+        const SizedBox(height: 14),
+
+        // 快捷入口
+        Row(
+          children: [
+            _quickActionCard(theme, Icons.add_rounded, '新对话', _newConversation),
+            const SizedBox(width: 10),
+            _quickActionCard(
+              theme,
+              Icons.menu_book_rounded,
+              '书架',
+              () => widget.onSwitchTab?.call(AppTab.bookshelf),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _quickActionCard(
+              theme,
+              Icons.build_outlined,
+              '工具',
+              () => widget.onSwitchTab?.call(AppTab.tools),
+            ),
+            const SizedBox(width: 10),
+            _quickActionCard(
+              theme,
+              Icons.settings_outlined,
+              '设置',
+              () => widget.onSwitchTab?.call(AppTab.settings),
+            ),
+          ],
+        ),
+        if (_savedConversations.isNotEmpty) ...[
+          const SizedBox(height: 26),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '最近对话',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                tooltip: '回收站',
+                onPressed: _showTrashSheet,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ..._savedConversations
+              .take(20)
+              .map((conv) => _conversationTile(theme, conv)),
+        ],
+        const SizedBox(height: 24),
+        Center(
+          child: Text(
+            '也可以直接在下方输入框开始聊天',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _conversationTile(ThemeData theme, Conversation conv) {
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(14),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          title: Text(
+            conv.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () async {
+              await StorageService.deleteConversation(conv.id);
+              _loadConversations();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('已移到回收站'),
+                    behavior: SnackBarBehavior.floating,
+                    action: SnackBarAction(
+                      label: '撤销',
+                      onPressed: () async {
+                        await StorageService.restoreConversation(conv.id);
+                        _loadConversations();
+                      },
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          onTap: () => _switchConversation(conv),
+        ),
+      ),
+    );
+  }
+
+  String _shortTime(DateTime dt) {
+    final local = dt.toLocal();
+    final now = DateTime.now();
+    final isToday =
+        local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
+    if (isToday) {
+      return '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
+    }
+    return '${local.month}/${local.day}';
   }
 
   Widget _buildInputArea(ThemeData theme) {
+    final scheme = theme.colorScheme;
     return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: theme.dividerColor),
-        ),
-      ),
-      padding: EdgeInsets.only(
-        left: 12,
-        right: 8,
-        top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
-      ),
+      color: Colors.transparent,
+      padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Image picker
-          IconButton(
-            icon: const Icon(Icons.image_outlined),
-            onPressed: _isLoading ? null : _pickAndSendImage,
-            tooltip: '发送图片',
+          // 左侧圆圈：文字输入 / 语音输入 模式切换
+          _circleToolButton(
+            scheme,
+            icon: _voiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none,
+            tooltip: _voiceMode ? '切换为文字输入' : '切换为语音输入',
+            active: _voiceMode,
+            onTap:
+                _isLoading
+                    ? null
+                    : () => setState(() => _voiceMode = !_voiceMode),
           ),
-          // Voice input
-          IconButton(
-            icon: Icon(
-              _isListening ? Icons.mic : Icons.mic_none,
-              color: _isListening ? Colors.red : null,
-            ),
-            onPressed: _isLoading ? null : _startListening,
-            tooltip: _isListening ? '停止录音' : '语音输入',
-          ),
-          // Text input
+          const SizedBox(width: 8),
           Expanded(
-            child: TextField(
-              controller: _textController,
-              maxLines: 5,
-              minLines: 1,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              decoration: InputDecoration(
-                hintText: '输入消息...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              ),
-            ),
+            child:
+                _voiceMode ? _buildHoldToTalk(theme) : _buildTextField(theme),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
+          // 右侧加号：拍照 / 相册 / 文件
+          _circleToolButton(
+            scheme,
+            icon: Icons.add,
+            tooltip: '更多功能',
+            onTap: _isLoading ? null : _showAttachmentMenu,
+          ),
+          const SizedBox(width: 6),
           // Send button
-          IconButton(
-            icon: Icon(
-              _isLoading ? Icons.stop : Icons.send_rounded,
-              color: theme.colorScheme.primary,
-            ),
-            onPressed: _isLoading
-                ? () {
-                    // TODO: cancel stream
-                  }
-                : _sendMessage,
+          _circleToolButton(
+            scheme,
+            icon: _isLoading ? Icons.hourglass_empty : Icons.send_rounded,
+            tooltip: '发送',
+            active: true,
+            onTap: _isLoading ? null : _sendMessage,
           ),
         ],
       ),
     );
   }
-}
 
-// Providers for state management
-class AiClientProvider extends ChangeNotifier {
-  AiClient? _currentClient;
-  AiClient? get currentClient => _currentClient;
-
-  void setClient(AiClient? client) {
-    _currentClient = client;
-    notifyListeners();
-  }
-}
-
-class McpServerProvider extends ChangeNotifier {
-  final McpServer _server = McpServer();
-  McpServer get server => _server;
-
-  bool _isInitialized = false;
-  bool get isInitialized => _isInitialized;
-
-  void markInitialized() {
-    _isInitialized = true;
-    notifyListeners();
-  }
-}
-
-class ExternalMcpProvider extends ChangeNotifier {
-  final List<ExternalMcpClient> _clients = [];
-  List<ExternalMcpClient> get clients => List.unmodifiable(_clients);
-  bool _connecting = false;
-  bool get connecting => _connecting;
-
-  List<McpTool> get allExternalTools =>
-      _clients.where((c) => c.connected).expand((c) => c.tools).toList();
-
-  /// Returns null on success, or an error message string on failure.
-  Future<String?> connectTo(ExternalMcpServer config) async {
-    _clients.removeWhere((c) => c.config.url == config.url);
-    _connecting = true;
-    notifyListeners();
-
-    final client = ExternalMcpClient(config: config);
-    final ok = await client.connect();
-    _connecting = false;
-
-    if (ok) {
-      _clients.add(client);
-      notifyListeners();
-      return null;
-    } else {
-      notifyListeners();
-      return client.lastError ?? '连接失败，请检查服务器是否运行';
-    }
+  Widget _circleToolButton(
+    ColorScheme scheme, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+    bool active = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color:
+                active
+                    ? scheme.onSurface
+                    : Colors.white.withValues(alpha: 0.85),
+            shape: BoxShape.circle,
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.35)),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: active ? scheme.surface : scheme.onSurface,
+          ),
+        ),
+      ),
+    );
   }
 
-  Future<void> disconnect(String url) async {
-    final client = _clients.where((c) => c.config.url == url).firstOrNull;
-    if (client != null) {
-      await client.disconnect();
-      _clients.remove(client);
-      notifyListeners();
-    }
+  Widget _buildTextField(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    return TextField(
+      controller: _textController,
+      maxLines: 5,
+      minLines: 1,
+      keyboardType: TextInputType.multiline,
+      textInputAction: TextInputAction.newline,
+      decoration: InputDecoration(
+        hintText: '输入消息...',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+        ),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.75),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 10,
+        ),
+      ),
+    );
   }
 
-  Future<Map<String, dynamic>> callExternalTool(
-      String url, String toolName, Map<String, dynamic> args) async {
-    final client = _clients.where((c) => c.config.url == url).firstOrNull;
-    if (client == null) {
-      return {'success': false, 'error': '未连接到 $url'};
-    }
-    return client.callTool(toolName, args);
-  }
-
-  void reconnectToEnabled(List<ExternalMcpServer> configs) async {
-    for (final cfg in configs.where((c) => c.enabled)) {
-      // Skip if already connected
-      if (_clients.any((c) => c.config.url == cfg.url)) continue;
-      await Future.delayed(const Duration(milliseconds: 500));
-      await connectTo(cfg);
-    }
-    // Remove connections to servers no longer in config
-    final urls = configs.map((c) => c.url).toList();
-    for (final client in _clients.toList()) {
-      if (!urls.contains(client.config.url)) {
-        await client.disconnect();
-        _clients.remove(client);
-      }
-    }
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    for (final c in _clients) {
-      c.disconnect();
-    }
-    super.dispose();
+  Widget _buildHoldToTalk(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    return GestureDetector(
+      onLongPressStart: (_) => _startListening(),
+      onLongPressEnd: (_) => _stopListening(),
+      child: Container(
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.75),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          _isListening ? '正在聆听...' : '按住说话',
+          style: TextStyle(
+            fontSize: 14,
+            color: _isListening ? scheme.primary : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
   }
 }

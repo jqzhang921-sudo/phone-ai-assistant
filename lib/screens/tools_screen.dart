@@ -5,7 +5,7 @@ import '../models/mcp_tool.dart';
 import '../services/phone_tools/camera_tool.dart';
 import '../services/phone_tools/location_tool.dart';
 import '../services/phone_tools/sensors_tool.dart';
-import 'chat_screen.dart';
+import '../services/app_providers.dart';
 
 class ToolsScreen extends StatelessWidget {
   const ToolsScreen({super.key});
@@ -47,7 +47,9 @@ class ToolsScreen extends StatelessWidget {
                   Row(
                     children: [
                       Icon(
-                        server.isRunning ? Icons.check_circle : Icons.circle_outlined,
+                        server.isRunning
+                            ? Icons.check_circle
+                            : Icons.circle_outlined,
                         color: server.isRunning ? Colors.green : Colors.grey,
                         size: 16,
                       ),
@@ -64,10 +66,7 @@ class ToolsScreen extends StatelessWidget {
                       '客户端连接数: ${server.clientCount}',
                       style: theme.textTheme.bodySmall,
                     ),
-                    Text(
-                      '端口: 8765',
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    Text('端口: 8765', style: theme.textTheme.bodySmall),
                   ],
                 ],
               ),
@@ -77,8 +76,10 @@ class ToolsScreen extends StatelessWidget {
           const SizedBox(height: 16),
 
           // Tool list
-          Text('已注册工具 (${server.registeredTools.length})',
-              style: theme.textTheme.titleMedium),
+          Text(
+            '已注册工具 (${server.registeredTools.length})',
+            style: theme.textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
 
           if (server.registeredTools.isEmpty)
@@ -129,11 +130,13 @@ class ToolsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTestButton(BuildContext context,
-      {required IconData icon,
-      required String label,
-      required McpTool tool,
-      required ToolExecutor executor}) {
+  Widget _buildTestButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required McpTool tool,
+    required ToolExecutor executor,
+  }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -144,15 +147,16 @@ class ToolsScreen extends StatelessWidget {
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (_) => const AlertDialog(
-              content: Row(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 16),
-                  Text('执行中...'),
-                ],
-              ),
-            ),
+            builder:
+                (_) => const AlertDialog(
+                  content: Row(
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(width: 16),
+                      Text('执行中...'),
+                    ],
+                  ),
+                ),
           );
 
           final result = await executor({});
@@ -166,31 +170,33 @@ class ToolsScreen extends StatelessWidget {
   }
 
   void _showResult(
-      BuildContext context, String label, Map<String, dynamic> result) {
+    BuildContext context,
+    String label,
+    Map<String, dynamic> result,
+  ) {
     final success = result['success'] == true;
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              success ? Icons.check_circle : Icons.error,
-              color: success ? Colors.green : Colors.red,
+      builder:
+          (_) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  success ? Icons.check_circle : Icons.error,
+                  color: success ? Colors.green : Colors.red,
+                ),
+                const SizedBox(width: 8),
+                Text(success ? '$label 成功' : '$label 失败'),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(success ? '$label 成功' : '$label 失败'),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Text(result.toString()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
+            content: SingleChildScrollView(child: Text(result.toString())),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('关闭'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 }
@@ -213,22 +219,28 @@ class _ToolCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text(tool.category,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                      )),
+                  child: Text(
+                    tool.category,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                Text(tool.name,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontFamily: 'monospace',
-                    )),
+                Text(
+                  tool.name,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+                ),
               ],
             ),
             if (tool.description.isNotEmpty) ...[

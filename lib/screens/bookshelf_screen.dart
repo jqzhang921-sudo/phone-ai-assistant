@@ -49,10 +49,9 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       try {
         final list = jsonDecode(raw) as List;
         setState(() {
-          _books = list
-              .map((j) => Book.fromJson(j as Map<String, dynamic>))
-              .toList()
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _books =
+              list.map((j) => Book.fromJson(j as Map<String, dynamic>)).toList()
+                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         });
       } catch (_) {
         // data format changed — reset
@@ -75,20 +74,27 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       final ctrl = TextEditingController();
       final ok = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('微信读书 API Key'),
-          content: TextField(
-            controller: ctrl,
-            decoration: const InputDecoration(
-              hintText: 'wrk-...',
-              border: OutlineInputBorder(),
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('微信读书 API Key'),
+              content: TextField(
+                controller: ctrl,
+                decoration: const InputDecoration(
+                  hintText: 'wrk-...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('保存'),
+                ),
+              ],
             ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
-          ],
-        ),
       );
       if (ok != true) return;
       key = ctrl.text.trim();
@@ -117,9 +123,9 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
 
       if (added == 0 && updated == 0) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('没有新书，书架已是最新')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('没有新书，书架已是最新')));
         }
         return;
       }
@@ -129,15 +135,15 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         final parts = <String>[];
         if (added > 0) parts.add('新增 $added 本');
         if (updated > 0) parts.add('更新 $updated 本');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(parts.join('，'))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(parts.join('，'))));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导入失败: $e')));
       }
     }
   }
@@ -149,40 +155,41 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('添加新书'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '书名 *',
-                border: OutlineInputBorder(),
-              ),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('添加新书'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: '书名 *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: authorCtrl,
+                  decoration: const InputDecoration(
+                    hintText: '作者',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: authorCtrl,
-              decoration: const InputDecoration(
-                hintText: '作者',
-                border: OutlineInputBorder(),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('取消'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('确定'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
     );
 
     if (result != true || !mounted) return;
@@ -193,24 +200,27 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     String? coverPath;
     final wantCover = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('添加封面图片？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('跳过'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('添加封面图片？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('跳过'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('选择图片'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('选择图片'),
-          ),
-        ],
-      ),
     );
     if (wantCover == true) {
       try {
-        final XFile? image =
-            await _picker.pickImage(source: ImageSource.gallery, maxWidth: 600);
+        final XFile? image = await _picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 600,
+        );
         if (image != null) {
           final coverDir = await _coverDir;
           final ext = image.path.split('.').last;
@@ -237,221 +247,254 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 32,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(60),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('选择要讨论的书',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-              const Divider(height: 1),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.45,
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _books.length,
-                  itemBuilder: (_, i) {
-                    final book = _books[i];
-                    final isSel = selected.contains(book.id);
-                    return CheckboxListTile(
-                      title: Text('《${book.title}》'),
-                      subtitle: book.author != null ? Text(book.author!) : null,
-                      value: isSel,
-                      onChanged: (v) {
-                        setSheet(() {
-                          if (v == true) {
-                            selected.add(book.id);
-                          } else {
-                            selected.remove(book.id);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: selected.isEmpty
-                        ? null
-                        : () async {
-                            Navigator.of(ctx).pop();
-                            final books = _books
-                                .where((b) => selected.contains(b.id))
-                                .toList();
-                            final bookIds = books.map((b) => b.id).toList();
-
-                            // Check for exact match first
-                            final exact =
-                                await DiscussionGroupService.findExactMatch(
-                                    bookIds);
-                            if (exact != null) {
-                              // Directly enter existing group
-                              if (!mounted) return;
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => MultiBookChatScreen(
-                                    books: books,
-                                    groupId: exact.id,
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
-
-                            // Check for partial overlap
-                            final overlapping =
-                                await DiscussionGroupService
-                                    .findGroupsContaining(bookIds);
-                            String? groupId;
-
-                            // Load last-message previews for each group
-                            final previews = <String, String?>{};
-                            for (final g in overlapping) {
-                              previews[g.id] = await DiscussionGroupService
-                                  .lastMessagePreview(g.id);
-                            }
-
-                            if (overlapping.isNotEmpty && mounted) {
-                              groupId = await _showGroupPicker(
-                                  context, overlapping, books, previews);
-                              if (groupId == null) return; // cancelled
-                            }
-
-                            // No overlap or chose "new" → create group
-                            if (groupId == null || groupId == 'new') {
-                              final defaultName = books
-                                  .map((b) => '《${b.title}》')
-                                  .join(' · ');
-                              final group =
-                                  await DiscussionGroupService.saveGroup(
-                                name: defaultName,
-                                bookIds: bookIds,
-                              );
-                              groupId = group.id;
-                            }
-
-                            if (!mounted) return;
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => MultiBookChatScreen(
-                                  books: books,
-                                  groupId: groupId,
-                                ),
-                              ),
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setSheet) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 32,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withAlpha(60),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '选择要讨论的书',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.45,
+                        ),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _books.length,
+                          itemBuilder: (_, i) {
+                            final book = _books[i];
+                            final isSel = selected.contains(book.id);
+                            return CheckboxListTile(
+                              title: Text('《${book.title}》'),
+                              subtitle:
+                                  book.author != null
+                                      ? Text(book.author!)
+                                      : null,
+                              value: isSel,
+                              onChanged: (v) {
+                                setSheet(() {
+                                  if (v == true) {
+                                    selected.add(book.id);
+                                  } else {
+                                    selected.remove(book.id);
+                                  }
+                                });
+                              },
                             );
                           },
-                    child: Text('开始讨论${selected.isEmpty ? '' : ' (${selected.length}本)'}'),
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed:
+                                selected.isEmpty
+                                    ? null
+                                    : () async {
+                                      Navigator.of(ctx).pop();
+                                      final books =
+                                          _books
+                                              .where(
+                                                (b) => selected.contains(b.id),
+                                              )
+                                              .toList();
+                                      final bookIds =
+                                          books.map((b) => b.id).toList();
+
+                                      // Check for exact match first
+                                      final exact =
+                                          await DiscussionGroupService.findExactMatch(
+                                            bookIds,
+                                          );
+                                      if (exact != null) {
+                                        // Directly enter existing group
+                                        if (!mounted) return;
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder:
+                                                (_) => MultiBookChatScreen(
+                                                  books: books,
+                                                  groupId: exact.id,
+                                                ),
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      // Check for partial overlap
+                                      final overlapping =
+                                          await DiscussionGroupService.findGroupsContaining(
+                                            bookIds,
+                                          );
+                                      String? groupId;
+
+                                      // Load last-message previews for each group
+                                      final previews = <String, String?>{};
+                                      for (final g in overlapping) {
+                                        previews[g.id] =
+                                            await DiscussionGroupService.lastMessagePreview(
+                                              g.id,
+                                            );
+                                      }
+
+                                      if (overlapping.isNotEmpty && mounted) {
+                                        groupId = await _showGroupPicker(
+                                          context,
+                                          overlapping,
+                                          books,
+                                          previews,
+                                        );
+                                        if (groupId == null)
+                                          return; // cancelled
+                                      }
+
+                                      // No overlap or chose "new" → create group
+                                      if (groupId == null || groupId == 'new') {
+                                        final defaultName = books
+                                            .map((b) => '《${b.title}》')
+                                            .join(' · ');
+                                        final group =
+                                            await DiscussionGroupService.saveGroup(
+                                              name: defaultName,
+                                              bookIds: bookIds,
+                                            );
+                                        groupId = group.id;
+                                      }
+
+                                      if (!mounted) return;
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder:
+                                              (_) => MultiBookChatScreen(
+                                                books: books,
+                                                groupId: groupId,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                            child: Text(
+                              '开始讨论${selected.isEmpty ? '' : ' (${selected.length}本)'}',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
   void _showBookMenu(Book book) {
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 32,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(60),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                '《${book.title}》',
-                style: Theme.of(context).textTheme.titleSmall,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline),
-              title: const Text('开始讨论'),
-              subtitle: const Text('和 ta 一起聊聊这本书'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => BookChatScreen(
-                      bookId: book.id,
-                      bookTitle: book.title,
-                      bookAuthor: book.author,
-                      wereadBookId: book.wereadBookId,
-                    ),
+      builder:
+          (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 32,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withAlpha(60),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome),
-              title: const Text('查看 Discussion'),
-              subtitle: const Text('AI 帮你总结讨论笔记'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => BookDiscussionScreen(
-                      bookId: book.id,
-                      bookTitle: book.title,
-                      bookAuthor: book.author,
-                    ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '《${book.title}》',
+                    style: Theme.of(context).textTheme.titleSmall,
+                    textAlign: TextAlign.center,
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline),
+                  title: const Text('开始讨论'),
+                  subtitle: const Text('和 ta 一起聊聊这本书'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder:
+                            (_) => BookChatScreen(
+                              bookId: book.id,
+                              bookTitle: book.title,
+                              bookAuthor: book.author,
+                              wereadBookId: book.wereadBookId,
+                            ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: const Text('查看 Discussion'),
+                  subtitle: const Text('AI 帮你总结讨论笔记'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder:
+                            (_) => BookDiscussionScreen(
+                              bookId: book.id,
+                              bookTitle: book.title,
+                              bookAuthor: book.author,
+                            ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_stories),
+                  title: const Text('阅读档案'),
+                  subtitle: const Text('AI 提炼你的观点与感受'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder:
+                            (_) => ReadingProfileScreen(
+                              bookId: book.id,
+                              bookTitle: book.title,
+                              bookAuthor: book.author,
+                            ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.auto_stories),
-              title: const Text('阅读档案'),
-              subtitle: const Text('AI 提炼你的观点与感受'),
-              onTap: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ReadingProfileScreen(
-                      bookId: book.id,
-                      bookTitle: book.title,
-                      bookAuthor: book.author,
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -464,40 +507,45 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   ) async {
     return showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            Center(
-              child: Container(
-                width: 32, height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(2),
+      builder:
+          (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                Center(
+                  child: Container(
+                    width: 32,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        ctx,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                '发现相关讨论集合',
-                style: Theme.of(ctx).textTheme.titleMedium,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                '${selectedBooks.map((b) => '《${b.title}》').join('、')}',
-                maxLines: 2, overflow: TextOverflow.ellipsis,
-                style: Theme.of(ctx).textTheme.bodySmall,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...overlapping.map((g) {
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '发现相关讨论集合',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '${selectedBooks.map((b) => '《${b.title}》').join('、')}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...overlapping.map((g) {
                   final preview = previews[g.id];
                   return ListTile(
                     leading: const Icon(Icons.folder_outlined),
@@ -509,12 +557,14 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                           '${g.bookIds.where((id) => selectedBooks.any((b) => b.id == id)).length}本重叠'
                           ' · ${g.bookIds.length}本'
                           '${_timeAgo(g.updatedAt)}',
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         if (preview != null)
                           Text(
                             preview,
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(ctx).colorScheme.onSurfaceVariant,
@@ -525,17 +575,17 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                     onTap: () => Navigator.of(ctx).pop(g.id),
                   );
                 }),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.add_circle_outline),
-              title: const Text('新建独立集合'),
-              subtitle: const Text('不关联到已有集合'),
-              onTap: () => Navigator.of(ctx).pop('new'),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.add_circle_outline),
+                  title: const Text('新建独立集合'),
+                  subtitle: const Text('不关联到已有集合'),
+                  onTap: () => Navigator.of(ctx).pop('new'),
+                ),
+                const SizedBox(height: 16),
+              ],
             ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -551,16 +601,17 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     if (book.coverPath == null || !File(book.coverPath!).existsSync()) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: Text('《${book.title}》封面')),
-          backgroundColor: Colors.black,
-          body: Center(
-            child: InteractiveViewer(
-              maxScale: 5,
-              child: Image.file(File(book.coverPath!)),
+        builder:
+            (_) => Scaffold(
+              appBar: AppBar(title: Text('《${book.title}》封面')),
+              backgroundColor: Colors.black,
+              body: Center(
+                child: InteractiveViewer(
+                  maxScale: 5,
+                  child: Image.file(File(book.coverPath!)),
+                ),
+              ),
             ),
-          ),
-        ),
       ),
     );
   }
@@ -577,137 +628,166 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
 
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: Text('编辑《${book.title}》'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '书名',
-                    border: OutlineInputBorder(),
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setDlg) => AlertDialog(
+                  title: Text('编辑《${book.title}》'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: titleCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '书名',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: authorCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '作者',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: dateCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '添加日期',
+                            hintText: 'YYYY-MM-DD',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // status chooser
+                        Row(
+                          children: [
+                            const Text('阅读状态：'),
+                            const SizedBox(width: 12),
+                            DropdownButton<ReadingStatus>(
+                              value: status,
+                              items:
+                                  ReadingStatus.values
+                                      .map(
+                                        (s) => DropdownMenuItem(
+                                          value: s,
+                                          child: Text(s.label),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (s) {
+                                if (s != null) setDlg(() => status = s);
+                              },
+                              underline: const SizedBox(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // change / view cover
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(
+                                  Icons.image_outlined,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  book.coverPath != null ? '更换封面' : '添加封面',
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    final XFile? image = await _picker
+                                        .pickImage(
+                                          source: ImageSource.gallery,
+                                          maxWidth: 600,
+                                        );
+                                    if (image != null) {
+                                      final coverDir = await _coverDir;
+                                      final ext = image.path.split('.').last;
+                                      final fileName = '${_uuid.v4()}.$ext';
+                                      final dest = File(
+                                        '${coverDir.path}/$fileName',
+                                      );
+                                      await dest.writeAsBytes(
+                                        await image.readAsBytes(),
+                                      );
+                                      if (book.coverPath != null) {
+                                        try {
+                                          await File(book.coverPath!).delete();
+                                        } catch (_) {}
+                                      }
+                                      book.coverPath = dest.path;
+                                      setDlg(() {});
+                                    }
+                                  } catch (_) {}
+                                },
+                              ),
+                            ),
+                            if (book.coverPath != null) ...[
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.zoom_in, size: 18),
+                                label: const Text('查看'),
+                                onPressed: () {
+                                  _viewCover(context, book);
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // delete button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                            ),
+                            label: const Text(
+                              '删除此书',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                            onPressed:
+                                () => Navigator.of(
+                                  ctx,
+                                ).pop(<String, dynamic>{'delete': true}),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: authorCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '作者',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: dateCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '添加日期',
-                    hintText: 'YYYY-MM-DD',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // status chooser
-                Row(
-                  children: [
-                    const Text('阅读状态：'),
-                    const SizedBox(width: 12),
-                    DropdownButton<ReadingStatus>(
-                      value: status,
-                      items: ReadingStatus.values
-                          .map((s) => DropdownMenuItem(
-                                value: s,
-                                child: Text(s.label),
-                              ))
-                          .toList(),
-                      onChanged: (s) {
-                        if (s != null) setDlg(() => status = s);
-                      },
-                      underline: const SizedBox(),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('取消'),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          () => Navigator.of(ctx).pop(<String, dynamic>{
+                            'title': titleCtrl.text.trim(),
+                            'author': authorCtrl.text.trim(),
+                            'date': dateCtrl.text.trim(),
+                            'status': status,
+                          }),
+                      child: const Text('保存'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                // change / view cover
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.image_outlined, size: 18),
-                        label: Text(book.coverPath != null ? '更换封面' : '添加封面'),
-                        onPressed: () async {
-                          try {
-                            final XFile? image = await _picker.pickImage(
-                                source: ImageSource.gallery, maxWidth: 600);
-                            if (image != null) {
-                              final coverDir = await _coverDir;
-                              final ext = image.path.split('.').last;
-                              final fileName = '${_uuid.v4()}.$ext';
-                              final dest = File('${coverDir.path}/$fileName');
-                              await dest.writeAsBytes(await image.readAsBytes());
-                              if (book.coverPath != null) {
-                                try { await File(book.coverPath!).delete(); } catch (_) {}
-                              }
-                              book.coverPath = dest.path;
-                              setDlg(() {});
-                            }
-                          } catch (_) {}
-                        },
-                      ),
-                    ),
-                    if (book.coverPath != null) ...[
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.zoom_in, size: 18),
-                        label: const Text('查看'),
-                        onPressed: () {
-                          _viewCover(context, book);
-                        },
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 10),
-                // delete button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    label: const Text('删除此书',
-                        style: TextStyle(color: Colors.red)),
-                    onPressed: () =>
-                        Navigator.of(ctx).pop(<String, dynamic>{'delete': true}),
-                  ),
-                ),
-              ],
-            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(<String, dynamic>{
-                'title': titleCtrl.text.trim(),
-                'author': authorCtrl.text.trim(),
-                'date': dateCtrl.text.trim(),
-                'status': status,
-              }),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
-      ),
     );
 
     if (result == null || !mounted) return;
 
     if (result['delete'] == true) {
       if (book.coverPath != null) {
-        try { await File(book.coverPath!).delete(); } catch (_) {}
+        try {
+          await File(book.coverPath!).delete();
+        } catch (_) {}
       }
       setState(() => _books.removeWhere((b) => b.id == book.id));
       await _saveBooks();
@@ -739,10 +819,10 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
 
   Color _statusColor(ReadingStatus s, ThemeData theme) => switch (s) {
-        ReadingStatus.wantToRead => theme.colorScheme.tertiary,
-        ReadingStatus.reading => theme.colorScheme.primary,
-        ReadingStatus.done => theme.colorScheme.secondary,
-      };
+    ReadingStatus.wantToRead => theme.colorScheme.tertiary,
+    ReadingStatus.reading => theme.colorScheme.primary,
+    ReadingStatus.done => theme.colorScheme.secondary,
+  };
 
   // ── Build ────────────────────────────────────────────
   @override
@@ -752,39 +832,47 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       appBar: AppBar(
         title: const Text('我的书架'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.cloud_download_outlined),
-            tooltip: '从微信读书导入',
-            onPressed: _importFromWeread,
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          if (!_loaded)
-            const Center(child: CircularProgressIndicator())
-          else if (_books.isEmpty)
-            _emptyState(theme)
-          else
-            Column(
-              children: [
-                _buildFilterChips(theme),
-                Expanded(child: _bookGrid(theme)),
-              ],
-            ),
-          // Discussing chip — bottom-left
-          if (_books.isNotEmpty)
-            Positioned(
-              left: 16,
-              bottom: 16,
-              child: ActionChip(
-                avatar: const Icon(Icons.chat_bubble_outline, size: 18),
-                label: const Text('Discussing...'),
-                onPressed: () => _showDiscussingDialog(),
+          Container(
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.2),
               ),
             ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.forum_outlined, size: 20),
+                  tooltip: '发起讨论',
+                  onPressed: _books.isEmpty ? null : _showDiscussingDialog,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.cloud_download_outlined, size: 20),
+                  tooltip: '从微信读书导入',
+                  onPressed: _importFromWeread,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
         ],
       ),
+      body:
+          !_loaded
+              ? const Center(child: CircularProgressIndicator())
+              : _books.isEmpty
+              ? _emptyState(theme)
+              : Column(
+                children: [
+                  _buildFilterChips(theme),
+                  Expanded(child: _bookGrid(theme)),
+                ],
+              ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addBook,
         child: const Icon(Icons.add),
@@ -793,13 +881,17 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   }
 
   Widget _buildFilterChips(ThemeData theme) {
-    final filtered = _filterStatus == null
-        ? _books
-        : _books.where((b) => b.status == _filterStatus).toList();
+    final filtered =
+        _filterStatus == null
+            ? _books
+            : _books.where((b) => b.status == _filterStatus).toList();
     final allCount = _books.length;
-    final readingCount = _books.where((b) => b.status == ReadingStatus.reading).length;
-    final doneCount = _books.where((b) => b.status == ReadingStatus.done).length;
-    final wantCount = _books.where((b) => b.status == ReadingStatus.wantToRead).length;
+    final readingCount =
+        _books.where((b) => b.status == ReadingStatus.reading).length;
+    final doneCount =
+        _books.where((b) => b.status == ReadingStatus.done).length;
+    final wantCount =
+        _books.where((b) => b.status == ReadingStatus.wantToRead).length;
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -830,35 +922,42 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   }
 
   Widget _emptyState(ThemeData theme) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.menu_book_rounded,
-                size: 80, color: theme.colorScheme.primary.withAlpha(80)),
-            const SizedBox(height: 16),
-            Text('书架还是空的', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text('点右下角 + 添加你的第一本书',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.menu_book_rounded,
+          size: 80,
+          color: theme.colorScheme.primary.withAlpha(80),
         ),
-      );
+        const SizedBox(height: 16),
+        Text('书架还是空的', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          '点右下角 + 添加你的第一本书',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _bookGrid(ThemeData theme) {
-    final filtered = _filterStatus == null
-        ? _books
-        : _books.where((b) => b.status == _filterStatus).toList();
+    final filtered =
+        _filterStatus == null
+            ? _books
+            : _books.where((b) => b.status == _filterStatus).toList();
     return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.48,
-        ),
-        itemCount: filtered.length,
-        itemBuilder: (ctx, i) => _bookCard(theme, filtered[i]),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.48,
+      ),
+      itemCount: filtered.length,
+      itemBuilder: (ctx, i) => _bookCard(theme, filtered[i]),
     );
   }
 
@@ -870,9 +969,9 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     return GestureDetector(
       onTap: () => _showBookMenu(book),
       onDoubleTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('「${book.title}」讨论页面即将推出')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('「${book.title}」讨论页面即将推出')));
       },
       onLongPress: () => _editBook(book),
       child: Column(
@@ -883,69 +982,60 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             flex: 5,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: hasCover
-                  ? Image.file(File(book.coverPath!), fit: BoxFit.cover)
-                  : _placeholderCover(theme, book),
+              child:
+                  hasCover
+                      ? Image.file(File(book.coverPath!), fit: BoxFit.cover)
+                      : _placeholderCover(theme, book),
             ),
           ),
           const SizedBox(height: 6),
           // info block
           Expanded(
             flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  '《${book.title}》',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                if (book.author != null)
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    book.author!,
-                    maxLines: 1,
+                    '《${book.title}》',
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
                     ),
                   ),
-                const SizedBox(height: 4),
-                // status badge + date
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _statusColor(book.status, theme),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
+                  const SizedBox(height: 2),
+                  if (book.author != null)
                     Text(
-                      book.status.label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: _statusColor(book.status, theme),
-                        fontWeight: FontWeight.w500,
+                      book.author!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      dateStr,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontSize: 10,
-                        color: theme.colorScheme.outline,
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      _statusPill(theme, book),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          dateStr,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 10,
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -953,43 +1043,74 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     );
   }
 
-  Widget _placeholderCover(ThemeData theme, Book book) => Container(
-        color: theme.colorScheme.surfaceContainerHighest,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.menu_book_rounded,
-                  size: 28,
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
-              const SizedBox(height: 6),
+  Widget _statusPill(ThemeData theme, Book book) {
+    final color = _statusColor(book.status, theme);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        book.status.label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholderCover(ThemeData theme, Book book) {
+    final scheme = theme.colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [scheme.primaryContainer, scheme.secondaryContainer],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.menu_book_rounded,
+              size: 30,
+              color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '《${book.title}》',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+                color: scheme.onPrimaryContainer,
+              ),
+            ),
+            if (book.author != null) ...[
+              const SizedBox(height: 3),
               Text(
-                '《${book.title}》',
-                maxLines: 3,
+                book.author!,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(160),
+                  fontSize: 10,
+                  color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
                 ),
               ),
-              if (book.author != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  book.author!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
-                  ),
-                ),
-              ],
             ],
-          ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
