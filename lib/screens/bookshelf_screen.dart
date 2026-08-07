@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/book.dart';
 import '../services/discussion_group_service.dart';
+import '../services/app_providers.dart';
 import '../services/weread_service.dart';
 import 'book_chat_screen.dart';
 import 'book_discussion_screen.dart';
@@ -828,9 +830,17 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bg = context.watch<BackgroundProvider>();
+    final darkFg = bg.darkForeground ?? (theme.brightness == Brightness.light);
+    final fgColor = darkFg ? const Color(0xFF171717) : Colors.white;
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('我的书架'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        title: Text('我的书架', style: TextStyle(color: fgColor)),
         actions: [
           Container(
             height: 36,

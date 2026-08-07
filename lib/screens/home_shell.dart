@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../config/app_tab.dart';
+import '../services/app_providers.dart';
 import '../services/storage_service.dart';
 import 'chat_screen.dart';
 import 'bookshelf_screen.dart';
-import 'tools_screen.dart';
-import 'settings_screen.dart';
+import 'habitat_screen.dart';
 
 /// App 一级页面容器：底部导航 + IndexedStack。
 class HomeShell extends StatefulWidget {
@@ -19,6 +20,7 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   bool _hideNav = false;
   String? _backgroundImagePath;
+  String _backgroundPreset = 'none';
 
   @override
   void initState() {
@@ -27,8 +29,16 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _loadBackground() async {
+    final bgProvider = context.read<BackgroundProvider>();
     final path = await StorageService.getBackgroundImagePath();
-    if (mounted) setState(() => _backgroundImagePath = path);
+    final preset = await StorageService.getBackgroundPreset();
+    if (mounted) {
+      setState(() {
+        _backgroundImagePath = path;
+        _backgroundPreset = preset;
+      });
+      await bgProvider.update(path, preset);
+    }
   }
 
   void _switchTo(AppTab tab) {
@@ -46,18 +56,11 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final decoration = _buildBackgroundDecoration(scheme);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(
-        decoration:
-            _index == 0 && _backgroundImagePath != null
-                ? BoxDecoration(
-                  image: DecorationImage(
-                    image: FileImage(File(_backgroundImagePath!)),
-                    fit: BoxFit.cover,
-                  ),
-                )
-                : null,
+        decoration: decoration,
         child: Column(
           children: [
             Expanded(
@@ -70,8 +73,7 @@ class _HomeShellState extends State<HomeShell> {
                     onChatModeChanged: _onChatModeChanged,
                   ),
                   const BookshelfScreen(),
-                  const ToolsScreen(),
-                  const SettingsScreen(),
+                  HabitatScreen(onSwitchTab: _switchTo),
                 ],
               ),
             ),
@@ -80,6 +82,25 @@ class _HomeShellState extends State<HomeShell> {
         ),
       ),
     );
+  }
+
+  BoxDecoration? _buildBackgroundDecoration(ColorScheme scheme) {
+    if (_backgroundImagePath != null) {
+      return BoxDecoration(
+        image: DecorationImage(
+          image: FileImage(File(_backgroundImagePath!)),
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    switch (_backgroundPreset) {
+      case 'dark':
+        return const BoxDecoration(color: Color(0xFF121212));
+      case 'light':
+        return const BoxDecoration(color: Color(0xFFF6F3EA));
+      default:
+        return null;
+    }
   }
 
   Widget _buildFloatingNav(ColorScheme scheme) {
@@ -128,16 +149,9 @@ class _HomeShellState extends State<HomeShell> {
               ),
               _navItem(
                 2,
-                Icons.build_outlined,
-                Icons.build_rounded,
-                '工具',
-                scheme,
-              ),
-              _navItem(
-                3,
-                Icons.settings_outlined,
-                Icons.settings_rounded,
-                '设置',
+                Icons.park_outlined,
+                Icons.park_rounded,
+                '栖息',
                 scheme,
               ),
             ],

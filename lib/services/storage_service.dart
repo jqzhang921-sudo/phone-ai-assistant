@@ -7,6 +7,7 @@ import '../models/conversation.dart';
 class StorageService {
   static late Directory _dir;
   static const _kBackgroundImageKey = 'chat_background_image_path';
+  static const _kBackgroundPresetKey = 'chat_background_preset';
 
   static Future<void> init() async {
     _dir = await getApplicationDocumentsDirectory();
@@ -26,6 +27,17 @@ class StorageService {
   static Future<String?> getBackgroundImagePath() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_kBackgroundImageKey);
+  }
+
+  /// 背景预设：'none' 跟随主题 / 'light' 浅色 / 'dark' 深色
+  static Future<void> setBackgroundPreset(String preset) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kBackgroundPresetKey, preset);
+  }
+
+  static Future<String> getBackgroundPreset() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kBackgroundPresetKey) ?? 'none';
   }
 
   static String get _convDir => '${_dir.path}/conversations';

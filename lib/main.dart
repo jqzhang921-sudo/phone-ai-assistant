@@ -23,6 +23,7 @@ void main() async {
         ),
         ChangeNotifierProvider(create: (_) => ExternalMcpProvider()),
         ChangeNotifierProvider(create: (_) => TtsService()),
+        ChangeNotifierProvider(create: (_) => BackgroundProvider()),
       ],
       child: const PhoneAiApp(),
     ),

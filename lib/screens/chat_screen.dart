@@ -21,6 +21,8 @@ import '../search/history_search_delegate.dart';
 import '../search/search_result_model.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
+import 'tools_screen.dart';
+import 'settings_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   /// 底部导航切换回调，用于从聊天页跳转到书架 / 工具 / 设置。
@@ -959,6 +961,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bg = context.watch<BackgroundProvider>();
+    final darkFg = bg.darkForeground ?? (theme.brightness == Brightness.light);
+    final fgColor = darkFg ? const Color(0xFF171717) : Colors.white;
 
     return PopScope(
       canPop: !_chatMode,
@@ -969,24 +974,31 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: Colors.transparent,
         drawer: _buildDrawer(theme),
         drawerEnableOpenDragGesture: !_chatMode,
+        drawerEdgeDragWidth: 48,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
+          foregroundColor: fgColor,
           toolbarHeight: _chatMode ? null : 64,
-          leading:
-              _chatMode
-                  ? _topBarIcon(
-                    Icons.arrow_back,
-                    onPressed: _goHome,
-                    tooltip: '返回主页',
-                  )
-                  : _topBarIcon(
-                    Icons.menu_rounded,
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                    tooltip: '菜单',
-                  ),
+          leading: Builder(
+            builder:
+                (ctx) =>
+                    _chatMode
+                        ? _topBarIcon(
+                          Icons.arrow_back,
+                          onPressed: _goHome,
+                          tooltip: '返回主页',
+                          color: fgColor,
+                        )
+                        : _topBarIcon(
+                          Icons.menu_rounded,
+                          onPressed: () => Scaffold.of(ctx).openDrawer(),
+                          tooltip: '菜单',
+                          color: fgColor,
+                        ),
+          ),
           title:
               !_chatMode
                   ? Column(
@@ -997,12 +1009,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         '下午好，Cleo',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
+                          color: fgColor,
                         ),
                       ),
                       Text(
                         _homeDateStr(),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                          color: fgColor.withValues(alpha: 0.72),
                         ),
                       ),
                     ],
@@ -1011,10 +1024,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? Text(
                         _conversation.title,
                         overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: fgColor),
                       )
                       : null),
           actions: [
-            _topBarIcon(Icons.search, onPressed: _openSearch, tooltip: '搜索'),
+            _topBarIcon(
+              Icons.search,
+              onPressed: _openSearch,
+              tooltip: '搜索',
+              color: fgColor,
+            ),
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(2),
@@ -1063,10 +1082,12 @@ class _ChatScreenState extends State<ChatScreen> {
     IconData icon, {
     required VoidCallback onPressed,
     String? tooltip,
+    Color? color,
   }) {
     return IconButton(
       icon: Icon(
         icon,
+        color: color,
         shadows: const [
           Shadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
         ],
@@ -1112,20 +1133,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 Navigator.of(context).pop();
                 _exportConversation();
               }),
-              _drawerItem(theme, Icons.image_outlined, '设置聊天背景', () {
-                Navigator.of(context).pop();
-                _pickBackground();
-              }),
-              if (_backgroundImagePath != null)
-                _drawerItem(
-                  theme,
-                  Icons.image_not_supported_outlined,
-                  '清除聊天背景',
-                  () {
-                    Navigator.of(context).pop();
-                    _clearBackground();
-                  },
-                ),
               const Divider(),
             ],
             _drawerItem(theme, Icons.add_rounded, '新对话', () {
@@ -1142,11 +1149,19 @@ class _ChatScreenState extends State<ChatScreen> {
             }),
             _drawerItem(theme, Icons.build_outlined, '工具', () {
               Navigator.of(context).pop();
-              widget.onSwitchTab?.call(AppTab.tools);
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const ToolsScreen()));
             }),
             _drawerItem(theme, Icons.settings_outlined, '设置', () {
               Navigator.of(context).pop();
-              widget.onSwitchTab?.call(AppTab.settings);
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+            }),
+            _drawerItem(theme, Icons.wallpaper_outlined, '聊天背景', () {
+              Navigator.of(context).pop();
+              _showBackgroundSheet();
             }),
             const Divider(),
             _drawerItem(theme, Icons.delete_sweep_outlined, '回收站', () {
@@ -1284,8 +1299,129 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _showBackgroundSheet() async {
+    final preset = await StorageService.getBackgroundPreset();
+    final hasImage = _backgroundImagePath != null;
+    if (!mounted) return;
+    final scheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      builder:
+          (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '聊天背景',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                _backgroundOption(
+                  ctx,
+                  scheme,
+                  icon: Icons.auto_awesome_outlined,
+                  label: '跟随主题',
+                  desc: '浅色模式用浅色背景，深色模式用深色背景',
+                  selected: !hasImage && preset == 'none',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _setBackgroundPreset('none');
+                  },
+                ),
+                _backgroundOption(
+                  ctx,
+                  scheme,
+                  icon: Icons.light_mode_outlined,
+                  label: '浅色背景',
+                  desc: '固定的浅色底色',
+                  selected: !hasImage && preset == 'light',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _setBackgroundPreset('light');
+                  },
+                ),
+                _backgroundOption(
+                  ctx,
+                  scheme,
+                  icon: Icons.dark_mode_outlined,
+                  label: '深色背景',
+                  desc: '固定的深色底色',
+                  selected: !hasImage && preset == 'dark',
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _setBackgroundPreset('dark');
+                  },
+                ),
+                _backgroundOption(
+                  ctx,
+                  scheme,
+                  icon: Icons.wallpaper_outlined,
+                  label: '自定义图片',
+                  desc: hasImage ? '当前已设置图片' : '从相册选择一张背景图',
+                  selected: hasImage,
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickBackground();
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+    );
+  }
+
+  Widget _backgroundOption(
+    BuildContext ctx,
+    ColorScheme scheme, {
+    required IconData icon,
+    required String label,
+    required String desc,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: selected ? scheme.primary : scheme.onSurfaceVariant,
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(desc, style: const TextStyle(fontSize: 12)),
+      trailing: selected ? const Icon(Icons.check_rounded, size: 20) : null,
+      onTap: onTap,
+    );
+  }
+
+  Future<void> _setBackgroundPreset(String preset) async {
+    await StorageService.setBackgroundImagePath(null);
+    await StorageService.setBackgroundPreset(preset);
+    if (mounted) setState(() => _backgroundImagePath = null);
+    widget.onBackgroundChanged?.call();
+  }
+
   Widget _buildEmptyChatHint(ThemeData theme) {
-    final scheme = theme.colorScheme;
+    final bg = context.watch<BackgroundProvider>();
+    final darkFg = bg.darkForeground ?? (theme.brightness == Brightness.light);
+    final fgColor = darkFg ? const Color(0xFF171717) : Colors.white;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1293,12 +1429,12 @@ class _ChatScreenState extends State<ChatScreen> {
           Icon(
             Icons.chat_bubble_outline,
             size: 56,
-            color: scheme.onSurface.withValues(alpha: 0.25),
+            color: fgColor.withValues(alpha: 0.3),
           ),
           const SizedBox(height: 12),
           Text(
             '给 AI 发第一条消息吧',
-            style: TextStyle(color: scheme.onSurfaceVariant),
+            style: TextStyle(color: fgColor.withValues(alpha: 0.7)),
           ),
         ],
       ),
@@ -1307,6 +1443,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildHome(ThemeData theme) {
     final scheme = theme.colorScheme;
+    final bg = context.watch<BackgroundProvider>();
+    final darkFg = bg.darkForeground ?? (theme.brightness == Brightness.light);
+    final fgColor = darkFg ? const Color(0xFF171717) : Colors.white;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -1371,24 +1510,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _quickActionCard(
-              theme,
-              Icons.build_outlined,
-              '工具',
-              () => widget.onSwitchTab?.call(AppTab.tools),
-            ),
-            const SizedBox(width: 10),
-            _quickActionCard(
-              theme,
-              Icons.settings_outlined,
-              '设置',
-              () => widget.onSwitchTab?.call(AppTab.settings),
-            ),
-          ],
-        ),
         if (_savedConversations.isNotEmpty) ...[
           const SizedBox(height: 26),
           Row(
@@ -1418,7 +1539,7 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Text(
             '也可以直接在下方输入框开始聊天',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+              color: fgColor.withValues(alpha: 0.7),
             ),
           ),
         ),

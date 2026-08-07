@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import '../models/mcp_tool.dart';
 import 'ai_client.dart';
@@ -103,5 +105,60 @@ class ExternalMcpProvider extends ChangeNotifier {
       c.disconnect();
     }
     super.dispose();
+  }
+}
+
+/// 背景信息：自定义图片路径 + 预设 + 前景色是否需要深色（可读性自适应）。
+class BackgroundProvider extends ChangeNotifier {
+  String? _path;
+  String _preset = 'none';
+  bool? _darkForeground; // null = 跟随主题
+
+  String? get path => _path;
+  String get preset => _preset;
+
+  /// 背景偏亮时返回 true（文字用深色），偏暗返回 false（文字用浅色）。
+  bool? get darkForeground => _darkForeground;
+
+  Future<void> update(String? path, String preset) async {
+    _path = path;
+    _preset = preset;
+    if (path != null) {
+      final avg = await _averageColor(path);
+      _darkForeground = avg == null || avg.computeLuminance() > 0.5;
+    } else if (preset == 'dark') {
+      _darkForeground = false;
+    } else if (preset == 'light') {
+      _darkForeground = true;
+    } else {
+      _darkForeground = null;
+    }
+    notifyListeners();
+  }
+
+  Future<ui.Color?> _averageColor(String path) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: 32,
+        targetHeight: 32,
+      );
+      final frame = await codec.getNextFrame();
+      final img = frame.image;
+      final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+      img.dispose();
+      if (data == null) return null;
+      var r = 0, g = 0, b = 0;
+      final n = data.lengthInBytes ~/ 4;
+      for (var i = 0; i < n; i++) {
+        r += data.getUint8(i * 4);
+        g += data.getUint8(i * 4 + 1);
+        b += data.getUint8(i * 4 + 2);
+      }
+      return ui.Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
+    } catch (_) {
+      return null;
+    }
   }
 }
