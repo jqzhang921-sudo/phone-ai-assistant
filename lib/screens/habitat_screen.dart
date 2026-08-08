@@ -4,6 +4,7 @@ import '../config/app_tab.dart';
 import '../services/app_providers.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
+import 'musing_corner_screen.dart';
 
 /// 「栖息」页：给用户留的专属空间（陪伴状态 / 阅读角落 / 日记）。
 class HabitatScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
   int _totalMessages = 0;
   int _readingCount = 0;
   int _diaryCount = 0;
+  int _musingCount = 0;
 
   @override
   void initState() {
@@ -30,6 +32,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
   Future<void> _load() async {
     final convs = await StorageService.listConversations();
     final diaries = await StorageService.listDiaryEntries();
+    final musings = await StorageService.listFavoritedMusings();
     final now = DateTime.now();
     var today = 0;
     var total = 0;
@@ -46,6 +49,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _totalMessages = total;
         _readingCount = convs.length;
         _diaryCount = diaries.length;
+        _musingCount = musings.length;
       });
     }
   }
@@ -103,6 +107,23 @@ class _HabitatScreenState extends State<HabitatScreen> {
             lines: ['书架上还有 $_readingCount 个对话和书在等你。', '去书架看看今天读点什么。'],
             actionLabel: '去书架',
             onAction: () => widget.onSwitchTab?.call(AppTab.bookshelf),
+          ),
+          const SizedBox(height: 14),
+          _card(
+            theme,
+            icon: Icons.crop_square_rounded,
+            title: '一隅',
+            lines: [
+              _musingCount > 0 ? '收藏了 $_musingCount 条。' : '还没收藏过，去首页看看它想说什么。',
+              '它随口说的话，你觉得值得留下的，都在这。',
+            ],
+            actionLabel: '去看看',
+            onAction: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MusingCornerScreen()),
+              );
+              _load();
+            },
           ),
           const SizedBox(height: 14),
           _card(

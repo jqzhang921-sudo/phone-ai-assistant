@@ -9,6 +9,7 @@ class Conversation {
   String model;
   String? systemPrompt;
   bool titleManuallySet;
+  bool isPinned;
 
   Conversation({
     required this.id,
@@ -19,32 +20,36 @@ class Conversation {
     this.model = 'gpt-4o',
     this.systemPrompt,
     this.titleManuallySet = false,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now(),
-        messages = messages ?? [];
+    this.isPinned = false,
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now(),
+       messages = messages ?? [];
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt.toIso8601String(),
-        'messages': messages.map((m) => m.toJson()).toList(),
-        'model': model,
-        'systemPrompt': systemPrompt,
-        'titleManuallySet': titleManuallySet,
-      };
+    'id': id,
+    'title': title,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    'messages': messages.map((m) => m.toJson()).toList(),
+    'model': model,
+    'systemPrompt': systemPrompt,
+    'titleManuallySet': titleManuallySet,
+    'isPinned': isPinned,
+  };
 
   factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
-        id: json['id'],
-        title: json['title'] ?? '新对话',
-        createdAt: DateTime.parse(json['createdAt']),
-        updatedAt: DateTime.parse(json['updatedAt']),
-        messages: (json['messages'] as List?)
-                ?.map((m) => ChatMessage.fromJson(m))
-                .toList() ??
-            [],
-        model: json['model'] ?? 'gpt-4o',
-        systemPrompt: json['systemPrompt'],
-        titleManuallySet: json['titleManuallySet'] ?? false,
-      );
+    id: json['id'],
+    title: json['title'] ?? '新对话',
+    createdAt: DateTime.parse(json['createdAt']),
+    updatedAt: DateTime.parse(json['updatedAt']),
+    messages:
+        (json['messages'] as List?)
+            ?.map((m) => ChatMessage.fromJson(m))
+            .toList() ??
+        [],
+    model: json['model'] ?? 'gpt-4o',
+    systemPrompt: json['systemPrompt'],
+    titleManuallySet: json['titleManuallySet'] ?? false,
+    isPinned: json['isPinned'] ?? false,
+  );
 }

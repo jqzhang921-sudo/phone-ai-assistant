@@ -17,6 +17,8 @@ import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../services/weread_service.dart';
+import '../models/musing_entry.dart';
+import '../services/musing_generator.dart';
 import '../search/history_search_delegate.dart';
 import '../search/search_result_model.dart';
 import '../widgets/message_bubble.dart';
@@ -57,6 +59,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _chatMode = false;
   List<Conversation> _savedConversations = [];
   String? _backgroundImagePath;
+  String? _musingContent;
+  bool _musingFavorited = false;
+  bool _musingLoading = false;
 
   late Conversation _conversation;
 
@@ -67,6 +72,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _initSpeech();
     _loadConversations();
     _loadBackground();
+    _loadMusing();
   }
 
   @override
@@ -90,6 +96,66 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadBackground() async {
     final path = await StorageService.getBackgroundImagePath();
     if (mounted) setState(() => _backgroundImagePath = path);
+  }
+
+  Future<void> _loadMusing() async {
+    final cached = await StorageService.getTodayMusing();
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _musingContent = cached['content'] as String?;
+          _musingFavorited = cached['favorited'] as bool? ?? false;
+        });
+      }
+      return;
+    }
+    await _refreshMusing();
+  }
+
+  Future<void> _refreshMusing() async {
+    final aiClient = context.read<AiClientProvider>().currentClient;
+    if (aiClient == null) return;
+    if (mounted) setState(() => _musingLoading = true);
+    try {
+      final content = await generateDailyMusing(aiClient: aiClient);
+      if (content != null) {
+        await StorageService.setTodayMusing(content);
+        if (mounted) {
+          setState(() {
+            _musingContent = content;
+            _musingFavorited = false;
+          });
+        }
+      }
+    } catch (_) {
+      // 生成失败就静默保留原内容，不打扰用户
+    } finally {
+      if (mounted) setState(() => _musingLoading = false);
+    }
+  }
+
+  Future<void> _toggleFavoriteMusing() async {
+    if (_musingContent == null) return;
+    final newState = !_musingFavorited;
+    setState(() => _musingFavorited = newState);
+    await StorageService.setTodayMusingFavorited(newState);
+    if (newState) {
+      await StorageService.addFavoritedMusing(
+        MusingEntry(
+          id: _uuid.v4(),
+          date: DateTime.now(),
+          content: _musingContent!,
+        ),
+      );
+    } else {
+      // 取消收藏：从收藏列表里把今天这条同内容的条目摘掉
+      final favorites = await StorageService.listFavoritedMusingsForToday();
+      final match =
+          favorites.where((m) => m.content == _musingContent).firstOrNull;
+      if (match != null) {
+        await StorageService.removeFavoritedMusing(match.id);
+      }
+    }
   }
 
   Future<void> _pickBackground() async {
@@ -1008,7 +1074,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '下午好，Cleo',
+                        _greeting(),
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: fgColor,
@@ -1097,6 +1163,27 @@ class _ChatScreenState extends State<ChatScreen> {
       onPressed: onPressed,
       tooltip: tooltip,
     );
+  }
+
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    String part;
+    if (hour < 5) {
+      part = '夜深了';
+    } else if (hour < 9) {
+      part = '早上好';
+    } else if (hour < 12) {
+      part = '上午好';
+    } else if (hour < 14) {
+      part = '中午好';
+    } else if (hour < 18) {
+      part = '下午好';
+    } else if (hour < 23) {
+      part = '晚上好';
+    } else {
+      part = '夜深了';
+    }
+    return '$part，Cleo';
   }
 
   String _homeDateStr() {
@@ -1452,7 +1539,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        // 今日小结
+        // 我想说
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(18),
@@ -1470,20 +1557,63 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '今日小结',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1,
-                  color: scheme.onPrimary.withValues(alpha: 0.7),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '我想说',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1,
+                      color: scheme.onPrimary.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_musingLoading)
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.onPrimary.withValues(alpha: 0.6),
+                          ),
+                        )
+                      else
+                        InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: _refreshMusing,
+                          child: Icon(
+                            Icons.refresh_rounded,
+                            size: 18,
+                            color: scheme.onPrimary.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      const SizedBox(width: 10),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap:
+                            _musingContent == null
+                                ? null
+                                : _toggleFavoriteMusing,
+                        child: Icon(
+                          _musingFavorited
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          size: 20,
+                          color: scheme.onPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
-                _conversation.messages.isEmpty
-                    ? '开始新对话吧，我可以帮你拍照、查位置、聊书、找文件。'
-                    : '今天已进行了 ${_conversation.messages.length} 轮对话。最近在聊：${_conversation.title}',
+                _musingContent ??
+                    (_musingLoading ? '在想点什么…' : '开始新对话吧，我可以帮你拍照、查位置、聊书、找文件。'),
                 style: TextStyle(
                   fontSize: 14.5,
                   height: 1.6,
@@ -1566,31 +1696,56 @@ class _ChatScreenState extends State<ChatScreen> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
+          leading:
+              conv.isPinned
+                  ? Icon(Icons.push_pin, size: 18, color: scheme.primary)
+                  : null,
           subtitle: Text(
             '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
             style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, size: 18),
-            onPressed: () async {
-              await StorageService.deleteConversation(conv.id);
-              _loadConversations();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('已移到回收站'),
-                    behavior: SnackBarBehavior.floating,
-                    action: SnackBarAction(
-                      label: '撤销',
-                      onPressed: () async {
-                        await StorageService.restoreConversation(conv.id);
-                        _loadConversations();
-                      },
-                    ),
-                  ),
-                );
-              }
-            },
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: Icon(
+                  conv.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  size: 18,
+                  color:
+                      conv.isPinned ? scheme.primary : scheme.onSurfaceVariant,
+                ),
+                tooltip: conv.isPinned ? '取消置顶' : '置顶',
+                onPressed: () async {
+                  await StorageService.setConversationPinned(
+                    conv.id,
+                    !conv.isPinned,
+                  );
+                  _loadConversations();
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 18),
+                onPressed: () async {
+                  await StorageService.deleteConversation(conv.id);
+                  _loadConversations();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('已移到回收站'),
+                        behavior: SnackBarBehavior.floating,
+                        action: SnackBarAction(
+                          label: '撤销',
+                          onPressed: () async {
+                            await StorageService.restoreConversation(conv.id);
+                            _loadConversations();
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ],
           ),
           onTap: () => _switchConversation(conv),
         ),
