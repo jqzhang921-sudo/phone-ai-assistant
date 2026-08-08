@@ -465,7 +465,9 @@ class _ChatScreenState extends State<ChatScreen> {
           _conversation.messages,
           systemPrompt:
               _conversation.systemPrompt ??
-              '你是一个手机 AI 助手。你可以使用手机上的工具来帮助用户：拍照、查看文件、获取位置等。请根据用户的需求主动使用这些工具。',
+              '你是用户的好朋友、日常小伙伴。聊天要像真人朋友一样自然、亲切、有温度，'
+                  '记得你们之间的相处细节，会主动关心用户。你也能用手机上的工具帮忙：'
+                  '拍照、查看文件、获取位置等，需要时主动使用，但别把对话变成干巴巴的任务交接。',
         )) {
           switch (event.type) {
             case AiEventType.token:

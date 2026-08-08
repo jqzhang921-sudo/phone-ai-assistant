@@ -28,13 +28,23 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   List<Book> _books = [];
   bool _loaded = false;
   ReadingStatus? _filterStatus; // null = show all
+  bool _searchOpen = false;
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
 
   static const _storageKey = 'bookshelf_books';
+  static const _ignoredWereadKey = 'bookshelf_ignored_weread_ids';
 
   @override
   void initState() {
     super.initState();
     _loadBooks();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<Directory> get _coverDir async {
@@ -67,6 +77,23 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     final prefs = await SharedPreferences.getInstance();
     final list = _books.map((b) => b.toJson()).toList();
     await prefs.setString(_storageKey, jsonEncode(list));
+  }
+
+  /// 归一化标题用于去重比较：去首尾空格、合并中间多余空格。
+  String _normalizeTitle(String title) =>
+      title.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+  Future<Set<String>> _loadIgnoredWereadIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_ignoredWereadKey);
+    return raw?.toSet() ?? {};
+  }
+
+  Future<void> _addIgnoredWereadId(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = await _loadIgnoredWereadIds();
+    ids.add(id);
+    await prefs.setStringList(_ignoredWereadKey, ids.toList());
   }
 
   Future<void> _importFromWeread() async {
@@ -108,10 +135,19 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       final imported = await WereadService.fetchBooks();
       if (!mounted) return;
 
+      final ignoredIds = await _loadIgnoredWereadIds();
+
       // Update existing books with wereadBookId, add new books
-      int updated = 0, added = 0;
+      int updated = 0, added = 0, skipped = 0;
       for (final ib in imported) {
-        final idx = _books.indexWhere((b) => b.title == ib.title);
+        if (ib.wereadBookId != null && ignoredIds.contains(ib.wereadBookId)) {
+          skipped++;
+          continue;
+        }
+        final ibTitle = _normalizeTitle(ib.title);
+        final idx = _books.indexWhere(
+          (b) => _normalizeTitle(b.title) == ibTitle,
+        );
         if (idx >= 0) {
           if (_books[idx].wereadBookId == null && ib.wereadBookId != null) {
             _books[idx].wereadBookId = ib.wereadBookId;
@@ -125,9 +161,10 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
 
       if (added == 0 && updated == 0) {
         if (mounted) {
+          final msg = skipped > 0 ? '没有新书（已跳过 $skipped 本忽略的书）' : '没有新书，书架已是最新';
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('没有新书，书架已是最新')));
+          ).showSnackBar(SnackBar(content: Text(msg)));
         }
         return;
       }
@@ -137,6 +174,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         final parts = <String>[];
         if (added > 0) parts.add('新增 $added 本');
         if (updated > 0) parts.add('更新 $updated 本');
+        if (skipped > 0) parts.add('跳过 $skipped 本忽略的书');
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(parts.join('，'))));
@@ -791,8 +829,16 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           await File(book.coverPath!).delete();
         } catch (_) {}
       }
+      if (book.wereadBookId != null) {
+        await _addIgnoredWereadId(book.wereadBookId!);
+      }
       setState(() => _books.removeWhere((b) => b.id == book.id));
       await _saveBooks();
+      if (mounted && book.wereadBookId != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已删除，下次从微信读书导入不会再拉回这本书')));
+      }
       return;
     }
 
@@ -857,6 +903,22 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             child: Row(
               children: [
                 IconButton(
+                  icon: Icon(
+                    _searchOpen ? Icons.search_off : Icons.search,
+                    size: 20,
+                  ),
+                  tooltip: '搜索书架',
+                  onPressed: () {
+                    setState(() {
+                      _searchOpen = !_searchOpen;
+                      if (!_searchOpen) {
+                        _searchController.clear();
+                        _searchQuery = '';
+                      }
+                    });
+                  },
+                ),
+                IconButton(
                   icon: const Icon(Icons.forum_outlined, size: 20),
                   tooltip: '发起讨论',
                   onPressed: _books.isEmpty ? null : _showDiscussingDialog,
@@ -879,6 +941,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
               ? _emptyState(theme)
               : Column(
                 children: [
+                  if (_searchOpen) _buildSearchField(theme),
                   _buildFilterChips(theme),
                   Expanded(child: _bookGrid(theme)),
                 ],
@@ -886,6 +949,40 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: _addBook,
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildSearchField(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: TextField(
+        controller: _searchController,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: '搜书名或作者',
+          prefixIcon: const Icon(Icons.search, size: 20),
+          isDense: true,
+          filled: true,
+          fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          suffixIcon:
+              _searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+        ),
+        onChanged: (v) => setState(() => _searchQuery = v),
       ),
     );
   }
@@ -954,10 +1051,31 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   );
 
   Widget _bookGrid(ThemeData theme) {
-    final filtered =
+    var filtered =
         _filterStatus == null
             ? _books
             : _books.where((b) => b.status == _filterStatus).toList();
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      filtered =
+          filtered
+              .where(
+                (b) =>
+                    b.title.toLowerCase().contains(q) ||
+                    (b.author?.toLowerCase().contains(q) ?? false),
+              )
+              .toList();
+    }
+    if (filtered.isEmpty) {
+      return Center(
+        child: Text(
+          '没找到匹配的书',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

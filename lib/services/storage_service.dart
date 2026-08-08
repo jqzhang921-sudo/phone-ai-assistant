@@ -3,6 +3,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../models/conversation.dart';
+import '../models/diary_entry.dart';
 
 class StorageService {
   static late Directory _dir;
@@ -137,5 +138,48 @@ class StorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  // ---------------- 日记 ----------------
+  static const _kDiaryKey = 'diary_entries';
+
+  /// 按时间倒序返回所有日记（最新的在最前）。
+  static Future<List<DiaryEntry>> listDiaryEntries() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kDiaryKey);
+    if (raw == null) return [];
+    final list =
+        (jsonDecode(raw) as List)
+            .map((e) => DiaryEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+    list.sort((a, b) => b.date.compareTo(a.date));
+    return list;
+  }
+
+  /// 保存一条新日记（追加，不覆盖旧的）。
+  static Future<void> addDiaryEntry(DiaryEntry entry) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = await listDiaryEntries();
+    entries.add(entry);
+    final raw = jsonEncode(entries.map((e) => e.toJson()).toList());
+    await prefs.setString(_kDiaryKey, raw);
+  }
+
+  static Future<void> deleteDiaryEntry(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = await listDiaryEntries();
+    entries.removeWhere((e) => e.id == id);
+    final raw = jsonEncode(entries.map((e) => e.toJson()).toList());
+    await prefs.setString(_kDiaryKey, raw);
+  }
+
+  /// 是否已经有当天日期的日记（避免重复生成）。
+  static Future<bool> hasDiaryEntryForToday() async {
+    final entries = await listDiaryEntries();
+    final now = DateTime.now();
+    final todayKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    return entries.any((e) => e.dateKey == todayKey);
   }
 }

@@ -3,8 +3,9 @@ import 'package:provider/provider.dart';
 import '../config/app_tab.dart';
 import '../services/app_providers.dart';
 import '../services/storage_service.dart';
+import 'diary_screen.dart';
 
-/// 「栖息」页：给用户留的专属空间（陪伴状态 / 阅读角落 / 灵感占位）。
+/// 「栖息」页：给用户留的专属空间（陪伴状态 / 阅读角落 / 日记）。
 class HabitatScreen extends StatefulWidget {
   final void Function(AppTab tab)? onSwitchTab;
 
@@ -18,6 +19,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
   int _todayMessages = 0;
   int _totalMessages = 0;
   int _readingCount = 0;
+  int _diaryCount = 0;
 
   @override
   void initState() {
@@ -27,6 +29,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
 
   Future<void> _load() async {
     final convs = await StorageService.listConversations();
+    final diaries = await StorageService.listDiaryEntries();
     final now = DateTime.now();
     var today = 0;
     var total = 0;
@@ -42,6 +45,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _todayMessages = today;
         _totalMessages = total;
         _readingCount = convs.length;
+        _diaryCount = diaries.length;
       });
     }
   }
@@ -103,9 +107,19 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 14),
           _card(
             theme,
-            icon: Icons.auto_awesome_outlined,
-            title: '灵感占位',
-            lines: ['这里以后可以放：心情记录、专注计时、纪念日、每日一句…', '想放什么，随时告诉我。'],
+            icon: Icons.edit_note_outlined,
+            title: '日记',
+            lines: [
+              _diaryCount > 0 ? '已经写了 $_diaryCount 篇。' : '还没写过，聊完天试试看。',
+              '每天的一两件小事，AI 用自己的口吻记下来。',
+            ],
+            actionLabel: '去看看',
+            onAction: () async {
+              await Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const DiaryScreen()));
+              _load();
+            },
           ),
         ],
       ),

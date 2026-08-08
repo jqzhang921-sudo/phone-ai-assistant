@@ -14,6 +14,14 @@ String _withTimestamp(String content, DateTime t) {
   return '[time: $ts]\n$content';
 }
 
+/// 去掉模型可能复读出来的 [time: ...] 时间戳标记。
+String _stripTimeMarkers(String text) {
+  return text
+      .replaceAll(RegExp(r'\[time:[^\]]*\]'), '')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trimLeft();
+}
+
 /// 系统级提示：时间戳只是元数据，模型不应复述。
 const _timeMetaInstruction =
     '注意：消息内容中可能带有 [time: ...] 前缀，这是系统自动注入的发送时间元数据，'
@@ -241,7 +249,7 @@ class AiClient {
       if (toolCalls != null && toolCalls!.isNotEmpty) {
         yield AiStreamEvent.toolCalls(toolCalls!);
       } else if (contentBuffer != null) {
-        yield AiStreamEvent.done(contentBuffer);
+        yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
       }
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
@@ -395,7 +403,7 @@ class AiClient {
       if (toolCalls != null && toolCalls!.isNotEmpty) {
         yield AiStreamEvent.toolCalls(toolCalls!);
       } else {
-        yield AiStreamEvent.done(contentBuffer);
+        yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
       }
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
