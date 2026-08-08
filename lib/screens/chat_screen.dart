@@ -17,6 +17,7 @@ import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../services/weread_service.dart';
+import '../services/memory_context.dart';
 import '../models/musing_entry.dart';
 import '../services/musing_generator.dart';
 import '../search/history_search_delegate.dart';
@@ -518,6 +519,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final allTools = [...mcpTools, ...externalTools];
     final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
 
+    const basePersona =
+        '你是用户的好朋友、日常小伙伴。聊天要像真人朋友一样自然、亲切、有温度，'
+        '重视和用户的关系，会主动关心用户。你也能用手机上的工具帮忙：'
+        '拍照、查看文件、获取位置等，需要时主动使用，但别把对话变成干巴巴的任务交接。';
+    final memoryContext = await buildMemoryContext();
+    final systemPrompt =
+        _conversation.systemPrompt ??
+        (memoryContext.isEmpty
+            ? basePersona
+            : '$basePersona\n\n$memoryContext');
+
     // Loop: keep calling AI and executing tools until AI responds with text
     int maxRounds = 5;
     while (maxRounds > 0) {
@@ -529,11 +541,7 @@ class _ChatScreenState extends State<ChatScreen> {
       try {
         await for (final event in clientWithTools.chat(
           _conversation.messages,
-          systemPrompt:
-              _conversation.systemPrompt ??
-              '你是用户的好朋友、日常小伙伴。聊天要像真人朋友一样自然、亲切、有温度，'
-                  '记得你们之间的相处细节，会主动关心用户。你也能用手机上的工具帮忙：'
-                  '拍照、查看文件、获取位置等，需要时主动使用，但别把对话变成干巴巴的任务交接。',
+          systemPrompt: systemPrompt,
         )) {
           switch (event.type) {
             case AiEventType.token:
