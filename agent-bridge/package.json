@@ -1,0 +1,16 @@
+{
+  "name": "agent-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把本机的 Claude Code / Codex CLI 包装成一个手机 App 能连接的 WebSocket 服务",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
