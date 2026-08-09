@@ -17,6 +17,7 @@ import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../services/weread_service.dart';
+import '../config/settings.dart';
 import '../services/memory_context.dart';
 import '../models/musing_entry.dart';
 import '../services/musing_generator.dart';
@@ -64,6 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _musingContent;
   bool _musingFavorited = false;
   bool _musingLoading = false;
+  String _userName = '';
 
   late Conversation _conversation;
 
@@ -75,6 +77,12 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadConversations();
     _loadBackground();
     _loadMusing();
+    _loadUserName();
+  }
+
+  Future<void> _loadUserName() async {
+    final settings = await AppSettings.load();
+    if (mounted) setState(() => _userName = settings.userName);
   }
 
   @override
@@ -1192,7 +1200,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       part = '夜深了';
     }
-    return '$part，Cleo';
+    return _userName.trim().isEmpty ? part : '$part，$_userName';
   }
 
   String _homeDateStr() {
@@ -1251,11 +1259,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 context,
               ).push(MaterialPageRoute(builder: (_) => const ToolsScreen()));
             }),
-            _drawerItem(theme, Icons.settings_outlined, '设置', () {
+            _drawerItem(theme, Icons.settings_outlined, '设置', () async {
               Navigator.of(context).pop();
-              Navigator.of(
+              await Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+              _loadUserName();
             }),
             _drawerItem(theme, Icons.wallpaper_outlined, '聊天背景', () {
               Navigator.of(context).pop();

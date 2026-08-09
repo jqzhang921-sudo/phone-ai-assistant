@@ -29,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _elevenKeyController = TextEditingController();
   final _elevenVoiceController = TextEditingController();
   final _tavilyKeyController = TextEditingController();
+  final _userNameController = TextEditingController();
 
   // External MCP server state
   List<ExternalMcpServer> _externalServers = [];
@@ -50,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _elevenKeyController.dispose();
     _elevenVoiceController.dispose();
     _tavilyKeyController.dispose();
+    _userNameController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
     super.dispose();
@@ -61,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _elevenKeyController.text = _settings.elevenLabsApiKey;
     _elevenVoiceController.text = _settings.elevenLabsVoiceId;
     _tavilyKeyController.text = await SearchTool.getStoredKey() ?? '';
+    _userNameController.text = _settings.userName;
     _externalServers = await ExternalMcpServerService.load();
 
     // Select first config with a missing key
@@ -145,6 +148,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // 称呼 —— 首页问候语用这个名字
+          _sectionHeader('称呼', Icons.person_outline, theme),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _userNameController,
+            decoration: InputDecoration(
+              hintText: '首页问候语怎么称呼你（留空则不带名字）',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.check, size: 20),
+                tooltip: '保存',
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  _settings.userName = _userNameController.text.trim();
+                  await _settings.save();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('已保存'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+              ),
+            ),
+            onSubmitted: (v) async {
+              _settings.userName = v.trim();
+              await _settings.save();
+            },
+          ),
+          const SizedBox(height: 20),
+
           // API Configuration Section
           _sectionHeader('API 配置', Icons.key, theme),
           const SizedBox(height: 8),

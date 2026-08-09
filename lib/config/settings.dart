@@ -13,6 +13,7 @@ class AppSettings {
   static const _webSocketPortKey = 'websocket_port';
   static const _serverEnabledKey = 'server_enabled';
   static const _ttsProviderKey = 'tts_provider';
+  static const _userNameKey = 'user_name';
 
   // ElevenLabs — key stored in secure storage
   static const _elevenLabsKeyKey = 'elevenlabs_api_key';
@@ -31,6 +32,7 @@ class AppSettings {
   TtsProvider ttsProvider;
   String elevenLabsApiKey;
   String elevenLabsVoiceId;
+  String userName;
 
   AppSettings({
     this.ttsEnabled = true,
@@ -41,6 +43,7 @@ class AppSettings {
     this.ttsProvider = TtsProvider.system,
     this.elevenLabsApiKey = '',
     this.elevenLabsVoiceId = defaultElevenLabsVoice,
+    this.userName = '',
   });
 
   static Future<AppSettings> load() async {
@@ -74,6 +77,7 @@ class AppSettings {
       elevenLabsApiKey: elevenLabsKey,
       elevenLabsVoiceId:
           prefs.getString(_elevenLabsVoiceKey) ?? defaultElevenLabsVoice,
+      userName: prefs.getString(_userNameKey) ?? '',
     );
   }
 
@@ -92,5 +96,6 @@ class AppSettings {
     await prefs.remove(_elevenLabsKeyKey);
 
     await prefs.setString(_elevenLabsVoiceKey, elevenLabsVoiceId);
+    await prefs.setString(_userNameKey, userName);
   }
 }
