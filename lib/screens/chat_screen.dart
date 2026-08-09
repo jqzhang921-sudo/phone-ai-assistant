@@ -26,6 +26,7 @@ import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 import 'tools_screen.dart';
 import 'settings_screen.dart';
+import 'pc_chat_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   /// 底部导航切换回调，用于从聊天页跳转到书架 / 工具 / 设置。
@@ -1647,6 +1648,15 @@ class _ChatScreenState extends State<ChatScreen> {
               Icons.menu_book_rounded,
               '书架',
               () => widget.onSwitchTab?.call(AppTab.bookshelf),
+            ),
+            const SizedBox(width: 10),
+            _quickActionCard(
+              theme,
+              Icons.computer_rounded,
+              '电脑',
+              () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const PcChatScreen())),
             ),
           ],
         ),
