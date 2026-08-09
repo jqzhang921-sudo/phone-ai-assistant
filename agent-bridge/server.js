@@ -159,8 +159,11 @@ wss.on('connection', (ws) => {
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          // 直接把原始 JSON 行转发给客户端，解析交给 App 那边做
-          ws.send(JSON.stringify({ type: 'raw_line', agent, line: trimmed }));
+          // 直接转发原始 JSON 行（不要再包一层信封）——
+          // App 那边是直接 jsonDecode 整条消息、按里面的 type 字段分支处理的，
+          // 如果这里包成 {type:'raw_line', line: trimmed}，App 只会认出
+          // "raw_line" 这个没见过的 type，永远读不到真正的内容。
+          ws.send(trimmed);
         }
       });
 
