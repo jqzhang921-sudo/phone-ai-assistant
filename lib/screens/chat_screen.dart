@@ -533,7 +533,19 @@ class _ChatScreenState extends State<ChatScreen> {
               );
               _finalizeStreamMessage();
               for (final tc in event.toolCalls ?? []) {
-                final toolResult = await _executeTool(mcpServer, tc);
+                String toolResult;
+                try {
+                  toolResult = await _executeTool(mcpServer, tc);
+                } catch (e) {
+                  // 无论工具执行内部出什么问题，都必须给这个 tool_call_id
+                  // 留一条结果消息——不然对话历史会永久损坏（AI 服务商的
+                  // API 要求每个 tool_calls 都必须有对应的响应，缺一个就会
+                  // 一直 400，且没法靠重试恢复，因为坏掉的历史已经存下来了）
+                  toolResult = jsonEncode({
+                    'success': false,
+                    'error': '工具执行异常: $e',
+                  });
+                }
                 _conversation.messages.add(
                   ChatMessage(
                     id: _uuid.v4(),

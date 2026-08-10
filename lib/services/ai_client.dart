@@ -22,6 +22,49 @@ String _stripTimeMarkers(String text) {
       .trimLeft();
 }
 
+/// 修复损坏的对话历史：如果某条 assistant 消息发起了工具调用，但对应的
+/// tool_call_id 在后面找不到匹配的 toolResult 消息（比如因为工具执行时
+/// 异常中断、或者旧版本代码的bug导致结果没存下来），就给它补一条占位的
+/// 失败结果。不修的话，这类对话会在每次发消息时都被服务商 API 以
+/// "tool_calls 缺少对应响应" 为由拒绝（400），且没法靠重试恢复，因为
+/// 坏掉的历史已经存进本地了。
+List<ChatMessage> _sanitizeToolCallHistory(List<ChatMessage> messages) {
+  final result = <ChatMessage>[];
+  for (var i = 0; i < messages.length; i++) {
+    final msg = messages[i];
+    result.add(msg);
+    if (msg.role != MessageRole.assistant ||
+        msg.toolCalls == null ||
+        msg.toolCalls!.isEmpty) {
+      continue;
+    }
+    // 收集紧随其后、属于这一轮的 toolResult 消息，看看有没有覆盖所有
+    // tool_call_id（一直找到下一条非 toolResult 消息为止）
+    final answered = <String>{};
+    for (var j = i + 1; j < messages.length; j++) {
+      final next = messages[j];
+      if (next.role != MessageRole.toolResult) break;
+      if (next.toolCallId != null) answered.add(next.toolCallId!);
+    }
+    for (final tc in msg.toolCalls!) {
+      if (!answered.contains(tc.id)) {
+        result.add(
+          ChatMessage(
+            id: 'repair_${tc.id}',
+            role: MessageRole.toolResult,
+            content: jsonEncode({
+              'success': false,
+              'error': '工具结果丢失（历史记录已自动修复，此结果为占位）',
+            }),
+            toolCallId: tc.id,
+          ),
+        );
+      }
+    }
+  }
+  return result;
+}
+
 /// 系统级提示：时间戳只是元数据，模型不应复述。
 const _timeMetaInstruction =
     '注意：消息内容中可能带有 [time: ...] 前缀，这是系统自动注入的发送时间元数据，'
@@ -37,13 +80,14 @@ class AiClient {
     List<ChatMessage> messages, {
     String? systemPrompt,
   }) {
+    final safeMessages = _sanitizeToolCallHistory(messages);
     switch (config.provider) {
       case 'openai':
-        return _openaiChat(messages, systemPrompt: systemPrompt);
+        return _openaiChat(safeMessages, systemPrompt: systemPrompt);
       case 'anthropic':
-        return _anthropicChat(messages, systemPrompt: systemPrompt);
+        return _anthropicChat(safeMessages, systemPrompt: systemPrompt);
       default:
-        return _openaiChat(messages, systemPrompt: systemPrompt);
+        return _openaiChat(safeMessages, systemPrompt: systemPrompt);
     }
   }
 
