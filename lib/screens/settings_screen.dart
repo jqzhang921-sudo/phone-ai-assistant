@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/api_keys.dart';
 import '../config/settings.dart';
+import '../config/build_info.dart';
 import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
@@ -668,7 +669,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _sectionHeader('关于', PhosphorIconsRegular.info, theme),
           ListTile(
             title: const Text('手机 AI 助手'),
-            subtitle: const Text('v1.0.0\n支持 MCP 协议 & 手机工具'),
+            subtitle: Text('v1.0.0\n支持 MCP 协议 & 手机工具\nbuild: $buildCommit'),
           ),
         ],
       ),
