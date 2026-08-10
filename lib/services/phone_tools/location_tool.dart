@@ -31,7 +31,7 @@ class LocationTool {
         };
       }
 
-      // 1) 先尝试高精度 GPS（室内可能较慢，最多等 15 秒）
+      // 1) 先尝试高精度 GPS（室内首次定位可能较慢，最多等 25 秒）
       Position? pos;
       var source = 'gps';
       try {
@@ -39,7 +39,7 @@ class LocationTool {
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.high,
             distanceFilter: 0,
-            timeLimit: Duration(seconds: 15),
+            timeLimit: Duration(seconds: 25),
           ),
         );
       } catch (_) {
@@ -62,37 +62,43 @@ class LocationTool {
         }
       }
 
-      // 3) 实时定位都失败时，用 5 分钟内的最近缓存
+      // 3) 实时定位都失败时，使用最近缓存（不限制 5 分钟，但注明新鲜度）
       if (pos == null) {
         final last = await Geolocator.getLastKnownPosition();
         if (last != null) {
           final age = DateTime.now().difference(last.timestamp);
-          if (age.inMinutes <= 5) {
-            return {
-              'success': true,
-              'latitude': last.latitude,
-              'longitude': last.longitude,
-              'accuracy': last.accuracy,
-              'timestamp': last.timestamp.toIso8601String(),
-              'source': 'last_known',
-              'note': 'GPS 定位超时，使用约 ${age.inMinutes} 分钟前的最近位置，仅供参考',
-            };
-          }
+          final note =
+              age.inMinutes <= 5
+                  ? 'GPS 与网络定位均超时，使用约 ${age.inMinutes} 分钟前的最近位置，仅供参考'
+                  : '实时定位失败，使用 ${age.inMinutes} 分钟前的旧位置，可能不准确，仅供参考';
+          return {
+            'success': true,
+            'latitude': last.latitude,
+            'longitude': last.longitude,
+            'accuracy': last.accuracy,
+            'timestamp': last.timestamp.toIso8601String(),
+            'source': 'last_known',
+            'note': note,
+          };
         }
+      }
+
+      if (pos != null) {
         return {
-          'success': false,
-          'error': '获取位置失败（GPS 与网络定位均超时，且无 5 分钟内的缓存位置）',
+          'success': true,
+          'latitude': pos.latitude,
+          'longitude': pos.longitude,
+          'accuracy': pos.accuracy,
+          'altitude': pos.altitude,
+          'timestamp': pos.timestamp.toIso8601String(),
+          'source': source,
         };
       }
 
       return {
-        'success': true,
-        'latitude': pos.latitude,
-        'longitude': pos.longitude,
-        'accuracy': pos.accuracy,
-        'altitude': pos.altitude,
-        'timestamp': pos.timestamp.toIso8601String(),
-        'source': source,
+        'success': false,
+        'error':
+            '获取位置失败（GPS 与网络定位均超时且无缓存）。请确认手机定位模式为「高精度」（GPS+WLAN+移动网络），并到室外或窗边重试',
       };
     } catch (e) {
       return {'success': false, 'error': '获取位置失败: $e'};
