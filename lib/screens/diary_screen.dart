@@ -15,9 +15,20 @@ class _DayGroup {
   final List<DiaryEntry> entries;
 
   _DayGroup(this.dateKey, this.entries);
+}
 
-  /// 折叠卡片上显示这一天最早的一条（"这一天是从……开始的"）。
-  DiaryEntry get earliest => entries.first;
+/// 列表里实际渲染的一项：一整天 + 当前搜索命中的那几则。
+/// 没有搜索时 [matched] 就是这一天的全部。
+class _DayHit {
+  final _DayGroup day;
+  final List<DiaryEntry> matched;
+
+  _DayHit(this.day, this.matched);
+
+  /// 折叠卡上显示命中里最早的一条（没搜索时即当天最早的一条）。
+  DiaryEntry get preview => matched.first;
+
+  bool get isPartial => matched.length != day.entries.length;
 }
 
 class DiaryScreen extends StatefulWidget {
@@ -29,14 +40,24 @@ class DiaryScreen extends StatefulWidget {
 
 class _DiaryScreenState extends State<DiaryScreen> {
   final _uuid = const Uuid();
+  final _searchController = TextEditingController();
+
   List<_DayGroup> _groups = [];
   bool _loading = true;
   bool _generating = false;
+  bool _searching = false;
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -63,6 +84,33 @@ class _DiaryScreenState extends State<DiaryScreen> {
     // dateKey 是零填充的 YYYY-MM-DD，字符串倒序即日期倒序
     groups.sort((a, b) => b.dateKey.compareTo(a.dateKey));
     return groups;
+  }
+
+  /// 日记全部在内存里（一个 SharedPreferences 字符串），直接过滤即可，不需要索引。
+  List<_DayHit> get _hits {
+    if (_query.isEmpty) {
+      return _groups.map((g) => _DayHit(g, g.entries)).toList();
+    }
+    final q = _query.toLowerCase();
+    final hits = <_DayHit>[];
+    for (final g in _groups) {
+      final matched =
+          g.entries.where((e) => e.content.toLowerCase().contains(q)).toList();
+      if (matched.isNotEmpty) hits.add(_DayHit(g, matched));
+    }
+    return hits;
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      if (_searching) {
+        _searching = false;
+        _query = '';
+        _searchController.clear();
+      } else {
+        _searching = true;
+      }
+    });
   }
 
   Future<void> _generateToday() async {
@@ -100,10 +148,36 @@ class _DiaryScreenState extends State<DiaryScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hits = _hits;
     return Scaffold(
-      appBar: AppBar(title: const Text('日记')),
+      appBar: AppBar(
+        title:
+            _searching
+                ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  decoration: const InputDecoration(
+                    hintText: '搜日记内容…',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (v) => setState(() => _query = v.trim()),
+                )
+                : const Text('日记'),
+        actions: [
+          IconButton(
+            tooltip: _searching ? '退出搜索' : '搜索',
+            icon: Icon(
+              _searching
+                  ? PhosphorIconsRegular.x
+                  : PhosphorIconsRegular.magnifyingGlass,
+            ),
+            onPressed: _toggleSearch,
+          ),
+        ],
+      ),
       // AI 记的是"某一刻"，这个按钮写的是"这一天"，两者不冲突，
-      // 所以不再因为今天已有日记就禁用。
+      // 所以不因为今天已有日记就禁用。
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _generating ? null : _generateToday,
         icon:
@@ -119,10 +193,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
       body:
           _loading
               ? const Center(child: CircularProgressIndicator())
-              : _groups.isEmpty
+              : hits.isEmpty
               ? Center(
                 child: Text(
-                  '还没有日记\n聊完天后点右下角写一篇吧',
+                  _query.isEmpty
+                      ? '还没有日记\n聊完天后点右下角写一篇吧'
+                      : '没有包含「$_query」的日记',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -131,10 +207,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
               )
               : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                itemCount: _groups.length,
+                itemCount: hits.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
-                  return _DayCard(group: _groups[index], onChanged: _load);
+                  return _DayCard(
+                    hit: hits[index],
+                    query: _query,
+                    onChanged: _load,
+                  );
                 },
               ),
     );
@@ -142,16 +222,44 @@ class _DiaryScreenState extends State<DiaryScreen> {
 }
 
 class _DayCard extends StatelessWidget {
-  final _DayGroup group;
+  final _DayHit hit;
+  final String query;
   final Future<void> Function() onChanged;
 
-  const _DayCard({required this.group, required this.onChanged});
+  const _DayCard({
+    required this.hit,
+    required this.query,
+    required this.onChanged,
+  });
+
+  /// 搜索时把预览挪到命中位置附近，好让人一眼看出为什么匹配。
+  String _previewText() {
+    final content = hit.preview.content;
+    if (query.isEmpty) return hit.preview.summary;
+
+    final idx = content.toLowerCase().indexOf(query.toLowerCase());
+    if (idx < 0) return hit.preview.summary;
+
+    var start = idx - 20;
+    if (start < 0) start = 0;
+    var end = idx + query.length + 40;
+    if (end > content.length) end = content.length;
+
+    final head = start > 0 ? '…' : '';
+    final tail = end < content.length ? '…' : '';
+    return '$head${content.substring(start, end)}$tail';
+  }
+
+  String _countLabel() {
+    if (hit.isPartial) return '${hit.matched.length}/${hit.day.entries.length} 则';
+    return '${hit.matched.length} 则';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final count = group.entries.length;
+    final showCount = hit.isPartial || hit.matched.length > 1;
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () => _openDay(context),
@@ -168,14 +276,14 @@ class _DayCard extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  group.dateKey,
+                  hit.day.dateKey,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: scheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const Spacer(),
-                if (count > 1)
+                if (showCount)
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -186,7 +294,7 @@ class _DayCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '$count 则',
+                      _countLabel(),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: scheme.primary,
                       ),
@@ -196,7 +304,7 @@ class _DayCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              group.earliest.summary,
+              _previewText(),
               style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
             ),
           ],
@@ -205,11 +313,12 @@ class _DayCard extends StatelessWidget {
     );
   }
 
+  /// 点开始终展示这一天的全部，搜索命中只影响列表上的预览。
   Future<void> _openDay(BuildContext context) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => _DayDetailSheet(group: group),
+      builder: (ctx) => _DayDetailSheet(group: hit.day),
     );
     await onChanged();
   }
@@ -245,9 +354,7 @@ class _DayDetailSheetState extends State<_DayDetailSheet> {
       builder:
           (ctx) => AlertDialog(
             title: const Text('删除这一则？'),
-            content: Text(
-              '${_timeOf(entry)} 写的这一则会被删掉，这一天的其他日记不受影响。',
-            ),
+            content: Text('${_timeOf(entry)} 写的这一则会被删掉，这一天的其他日记不受影响。'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
