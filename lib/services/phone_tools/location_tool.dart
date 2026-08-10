@@ -46,24 +46,30 @@ class LocationTool {
         'longitude': pos.longitude,
         'accuracy': pos.accuracy,
         'altitude': pos.altitude,
-        'timestamp': pos.timestamp?.toIso8601String(),
+        'timestamp': pos.timestamp.toIso8601String(),
+        'source': 'gps',
       };
     } catch (e) {
-      // GPS 定位超时/失败时，回退到最近一次已知位置（快速返回大致位置）
+      // GPS 定位超时/失败时，仅当存在足够新的最近位置时才回退，
+      // 避免把很久以前的旧坐标当成当前位置返回给 AI。
       try {
         final last = await Geolocator.getLastKnownPosition();
         if (last != null) {
-          return {
-            'success': true,
-            'latitude': last.latitude,
-            'longitude': last.longitude,
-            'accuracy': last.accuracy,
-            'timestamp': last.timestamp?.toIso8601String(),
-            'source': 'last_known',
-          };
+          final age = DateTime.now().difference(last.timestamp);
+          if (age.inMinutes <= 5) {
+            return {
+              'success': true,
+              'latitude': last.latitude,
+              'longitude': last.longitude,
+              'accuracy': last.accuracy,
+              'timestamp': last.timestamp.toIso8601String(),
+              'source': 'last_known',
+              'note': 'GPS 定位超时，使用约 ${age.inMinutes} 分钟前的最近位置，仅供参考',
+            };
+          }
         }
       } catch (_) {}
-      return {'success': false, 'error': '获取位置失败: $e'};
+      return {'success': false, 'error': '获取位置失败（GPS 超时且无 5 分钟内的缓存位置）: $e'};
     }
   }
 }
