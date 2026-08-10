@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../config/app_tab.dart';
@@ -18,6 +18,7 @@ import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../services/weread_service.dart';
 import '../config/settings.dart';
+import '../services/tts_service.dart';
 import '../services/memory_context.dart';
 import '../models/musing_entry.dart';
 import '../services/musing_generator.dart';
@@ -53,12 +54,10 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  final _focusNode = FocusNode();
   final _uuid = const Uuid();
   final _picker = ImagePicker();
-  stt.SpeechToText? _speech;
-  bool _isListening = false;
   bool _isLoading = false;
-  bool _voiceMode = false;
   bool _chatMode = false;
   List<Conversation> _savedConversations = [];
   String? _backgroundImagePath;
@@ -73,7 +72,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _conversation = Conversation(id: _uuid.v4());
-    _initSpeech();
     _loadConversations();
     _loadBackground();
     _loadMusing();
@@ -89,13 +87,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _textController.dispose();
     _scrollController.dispose();
-    _speech?.cancel();
     super.dispose();
-  }
-
-  Future<void> _initSpeech() async {
-    _speech = stt.SpeechToText();
-    await _speech!.initialize();
   }
 
   Future<void> _loadConversations() async {
@@ -323,32 +315,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _continueChat();
   }
 
-  Future<void> _startListening() async {
-    if (_speech == null || _isListening) return;
-
-    final available = await _speech!.initialize();
-    if (available) {
-      setState(() => _isListening = true);
-      _speech!.listen(
-        onResult: (result) {
-          _textController.text = result.recognizedWords;
-          _textController.selection = TextSelection.fromPosition(
-            TextPosition(offset: result.recognizedWords.length),
-          );
-        },
-        localeId: 'zh_CN',
-      );
-    }
-  }
-
-  void _stopListening() {
-    if (!_isListening) return;
-    _speech?.stop();
-    setState(() => _isListening = false);
-    // 识别结果已填入输入框，切回文字模式方便编辑 / 发送
-    if (mounted) setState(() => _voiceMode = false);
-  }
-
   void _showAttachmentMenu() {
     showModalBottomSheet(
       context: context,
@@ -374,21 +340,21 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       _attachmentItem(
                         ctx,
-                        Icons.photo_camera_outlined,
+                        PhosphorIconsRegular.camera,
                         '拍照',
                         () => Navigator.of(ctx).pop(),
                         action: () => _pickAndSendImage(ImageSource.camera),
                       ),
                       _attachmentItem(
                         ctx,
-                        Icons.photo_library_outlined,
+                        PhosphorIconsRegular.images,
                         '相册',
                         () => Navigator.of(ctx).pop(),
                         action: () => _pickAndSendImage(ImageSource.gallery),
                       ),
                       _attachmentItem(
                         ctx,
-                        Icons.insert_drive_file_outlined,
+                        PhosphorIconsRegular.fileText,
                         '文件',
                         () => Navigator.of(ctx).pop(),
                         action: _pickAndSendFile,
@@ -598,6 +564,26 @@ class _ChatScreenState extends State<ChatScreen> {
         _updateAssistantMessage('❌ 发送消息失败: $e');
       }
 
+      // 可选：自动朗读 AI 回复
+      if (fullResponse != null && fullResponse.isNotEmpty && mounted) {
+        final last =
+            _conversation.messages.isNotEmpty
+                ? _conversation.messages.last
+                : null;
+        if (last != null &&
+            last.role == MessageRole.assistant &&
+            last.content.trim().isNotEmpty) {
+          try {
+            final settings = await AppSettings.load();
+            if (settings.ttsAutoPlay) {
+              await context.read<TtsService>().toggle(last.id, last.content);
+            }
+          } catch (_) {
+            // 自动朗读失败不影响聊天
+          }
+        }
+      }
+
       // If there was a tool call, the loop continues
       // If there was an error or done with text, exit
       if (fullResponse != null || errorText != null) break;
@@ -706,7 +692,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       const Spacer(),
                       TextButton.icon(
-                        icon: const Icon(Icons.add, size: 18),
+                        icon: const Icon(PhosphorIconsRegular.plus, size: 18),
                         label: const Text('新建'),
                         onPressed: () => _newConversation(),
                       ),
@@ -727,7 +713,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Row(
                       children: [
                         Icon(
-                          Icons.search,
+                          PhosphorIconsRegular.magnifyingGlass,
                           size: 20,
                           color: Theme.of(context).colorScheme.primary,
                         ),
@@ -766,7 +752,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 selected: isCurrent,
                                 trailing: IconButton(
                                   icon: const Icon(
-                                    Icons.delete_outline,
+                                    PhosphorIconsRegular.trash,
                                     size: 18,
                                   ),
                                   onPressed: () async {
@@ -816,6 +802,44 @@ class _ChatScreenState extends State<ChatScreen> {
                   });
                   _saveConversation();
                   Navigator.of(ctx).pop();
+                },
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _showRenameConversationDialog(Conversation conv) {
+    final controller = TextEditingController(text: conv.title);
+    showDialog(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('重命名对话'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '输入对话名称',
+              ),
+              autofocus: true,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final title = controller.text.trim();
+                  if (title.isNotEmpty) {
+                    conv.title = title;
+                    conv.titleManuallySet = true;
+                    StorageService.saveConversation(conv);
+                  }
+                  Navigator.of(ctx).pop();
+                  _loadConversations();
                 },
                 child: const Text('确定'),
               ),
@@ -955,7 +979,7 @@ class _ChatScreenState extends State<ChatScreen> {
               Row(
                 children: [
                   Icon(
-                    Icons.bar_chart_rounded,
+                    PhosphorIconsRegular.chartBar,
                     size: 18,
                     color: scheme.secondary,
                   ),
@@ -1072,13 +1096,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 (ctx) =>
                     _chatMode
                         ? _topBarIcon(
-                          Icons.arrow_back,
+                          PhosphorIconsRegular.arrowLeft,
                           onPressed: _goHome,
                           tooltip: '返回主页',
                           color: fgColor,
                         )
                         : _topBarIcon(
-                          Icons.menu_rounded,
+                          PhosphorIconsRegular.list,
                           onPressed: () => Scaffold.of(ctx).openDrawer(),
                           tooltip: '菜单',
                           color: fgColor,
@@ -1090,12 +1114,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _greeting(),
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: fgColor,
-                        ),
+                      Consumer<SettingsProvider>(
+                        builder: (context, sp, _) {
+                          final serif = sp.settings?.titleSerif ?? true;
+                          return Text(
+                            _greeting(),
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontFamily: serif ? 'NotoSerifSC' : null,
+                              fontWeight: FontWeight.w700,
+                              color: fgColor,
+                            ),
+                          );
+                        },
                       ),
                       Text(
                         _homeDateStr(),
@@ -1114,7 +1144,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       : null),
           actions: [
             _topBarIcon(
-              Icons.search,
+              PhosphorIconsRegular.magnifyingGlass,
               onPressed: _openSearch,
               tooltip: '搜索',
               color: fgColor,
@@ -1227,51 +1257,56 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             if (_chatMode) ...[
-              _drawerItem(theme, Icons.edit_outlined, '重命名', () {
+              _drawerItem(theme, PhosphorIconsRegular.pencilSimple, '重命名', () {
                 Navigator.of(context).pop();
                 _showRenameDialog();
               }),
-              _drawerItem(theme, Icons.psychology_outlined, '系统提示词', () {
+              _drawerItem(theme, PhosphorIconsRegular.brain, '系统提示词', () {
                 Navigator.of(context).pop();
                 _showSystemPromptDialog();
               }),
-              _drawerItem(theme, Icons.share_outlined, '导出聊天', () {
+              _drawerItem(theme, PhosphorIconsRegular.shareNetwork, '导出聊天', () {
                 Navigator.of(context).pop();
                 _exportConversation();
               }),
               const Divider(),
             ],
-            _drawerItem(theme, Icons.add_rounded, '新对话', () {
+            _drawerItem(theme, PhosphorIconsRegular.plus, '新对话', () {
               Navigator.of(context).pop();
               _newConversation();
             }),
-            _drawerItem(theme, Icons.history_rounded, '对话历史', () {
-              Navigator.of(context).pop();
-              _showConversationList();
-            }),
-            _drawerItem(theme, Icons.menu_book_rounded, '书架', () {
+            _drawerItem(
+              theme,
+              PhosphorIconsRegular.clockCounterClockwise,
+              '对话历史',
+              () {
+                Navigator.of(context).pop();
+                _showConversationList();
+              },
+            ),
+            _drawerItem(theme, PhosphorIconsRegular.bookOpen, '书架', () {
               Navigator.of(context).pop();
               widget.onSwitchTab?.call(AppTab.bookshelf);
             }),
-            _drawerItem(theme, Icons.build_outlined, '工具', () {
+            _drawerItem(theme, PhosphorIconsRegular.wrench, '工具', () {
               Navigator.of(context).pop();
               Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const ToolsScreen()));
             }),
-            _drawerItem(theme, Icons.settings_outlined, '设置', () async {
+            _drawerItem(theme, PhosphorIconsRegular.gear, '设置', () async {
               Navigator.of(context).pop();
               await Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
               _loadUserName();
             }),
-            _drawerItem(theme, Icons.wallpaper_outlined, '聊天背景', () {
+            _drawerItem(theme, PhosphorIconsRegular.imageSquare, '聊天背景', () {
               Navigator.of(context).pop();
               _showBackgroundSheet();
             }),
             const Divider(),
-            _drawerItem(theme, Icons.delete_sweep_outlined, '回收站', () {
+            _drawerItem(theme, PhosphorIconsRegular.trashSimple, '回收站', () {
               Navigator.of(context).pop();
               _showTrashSheet();
             }),
@@ -1355,7 +1390,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   style: const TextStyle(fontSize: 11),
                                 ),
                                 leading: Icon(
-                                  Icons.delete_outline,
+                                  PhosphorIconsRegular.trash,
                                   color: scheme.onSurfaceVariant,
                                 ),
                                 trailing: Row(
@@ -1374,7 +1409,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                     IconButton(
                                       icon: const Icon(
-                                        Icons.delete_forever_outlined,
+                                        PhosphorIconsRegular.trashSimple,
                                       ),
                                       tooltip: '彻底删除',
                                       onPressed: () async {
@@ -1440,7 +1475,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 _backgroundOption(
                   ctx,
                   scheme,
-                  icon: Icons.auto_awesome_outlined,
+                  icon: PhosphorIconsRegular.sparkle,
                   label: '跟随主题',
                   desc: '浅色模式用浅色背景，深色模式用深色背景',
                   selected: !hasImage && preset == 'none',
@@ -1452,7 +1487,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 _backgroundOption(
                   ctx,
                   scheme,
-                  icon: Icons.light_mode_outlined,
+                  icon: PhosphorIconsRegular.sun,
                   label: '浅色背景',
                   desc: '固定的浅色底色',
                   selected: !hasImage && preset == 'light',
@@ -1464,7 +1499,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 _backgroundOption(
                   ctx,
                   scheme,
-                  icon: Icons.dark_mode_outlined,
+                  icon: PhosphorIconsRegular.moon,
                   label: '深色背景',
                   desc: '固定的深色底色',
                   selected: !hasImage && preset == 'dark',
@@ -1476,7 +1511,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 _backgroundOption(
                   ctx,
                   scheme,
-                  icon: Icons.wallpaper_outlined,
+                  icon: PhosphorIconsRegular.imageSquare,
                   label: '自定义图片',
                   desc: hasImage ? '当前已设置图片' : '从相册选择一张背景图',
                   selected: hasImage,
@@ -1513,7 +1548,8 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
       subtitle: Text(desc, style: const TextStyle(fontSize: 12)),
-      trailing: selected ? const Icon(Icons.check_rounded, size: 20) : null,
+      trailing:
+          selected ? const Icon(PhosphorIconsRegular.check, size: 20) : null,
       onTap: onTap,
     );
   }
@@ -1534,7 +1570,7 @@ class _ChatScreenState extends State<ChatScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.chat_bubble_outline,
+            PhosphorIconsRegular.chatCircle,
             size: 56,
             color: fgColor.withValues(alpha: 0.3),
           ),
@@ -1604,7 +1640,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           borderRadius: BorderRadius.circular(14),
                           onTap: _refreshMusing,
                           child: Icon(
-                            Icons.refresh_rounded,
+                            PhosphorIconsRegular.arrowsClockwise,
                             size: 18,
                             color: scheme.onPrimary.withValues(alpha: 0.7),
                           ),
@@ -1618,8 +1654,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 : _toggleFavoriteMusing,
                         child: Icon(
                           _musingFavorited
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
+                              ? PhosphorIconsRegular.star
+                              : PhosphorIconsRegular.star,
                           size: 20,
                           color: scheme.onPrimary,
                         ),
@@ -1650,18 +1686,23 @@ class _ChatScreenState extends State<ChatScreen> {
         // 快捷入口
         Row(
           children: [
-            _quickActionCard(theme, Icons.add_rounded, '新对话', _newConversation),
+            _quickActionCard(
+              theme,
+              PhosphorIconsRegular.plus,
+              '新对话',
+              _newConversation,
+            ),
             const SizedBox(width: 10),
             _quickActionCard(
               theme,
-              Icons.menu_book_rounded,
+              PhosphorIconsRegular.bookOpen,
               '书架',
               () => widget.onSwitchTab?.call(AppTab.bookshelf),
             ),
             const SizedBox(width: 10),
             _quickActionCard(
               theme,
-              Icons.computer_rounded,
+              PhosphorIconsRegular.desktop,
               '电脑',
               () => Navigator.of(
                 context,
@@ -1682,7 +1723,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                icon: const Icon(PhosphorIconsRegular.trashSimple, size: 20),
                 tooltip: '回收站',
                 onPressed: _showTrashSheet,
               ),
@@ -1725,7 +1766,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           leading:
               conv.isPinned
-                  ? Icon(Icons.push_pin, size: 18, color: scheme.primary)
+                  ? Icon(
+                    PhosphorIconsRegular.pushPin,
+                    size: 18,
+                    color: scheme.primary,
+                  )
                   : null,
           subtitle: Text(
             '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
@@ -1736,7 +1781,9 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               IconButton(
                 icon: Icon(
-                  conv.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  conv.isPinned
+                      ? PhosphorIconsRegular.pushPin
+                      : PhosphorIconsRegular.pushPin,
                   size: 18,
                   color:
                       conv.isPinned ? scheme.primary : scheme.onSurfaceVariant,
@@ -1751,7 +1798,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline, size: 18),
+                icon: const Icon(PhosphorIconsRegular.pencilSimple, size: 18),
+                tooltip: '重命名',
+                onPressed: () => _showRenameConversationDialog(conv),
+              ),
+              IconButton(
+                icon: const Icon(PhosphorIconsRegular.trash, size: 18),
                 onPressed: () async {
                   await StorageService.deleteConversation(conv.id);
                   _loadConversations();
@@ -1802,27 +1854,12 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // 左侧圆圈：文字输入 / 语音输入 模式切换
-          _circleToolButton(
-            scheme,
-            icon: _voiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none,
-            tooltip: _voiceMode ? '切换为文字输入' : '切换为语音输入',
-            active: _voiceMode,
-            onTap:
-                _isLoading
-                    ? null
-                    : () => setState(() => _voiceMode = !_voiceMode),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child:
-                _voiceMode ? _buildHoldToTalk(theme) : _buildTextField(theme),
-          ),
+          Expanded(child: _buildTextField(theme)),
           const SizedBox(width: 8),
           // 右侧加号：拍照 / 相册 / 文件
           _circleToolButton(
             scheme,
-            icon: Icons.add,
+            icon: PhosphorIconsRegular.plus,
             tooltip: '更多功能',
             onTap: _isLoading ? null : _showAttachmentMenu,
           ),
@@ -1830,7 +1867,10 @@ class _ChatScreenState extends State<ChatScreen> {
           // Send button
           _circleToolButton(
             scheme,
-            icon: _isLoading ? Icons.hourglass_empty : Icons.send_rounded,
+            icon:
+                _isLoading
+                    ? PhosphorIconsRegular.hourglass
+                    : PhosphorIconsRegular.paperPlaneTilt,
             tooltip: '发送',
             active: true,
             onTap: _isLoading ? null : _sendMessage,
@@ -1877,6 +1917,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final scheme = theme.colorScheme;
     return TextField(
       controller: _textController,
+      focusNode: _focusNode,
       maxLines: 5,
       minLines: 1,
       keyboardType: TextInputType.multiline,
@@ -1896,30 +1937,6 @@ class _ChatScreenState extends State<ChatScreen> {
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 10,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHoldToTalk(ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return GestureDetector(
-      onLongPressStart: (_) => _startListening(),
-      onLongPressEnd: (_) => _stopListening(),
-      child: Container(
-        height: 42,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.75),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
-        ),
-        child: Text(
-          _isListening ? '正在聆听...' : '按住说话',
-          style: TextStyle(
-            fontSize: 14,
-            color: _isListening ? scheme.primary : scheme.onSurfaceVariant,
-          ),
         ),
       ),
     );

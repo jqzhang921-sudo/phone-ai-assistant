@@ -9,6 +9,10 @@
         android:label="phone_ai_assistant"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- 禁用 Impeller 渲染器，回退 Skia：修复 OPPO/vivo 等设备上的文字渲染损坏 bug -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -46,6 +50,14 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Android 11+ 需要显式声明才能发现系统语音识别服务 -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <!-- Android 11+ 需要显式声明才能发现系统 TTS 引擎 -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/reading_profile.dart';
 import '../services/reading_profile_generator.dart';
 import '../services/app_providers.dart';
@@ -126,7 +127,7 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
         actions: [
           if (_profile != null)
             IconButton(
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(PhosphorIconsRegular.arrowsClockwise),
               tooltip: '重新生成',
               onPressed: _generating ? null : _confirmRegenerate,
             ),
@@ -148,7 +149,7 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
                     color: Colors.white,
                   ),
                 )
-                : const Icon(Icons.auto_awesome),
+                : const Icon(PhosphorIconsRegular.sparkle),
         label: Text(
           _generating ? '生成中...' : (_profile == null ? '生成阅读档案' : '重新生成'),
         ),
@@ -180,7 +181,7 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.auto_stories,
+              PhosphorIconsRegular.books,
               size: 64,
               color: theme.colorScheme.primary.withValues(alpha: 0.3),
             ),
@@ -203,7 +204,7 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
       children: [
         _sectionCard(
           theme,
-          icon: Icons.lightbulb_outline,
+          icon: PhosphorIconsRegular.lightbulb,
           title: '核心观点',
           color: Colors.deepPurple,
           children:
@@ -224,7 +225,7 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
         const SizedBox(height: 12),
         _sectionCard(
           theme,
-          icon: Icons.help_outline,
+          icon: PhosphorIconsRegular.question,
           title: '未解问题',
           color: Colors.deepOrange,
           children:
@@ -245,7 +246,7 @@ class _ReadingProfileScreenState extends State<ReadingProfileScreen> {
         const SizedBox(height: 12),
         _sectionCard(
           theme,
-          icon: Icons.menu_book_outlined,
+          icon: PhosphorIconsRegular.bookOpen,
           title: '整体印象',
           color: theme.colorScheme.primary,
           children: [

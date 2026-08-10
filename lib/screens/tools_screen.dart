@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../services/mcp_server.dart';
 import '../models/mcp_tool.dart';
 import '../services/phone_tools/camera_tool.dart';
@@ -48,8 +49,8 @@ class ToolsScreen extends StatelessWidget {
                     children: [
                       Icon(
                         server.isRunning
-                            ? Icons.check_circle
-                            : Icons.circle_outlined,
+                            ? PhosphorIconsRegular.checkCircle
+                            : PhosphorIconsRegular.circle,
                         color: server.isRunning ? Colors.green : Colors.grey,
                         size: 16,
                       ),
@@ -106,21 +107,21 @@ class ToolsScreen extends StatelessWidget {
           const SizedBox(height: 8),
           _buildTestButton(
             context,
-            icon: Icons.camera_alt,
+            icon: PhosphorIconsRegular.camera,
             label: '拍照测试',
             tool: CameraTool.definition,
             executor: CameraTool.execute,
           ),
           _buildTestButton(
             context,
-            icon: Icons.location_on,
+            icon: PhosphorIconsRegular.mapPin,
             label: '定位测试',
             tool: LocationTool.definition,
             executor: LocationTool.execute,
           ),
           _buildTestButton(
             context,
-            icon: Icons.sensors,
+            icon: PhosphorIconsRegular.pulse,
             label: '传感器测试',
             tool: SensorTool.definition,
             executor: SensorTool.execute,
@@ -142,7 +143,7 @@ class ToolsScreen extends StatelessWidget {
       child: ListTile(
         leading: Icon(icon),
         title: Text(label),
-        trailing: const Icon(Icons.play_arrow),
+        trailing: const Icon(PhosphorIconsRegular.play),
         onTap: () async {
           showDialog(
             context: context,
@@ -182,7 +183,9 @@ class ToolsScreen extends StatelessWidget {
             title: Row(
               children: [
                 Icon(
-                  success ? Icons.check_circle : Icons.error,
+                  success
+                      ? PhosphorIconsRegular.checkCircle
+                      : PhosphorIconsRegular.warningCircle,
                   color: success ? Colors.green : Colors.red,
                 ),
                 const SizedBox(width: 8),

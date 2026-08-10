@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/book.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
@@ -368,7 +369,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
 
                   // Rename
                   ListTile(
-                    leading: const Icon(Icons.edit),
+                    leading: const Icon(PhosphorIconsRegular.pencilSimple),
                     title: const Text('重命名'),
                     subtitle: Text(group.name),
                     onTap: () async {
@@ -417,7 +418,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
 
                   // Book list
                   ListTile(
-                    leading: const Icon(Icons.menu_book),
+                    leading: const Icon(PhosphorIconsRegular.bookOpen),
                     title: Text('${widget.books.length}本'),
                     subtitle: Text(widget.books.map((b) => b.title).join('、')),
                   ),
@@ -445,7 +446,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(PhosphorIconsRegular.arrowLeft),
             onPressed: () async {
               final shouldPop = await _handleBack();
               if (shouldPop && mounted) Navigator.of(context).pop();
@@ -455,7 +456,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           actions: [
             if (widget.groupId != null)
               IconButton(
-                icon: const Icon(Icons.more_horiz),
+                icon: const Icon(PhosphorIconsRegular.dotsThree),
                 tooltip: '管理讨论集合',
                 onPressed: _showGroupManageSheet,
               ),
@@ -503,7 +504,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(
-          Icons.menu_book_rounded,
+          PhosphorIconsRegular.bookOpen,
           size: 64,
           color: theme.colorScheme.primary.withAlpha(60),
         ),
@@ -563,7 +564,9 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
         const SizedBox(width: 4),
         IconButton(
           icon: Icon(
-            _isLoading ? Icons.stop : Icons.send_rounded,
+            _isLoading
+                ? PhosphorIconsRegular.stop
+                : PhosphorIconsRegular.paperPlaneTilt,
             color: theme.colorScheme.primary,
           ),
           onPressed: _isLoading ? null : _sendMessage,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 
 class ToolCallCard extends StatefulWidget {
@@ -33,10 +34,17 @@ class _ToolCallCardState extends State<ToolCallCard> {
               borderRadius: BorderRadius.circular(12),
               onTap: () => setState(() => _expanded = !_expanded),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
-                    Icon(Icons.build, size: 16, color: theme.colorScheme.secondary),
+                    Icon(
+                      PhosphorIconsRegular.wrench,
+                      size: 16,
+                      color: theme.colorScheme.secondary,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       '🛠 ${widget.toolCalls.map((t) => t.name).join(", ")}',
@@ -46,7 +54,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
                     ),
                     const Spacer(),
                     Icon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      _expanded
+                          ? PhosphorIconsRegular.caretUp
+                          : PhosphorIconsRegular.caretDown,
                       size: 18,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -59,35 +69,48 @@ class _ToolCallCardState extends State<ToolCallCard> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: widget.toolCalls.map((tc) => Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.tertiaryContainer,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            tc.name,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontFamily: 'monospace',
-                              color: theme.colorScheme.onTertiaryContainer,
+                  children:
+                      widget.toolCalls
+                          .map(
+                            (tc) => Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          theme.colorScheme.tertiaryContainer,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      tc.name,
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            fontFamily: 'monospace',
+                                            color:
+                                                theme
+                                                    .colorScheme
+                                                    .onTertiaryContainer,
+                                          ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      tc.arguments.toString(),
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            tc.arguments.toString(),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )).toList(),
+                          )
+                          .toList(),
                 ),
               ),
           ],
@@ -137,11 +160,16 @@ class _ToolResultCardState extends State<ToolResultCard> {
               borderRadius: BorderRadius.circular(12),
               onTap: () => setState(() => _expanded = !_expanded),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     Icon(
-                      success ? Icons.check_circle_outline : Icons.info_outline,
+                      success
+                          ? PhosphorIconsRegular.checkCircle
+                          : PhosphorIconsRegular.info,
                       size: 16,
                       color: success ? Colors.green : Colors.orange,
                     ),
@@ -154,7 +182,9 @@ class _ToolResultCardState extends State<ToolResultCard> {
                     ),
                     const Spacer(),
                     Icon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      _expanded
+                          ? PhosphorIconsRegular.caretUp
+                          : PhosphorIconsRegular.caretDown,
                       size: 18,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -167,16 +197,19 @@ class _ToolResultCardState extends State<ToolResultCard> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _resultMap!.entries
-                      .where((e) => e.key != 'data')
-                      .map((e) => Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              '${e.key}: ${e.value}',
-                              style: theme.textTheme.bodySmall,
+                  children:
+                      _resultMap!.entries
+                          .where((e) => e.key != 'data')
+                          .map(
+                            (e) => Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                '${e.key}: ${e.value}',
+                                style: theme.textTheme.bodySmall,
+                              ),
                             ),
-                          ))
-                      .toList(),
+                          )
+                          .toList(),
                 ),
               ),
           ],

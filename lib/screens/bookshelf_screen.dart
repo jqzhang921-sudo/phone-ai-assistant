@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/book.dart';
 import '../services/discussion_group_service.dart';
 import '../services/app_providers.dart';
@@ -477,7 +478,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 ),
                 const SizedBox(height: 16),
                 ListTile(
-                  leading: const Icon(Icons.chat_bubble_outline),
+                  leading: const Icon(PhosphorIconsRegular.chatCircle),
                   title: const Text('开始讨论'),
                   subtitle: const Text('和 ta 一起聊聊这本书'),
                   onTap: () {
@@ -496,7 +497,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.auto_awesome),
+                  leading: const Icon(PhosphorIconsRegular.sparkle),
                   title: const Text('查看 Discussion'),
                   subtitle: const Text('AI 帮你总结讨论笔记'),
                   onTap: () {
@@ -514,7 +515,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.auto_stories),
+                  leading: const Icon(PhosphorIconsRegular.books),
                   title: const Text('阅读档案'),
                   subtitle: const Text('AI 提炼你的观点与感受'),
                   onTap: () {
@@ -588,7 +589,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 ...overlapping.map((g) {
                   final preview = previews[g.id];
                   return ListTile(
-                    leading: const Icon(Icons.folder_outlined),
+                    leading: const Icon(PhosphorIconsRegular.folder),
                     title: Text(g.name),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -617,7 +618,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 }),
                 const Divider(),
                 ListTile(
-                  leading: const Icon(Icons.add_circle_outline),
+                  leading: const Icon(PhosphorIconsRegular.plusCircle),
                   title: const Text('新建独立集合'),
                   subtitle: const Text('不关联到已有集合'),
                   onTap: () => Navigator.of(ctx).pop('new'),
@@ -732,7 +733,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                             Expanded(
                               child: OutlinedButton.icon(
                                 icon: const Icon(
-                                  Icons.image_outlined,
+                                  PhosphorIconsRegular.image,
                                   size: 18,
                                 ),
                                 label: Text(
@@ -770,7 +771,10 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                             if (book.coverPath != null) ...[
                               const SizedBox(width: 8),
                               OutlinedButton.icon(
-                                icon: const Icon(Icons.zoom_in, size: 18),
+                                icon: const Icon(
+                                  PhosphorIconsRegular.magnifyingGlassPlus,
+                                  size: 18,
+                                ),
                                 label: const Text('查看'),
                                 onPressed: () {
                                   _viewCover(context, book);
@@ -785,7 +789,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                           width: double.infinity,
                           child: OutlinedButton.icon(
                             icon: const Icon(
-                              Icons.delete_outline,
+                              PhosphorIconsRegular.trash,
                               color: Colors.red,
                             ),
                             label: const Text(
@@ -904,7 +908,9 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
               children: [
                 IconButton(
                   icon: Icon(
-                    _searchOpen ? Icons.search_off : Icons.search,
+                    _searchOpen
+                        ? PhosphorIconsRegular.magnifyingGlassMinus
+                        : PhosphorIconsRegular.magnifyingGlass,
                     size: 20,
                   ),
                   tooltip: '搜索书架',
@@ -919,12 +925,18 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.forum_outlined, size: 20),
+                  icon: const Icon(
+                    PhosphorIconsRegular.chatCircleText,
+                    size: 20,
+                  ),
                   tooltip: '发起讨论',
                   onPressed: _books.isEmpty ? null : _showDiscussingDialog,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.cloud_download_outlined, size: 20),
+                  icon: const Icon(
+                    PhosphorIconsRegular.cloudArrowDown,
+                    size: 20,
+                  ),
                   tooltip: '从微信读书导入',
                   onPressed: _importFromWeread,
                 ),
@@ -948,7 +960,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
               ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addBook,
-        child: const Icon(Icons.add),
+        child: const Icon(PhosphorIconsRegular.plus),
       ),
     );
   }
@@ -961,7 +973,10 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         autofocus: true,
         decoration: InputDecoration(
           hintText: '搜书名或作者',
-          prefixIcon: const Icon(Icons.search, size: 20),
+          prefixIcon: const Icon(
+            PhosphorIconsRegular.magnifyingGlass,
+            size: 20,
+          ),
           isDense: true,
           filled: true,
           fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
@@ -975,7 +990,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
               _searchQuery.isEmpty
                   ? null
                   : IconButton(
-                    icon: const Icon(Icons.clear, size: 18),
+                    icon: const Icon(PhosphorIconsRegular.x, size: 18),
                     onPressed: () {
                       _searchController.clear();
                       setState(() => _searchQuery = '');
@@ -1033,7 +1048,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          Icons.menu_book_rounded,
+          PhosphorIconsRegular.bookOpen,
           size: 80,
           color: theme.colorScheme.primary.withAlpha(80),
         ),
@@ -1206,7 +1221,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.menu_book_rounded,
+              PhosphorIconsRegular.bookOpen,
               size: 30,
               color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
             ),

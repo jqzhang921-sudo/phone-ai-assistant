@@ -4,8 +4,14 @@ import 'package:flutter/material.dart';
 class AppTheme {
   AppTheme._();
 
-  static ThemeData get light => _build(Brightness.light);
-  static ThemeData get dark => _build(Brightness.dark);
+  static ThemeData get light => _build(Brightness.light, true);
+  static ThemeData get dark => _build(Brightness.dark, true);
+
+  /// [titleSerif] true 时 AppBar 标题用衬线体（Noto Serif SC），false 用默认黑体
+  static ThemeData lightWith({required bool titleSerif}) =>
+      _build(Brightness.light, titleSerif);
+  static ThemeData darkWith({required bool titleSerif}) =>
+      _build(Brightness.dark, titleSerif);
 
   static ColorScheme _scheme(Brightness brightness) {
     final light = brightness == Brightness.light;
@@ -59,7 +65,7 @@ class AppTheme {
     );
   }
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData _build(Brightness brightness, bool titleSerif) {
     final scheme = _scheme(brightness);
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
 
@@ -72,6 +78,7 @@ class AppTheme {
         backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
         titleTextStyle: TextStyle(
+          fontFamily: titleSerif ? 'NotoSerifSC' : null,
           fontSize: 18,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.2,

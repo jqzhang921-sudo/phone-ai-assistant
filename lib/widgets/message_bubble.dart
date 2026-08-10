@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../services/tts_service.dart';
 
@@ -151,7 +152,7 @@ class MessageBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: const Icon(Icons.copy),
+                  leading: const Icon(PhosphorIconsRegular.copy),
                   title: const Text('复制消息'),
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: message.content));
@@ -166,7 +167,7 @@ class MessageBubble extends StatelessWidget {
                 ),
                 if (message.imageData != null)
                   ListTile(
-                    leading: const Icon(Icons.image),
+                    leading: const Icon(PhosphorIconsRegular.image),
                     title: const Text('复制图片'),
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: message.content));
@@ -222,8 +223,8 @@ class MessageBubble extends StatelessWidget {
                   )
                   : Icon(
                     playing
-                        ? Icons.stop_circle_outlined
-                        : Icons.volume_up_outlined,
+                        ? PhosphorIconsRegular.stopCircle
+                        : PhosphorIconsRegular.speakerHigh,
                     size: 18,
                     color: theme.colorScheme.primary,
                   ),
@@ -240,7 +241,7 @@ class MessageBubble extends StatelessWidget {
               ? theme.colorScheme.surfaceContainerHighest
               : theme.colorScheme.primaryContainer,
       child: Icon(
-        isUser ? Icons.person : Icons.smart_toy,
+        isUser ? PhosphorIconsRegular.user : PhosphorIconsRegular.robot,
         size: 16,
         color:
             isUser

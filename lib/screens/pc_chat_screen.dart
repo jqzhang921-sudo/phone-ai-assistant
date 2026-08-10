@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../services/pc_bridge_service.dart';
 
 class _Msg {
@@ -227,12 +228,12 @@ class _PcChatScreenState extends State<PcChatScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined),
+            icon: const Icon(PhosphorIconsRegular.gear),
             tooltip: '连接设置',
             onPressed: _openSettings,
           ),
           IconButton(
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(PhosphorIconsRegular.arrowsClockwise),
             tooltip: '重连',
             onPressed: _connect,
           ),
@@ -337,13 +338,13 @@ class _PcChatScreenState extends State<PcChatScreen> {
           const SizedBox(width: 6),
           if (_busy)
             IconButton(
-              icon: const Icon(Icons.stop_circle_outlined),
+              icon: const Icon(PhosphorIconsRegular.stopCircle),
               tooltip: '停止',
               onPressed: () => _chat?.cancel(),
             ),
           IconButton(
             icon: Icon(
-              Icons.send_rounded,
+              PhosphorIconsRegular.paperPlaneTilt,
               color: _connected ? scheme.primary : scheme.outline,
             ),
             onPressed: _send,

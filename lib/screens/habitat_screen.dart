@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
 import '../services/app_providers.dart';
 import '../services/storage_service.dart';
@@ -71,12 +72,18 @@ class _HabitatScreenState extends State<HabitatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '栖息',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: fgColor,
-              ),
+            Consumer<SettingsProvider>(
+              builder: (context, sp, _) {
+                final serif = sp.settings?.titleSerif ?? true;
+                return Text(
+                  '栖息',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontFamily: serif ? 'NotoSerifSC' : null,
+                    fontWeight: FontWeight.w700,
+                    color: fgColor,
+                  ),
+                );
+              },
             ),
             Text(
               '你的小天地',
@@ -92,7 +99,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         children: [
           _card(
             theme,
-            icon: Icons.favorite_outline_rounded,
+            icon: PhosphorIconsRegular.heart,
             title: '今日陪伴',
             lines: [
               '今天和 AI 聊了 $_todayMessages 轮，累计 $_totalMessages 轮。',
@@ -102,7 +109,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 14),
           _card(
             theme,
-            icon: Icons.menu_book_outlined,
+            icon: PhosphorIconsRegular.bookOpen,
             title: '阅读角落',
             lines: ['书架上还有 $_readingCount 个对话和书在等你。', '去书架看看今天读点什么。'],
             actionLabel: '去书架',
@@ -111,7 +118,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 14),
           _card(
             theme,
-            icon: Icons.crop_square_rounded,
+            icon: PhosphorIconsRegular.square,
             title: '一隅',
             lines: [
               _musingCount > 0 ? '收藏了 $_musingCount 条。' : '还没收藏过，去首页看看它想说什么。',
@@ -128,7 +135,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 14),
           _card(
             theme,
-            icon: Icons.edit_note_outlined,
+            icon: PhosphorIconsRegular.pencilSimple,
             title: '日记',
             lines: [
               _diaryCount > 0 ? '已经写了 $_diaryCount 篇。' : '还没写过，聊完天试试看。',

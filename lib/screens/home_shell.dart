@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
 import '../services/app_providers.dart';
 import '../services/storage_service.dart';
@@ -135,22 +136,22 @@ class _HomeShellState extends State<HomeShell> {
             children: [
               _navItem(
                 0,
-                Icons.home_outlined,
-                Icons.home_rounded,
+                PhosphorIconsRegular.house,
+                PhosphorIconsRegular.house,
                 '主页',
                 scheme,
               ),
               _navItem(
                 1,
-                Icons.menu_book_outlined,
-                Icons.menu_book_rounded,
+                PhosphorIconsRegular.bookOpen,
+                PhosphorIconsRegular.bookOpen,
                 '书架',
                 scheme,
               ),
               _navItem(
                 2,
-                Icons.park_outlined,
-                Icons.park_rounded,
+                PhosphorIconsRegular.tree,
+                PhosphorIconsRegular.tree,
                 '栖息',
                 scheme,
               ),

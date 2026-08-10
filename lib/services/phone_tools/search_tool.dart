@@ -47,6 +47,76 @@ class SearchTool {
         category: '网络工具',
       );
 
+  /// Bing 兜底搜索（无需 key，国内可直连）：抓取搜索结果页解析标题/链接/摘要。
+  static Future<Map<String, dynamic>> _searchBing(String query) async {
+    final url = Uri.parse(
+        'https://www.bing.com/search?q=${Uri.encodeQueryComponent(query)}&setlang=zh-CN');
+    try {
+      final resp = await http.get(
+        url,
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+        },
+      );
+      if (resp.statusCode != 200) {
+        return {'success': false, 'error': 'Bing 搜索失败: ${resp.statusCode}'};
+      }
+      final html = resp.body;
+
+      // 解析 b_algo 结果块：<div class="b_algoheader"><a href="URL"><h2>标题</h2></a></div> + <p>摘要</p>
+      final algoRe = RegExp(
+        r'<li class="b_algo"[\s\S]*?</li>',
+        caseSensitive: false,
+      );
+      final results = <Map<String, dynamic>>[];
+      for (final m in algoRe.allMatches(html).take(5)) {
+        final block = m.group(0)!;
+        // 新结构：b_algoheader 里 <a href="URL"><h2>标题</h2></a>
+        final titleMatch = RegExp(
+          r'<div class="b_algoheader"><a[^>]*href="([^"]+)"[^>]*>[\s\S]*?<h2[^>]*>([\s\S]*?)</h2>[\s\S]*?</a>',
+          caseSensitive: false,
+        ).firstMatch(block);
+        if (titleMatch == null) continue;
+        final rawTitle = titleMatch
+            .group(2)!
+            .replaceAll(RegExp(r'<[^>]+>'), '')
+            .trim();
+        if (rawTitle.isEmpty) continue;
+        final urlMatch = titleMatch.group(1) ?? '';
+        // 过滤 Bing 自家导航/空链接
+        if (urlMatch.isEmpty || urlMatch.startsWith('javascript:')) continue;
+        final snippetMatch = RegExp(
+          r'<p class="b_lineclamp[^"]*">([\s\S]*?)</p>',
+          caseSensitive: false,
+        ).firstMatch(block);
+        final snippet = (snippetMatch?.group(1) ?? '')
+            .replaceAll(RegExp(r'<[^>]+>'), '')
+            .trim();
+        results.add({
+          'title': rawTitle,
+          'url': urlMatch,
+          'content': snippet,
+        });
+      }
+
+      if (results.isEmpty) {
+        return {'success': false, 'error': 'Bing 没有解析到结果（页面结构可能变化）'};
+      }
+      return {
+        'success': true,
+        'query': query,
+        'results': results,
+        'answer': '',
+        'source': 'bing',
+      };
+    } catch (e) {
+      return {'success': false, 'error': 'Bing 网络错误: $e'};
+    }
+  }
+
   static Future<Map<String, dynamic>> execute(
       Map<String, dynamic> args) async {
     final query = args['query'] as String? ?? '';
@@ -54,6 +124,7 @@ class SearchTool {
 
     final key = await _apiKey();
 
+    // 1) 先走 Tavily
     try {
       final response = await http.post(
         Uri.parse(_endpoint),
@@ -68,25 +139,36 @@ class SearchTool {
         }),
       );
 
-      if (response.statusCode != 200) {
-        return {'success': false, 'error': '搜索失败: ${response.statusCode}'};
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = (data['results'] as List?)?.take(5).map((r) => {
+              'title': r['title'],
+              'url': r['url'],
+              'content': r['content'],
+            }).toList() ?? [];
+        if (results.isNotEmpty) {
+          return {
+            'success': true,
+            'query': query,
+            'results': results,
+            'answer': data['answer'] ?? '',
+            'source': 'tavily',
+          };
+        }
       }
-
-      final data = jsonDecode(response.body);
-      final results = (data['results'] as List?)?.take(5).map((r) => {
-            'title': r['title'],
-            'url': r['url'],
-            'content': r['content'],
-          }).toList() ?? [];
-
-      return {
-        'success': true,
-        'query': query,
-        'results': results,
-        'answer': data['answer'] ?? '',
-      };
+      // Tavily 失败/无结果 → 降级 Bing
+      final bing = await _searchBing(query);
+      if (bing['success'] == true) return bing;
+      // Bing 也失败 → 报 Tavily 的原始错误（更可能定位问题）
+      if (response.statusCode != 200) {
+        return {'success': false, 'error': 'Tavily 失败(${response.statusCode})，Bing 兜底也失败: ${bing['error']}'};
+      }
+      return {'success': false, 'error': 'Tavily 无结果，Bing 兜底也失败: ${bing['error']}'};
     } catch (e) {
-      return {'success': false, 'error': '网络错误: $e'};
+      // 2) Tavily 网络异常 → 直接降级 Bing
+      final bing = await _searchBing(query);
+      if (bing['success'] == true) return bing;
+      return {'success': false, 'error': '搜索网络错误: $e；Bing 兜底也失败: ${bing['error']}'};
     }
   }
 }

@@ -14,6 +14,8 @@ class AppSettings {
   static const _serverEnabledKey = 'server_enabled';
   static const _ttsProviderKey = 'tts_provider';
   static const _userNameKey = 'user_name';
+  static const _ttsAutoPlayKey = 'tts_auto_play';
+  static const _titleSerifKey = 'title_serif';
 
   // ElevenLabs — key stored in secure storage
   static const _elevenLabsKeyKey = 'elevenlabs_api_key';
@@ -33,6 +35,8 @@ class AppSettings {
   String elevenLabsApiKey;
   String elevenLabsVoiceId;
   String userName;
+  bool ttsAutoPlay;
+  bool titleSerif; // true=衬线体(宋体)，false=黑体
 
   AppSettings({
     this.ttsEnabled = true,
@@ -44,6 +48,8 @@ class AppSettings {
     this.elevenLabsApiKey = '',
     this.elevenLabsVoiceId = defaultElevenLabsVoice,
     this.userName = '',
+    this.ttsAutoPlay = false,
+    this.titleSerif = true,
   });
 
   static Future<AppSettings> load() async {
@@ -78,6 +84,8 @@ class AppSettings {
       elevenLabsVoiceId:
           prefs.getString(_elevenLabsVoiceKey) ?? defaultElevenLabsVoice,
       userName: prefs.getString(_userNameKey) ?? '',
+      ttsAutoPlay: prefs.getBool(_ttsAutoPlayKey) ?? false,
+      titleSerif: prefs.getBool(_titleSerifKey) ?? true,
     );
   }
 
@@ -97,5 +105,7 @@ class AppSettings {
 
     await prefs.setString(_elevenLabsVoiceKey, elevenLabsVoiceId);
     await prefs.setString(_userNameKey, userName);
+    await prefs.setBool(_ttsAutoPlayKey, ttsAutoPlay);
+    await prefs.setBool(_titleSerifKey, titleSerif);
   }
 }

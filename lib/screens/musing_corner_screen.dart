@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/musing_entry.dart';
 import '../services/storage_service.dart';
 
@@ -85,7 +86,7 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
                             InkWell(
                               onTap: () => _delete(entry),
                               child: Icon(
-                                Icons.close_rounded,
+                                PhosphorIconsRegular.x,
                                 size: 18,
                                 color: scheme.onSurfaceVariant,
                               ),

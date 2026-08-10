@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 class ModelSelector extends StatelessWidget {
   final String currentModel;
@@ -24,25 +25,29 @@ class ModelSelector extends StatelessWidget {
       initialValue: currentModel,
       onSelected: onChanged,
       child: Chip(
-        avatar: const Icon(Icons.auto_awesome, size: 16),
+        avatar: const Icon(PhosphorIconsRegular.sparkle, size: 16),
         label: Text(currentModel, style: const TextStyle(fontSize: 12)),
         visualDensity: VisualDensity.compact,
       ),
-      itemBuilder: (context) => models.map((model) {
-        return PopupMenuItem(
-          value: model,
-          child: Row(
-            children: [
-              Icon(
-                model == currentModel ? Icons.radio_button_checked : Icons.radio_button_off,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Text(model),
-            ],
-          ),
-        );
-      }).toList(),
+      itemBuilder:
+          (context) =>
+              models.map((model) {
+                return PopupMenuItem(
+                  value: model,
+                  child: Row(
+                    children: [
+                      Icon(
+                        model == currentModel
+                            ? PhosphorIconsRegular.radioButton
+                            : PhosphorIconsRegular.radioButton,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(model),
+                    ],
+                  ),
+                );
+              }).toList(),
     );
   }
 }

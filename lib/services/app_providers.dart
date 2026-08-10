@@ -1,11 +1,31 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import '../config/settings.dart';
 import '../models/mcp_tool.dart';
 import 'ai_client.dart';
 import 'external_mcp_client.dart';
 import 'external_mcp_service.dart';
 import 'mcp_server.dart';
+
+// 全局设置 Provider：改动即时通知（主题字体切换等）
+class SettingsProvider extends ChangeNotifier {
+  AppSettings? _settings;
+  AppSettings? get settings => _settings;
+
+  void setSettings(AppSettings s) {
+    _settings = s;
+    notifyListeners();
+  }
+
+  Future<void> setTitleSerif(bool v) async {
+    final s = _settings;
+    if (s == null) return;
+    s.titleSerif = v;
+    await s.save();
+    notifyListeners();
+  }
+}
 
 // 全局状态 Provider
 class AiClientProvider extends ChangeNotifier {

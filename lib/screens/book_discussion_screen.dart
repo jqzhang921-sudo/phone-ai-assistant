@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/discussion_note.dart';
 import '../services/discussion_generator.dart';
 import '../services/app_providers.dart';
@@ -202,7 +203,7 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
         title: Text('讨论笔记 · 《${widget.bookTitle}》'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(PhosphorIconsRegular.plus),
             tooltip: '新建笔记',
             onPressed: _createBlankNote,
           ),
@@ -226,7 +227,7 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
                     color: Colors.white,
                   ),
                 )
-                : const Icon(Icons.auto_awesome),
+                : const Icon(PhosphorIconsRegular.sparkle),
         label: Text(_generating ? '生成中...' : '生成 Discussion'),
       ),
     );
@@ -237,7 +238,7 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          Icons.auto_awesome,
+          PhosphorIconsRegular.sparkle,
           size: 64,
           color: theme.colorScheme.primary.withAlpha(80),
         ),
@@ -268,7 +269,7 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       child: ExpansionTile(
         leading: Icon(
-          Icons.auto_awesome,
+          PhosphorIconsRegular.sparkle,
           size: 20,
           color: theme.colorScheme.primary,
         ),
@@ -296,13 +297,13 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               IconButton(
-                icon: const Icon(Icons.edit_outlined, size: 20),
+                icon: const Icon(PhosphorIconsRegular.pencilSimple, size: 20),
                 tooltip: '编辑',
                 onPressed: () => _editNote(note),
               ),
               IconButton(
                 icon: Icon(
-                  Icons.delete_outline,
+                  PhosphorIconsRegular.trash,
                   size: 20,
                   color: theme.colorScheme.error,
                 ),

@@ -24,6 +24,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ExternalMcpProvider()),
         ChangeNotifierProvider(create: (_) => TtsService()),
         ChangeNotifierProvider(create: (_) => BackgroundProvider()),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
       child: const PhoneAiApp(),
     ),
@@ -84,14 +85,21 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
       future: _settingsFuture,
       builder: (context, snapshot) {
         final settings = snapshot.data ?? AppSettings();
+        context.read<SettingsProvider>().setSettings(settings);
 
-        return MaterialApp(
-          title: '手机 AI 助手',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.light,
-          darkTheme: AppTheme.dark,
-          themeMode: settings.themeMode,
-          home: const HomeShell(),
+        return Consumer<SettingsProvider>(
+          builder: (context, sp, _) {
+            final s = sp.settings ?? settings;
+            final titleSerif = s.titleSerif;
+            return MaterialApp(
+              title: '手机 AI 助手',
+              debugShowCheckedModeBanner: false,
+              theme: AppTheme.lightWith(titleSerif: titleSerif),
+              darkTheme: AppTheme.darkWith(titleSerif: titleSerif),
+              themeMode: s.themeMode,
+              home: const HomeShell(),
+            );
+          },
         );
       },
     );

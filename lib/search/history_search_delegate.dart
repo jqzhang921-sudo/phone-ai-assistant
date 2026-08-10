@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import 'search_result_model.dart';
@@ -7,14 +8,14 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
   final List<Conversation> _allConversations;
 
   HistorySearchDelegate(this._allConversations)
-      : super(searchFieldLabel: '搜索历史对话...');
+    : super(searchFieldLabel: '搜索历史对话...');
 
   @override
   List<Widget>? buildActions(BuildContext context) {
     return [
       if (query.isNotEmpty)
         IconButton(
-          icon: const Icon(Icons.clear),
+          icon: const Icon(PhosphorIconsRegular.x),
           onPressed: () => query = '',
         ),
     ];
@@ -23,7 +24,7 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
   @override
   Widget? buildLeading(BuildContext context) {
     return IconButton(
-      icon: const Icon(Icons.arrow_back),
+      icon: const Icon(PhosphorIconsRegular.arrowLeft),
       onPressed: () => close(context, null),
     );
   }
@@ -49,13 +50,14 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
       itemBuilder: (ctx, i) {
         final conv = _allConversations[i];
         return ListTile(
-          leading: const Icon(Icons.chat_bubble_outline),
+          leading: const Icon(PhosphorIconsRegular.chatCircle),
           title: Text(conv.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
             '${conv.messages.length} 条消息 · ${conv.model}',
             style: const TextStyle(fontSize: 12),
           ),
-          onTap: () => close(context, HistorySearchSelection(conversation: conv)),
+          onTap:
+              () => close(context, HistorySearchSelection(conversation: conv)),
         );
       },
     );
@@ -70,10 +72,7 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
 
       // Search title
       if (conv.title.toLowerCase().contains(lower)) {
-        matches.add(MessageMatch(
-          snippet: conv.title,
-          isTitleMatch: true,
-        ));
+        matches.add(MessageMatch(snippet: conv.title, isTitleMatch: true));
       }
 
       // Search messages
@@ -90,13 +89,17 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
           final idx = contentLower.indexOf(lower, start);
           if (idx == -1) break;
           final snippetStart = (idx - 30).clamp(0, msg.content.length);
-          final snippetEnd =
-              (idx + query.length + 30).clamp(0, msg.content.length);
-          matches.add(MessageMatch(
-            message: msg,
-            messageIndex: i,
-            snippet: msg.content.substring(snippetStart, snippetEnd),
-          ));
+          final snippetEnd = (idx + query.length + 30).clamp(
+            0,
+            msg.content.length,
+          );
+          matches.add(
+            MessageMatch(
+              message: msg,
+              messageIndex: i,
+              snippet: msg.content.substring(snippetStart, snippetEnd),
+            ),
+          );
           start = idx + 1;
           if (matches.length >= 10) break; // cap per conversation
         }
@@ -109,7 +112,8 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
     }
 
     results.sort(
-        (a, b) => b.conversation.updatedAt.compareTo(a.conversation.updatedAt));
+      (a, b) => b.conversation.updatedAt.compareTo(a.conversation.updatedAt),
+    );
     return results;
   }
 
@@ -120,11 +124,13 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off, size: 64,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+            Icon(
+              PhosphorIconsRegular.magnifyingGlassMinus,
+              size: 64,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 12),
-            Text('未找到匹配的对话',
-                style: Theme.of(context).textTheme.bodyLarge),
+            Text('未找到匹配的对话', style: Theme.of(context).textTheme.bodyLarge),
           ],
         ),
       );
@@ -136,7 +142,10 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
     );
   }
 
-  Widget _buildResultCard(BuildContext context, ConversationSearchResult result) {
+  Widget _buildResultCard(
+    BuildContext context,
+    ConversationSearchResult result,
+  ) {
     final theme = Theme.of(context);
     final displayMatches = result.matches.take(3).toList();
     final hasMore = result.matches.length > 3;
@@ -145,10 +154,11 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => close(
-          context,
-          HistorySearchSelection(conversation: result.conversation),
-        ),
+        onTap:
+            () => close(
+              context,
+              HistorySearchSelection(conversation: result.conversation),
+            ),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -169,7 +179,10 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(10),
@@ -186,7 +199,9 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
               ),
               const Divider(height: 16),
               // Message snippets
-              ...displayMatches.map((m) => _buildSnippet(context, m, result.conversation)),
+              ...displayMatches.map(
+                (m) => _buildSnippet(context, m, result.conversation),
+              ),
               if (hasMore)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -205,18 +220,24 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
     );
   }
 
-  Widget _buildSnippet(BuildContext context, MessageMatch match, Conversation conversation) {
+  Widget _buildSnippet(
+    BuildContext context,
+    MessageMatch match,
+    Conversation conversation,
+  ) {
     final theme = Theme.of(context);
-    final icon = match.isTitleMatch
-        ? Icons.title
-        : match.message?.role == MessageRole.user
-            ? Icons.person
-            : Icons.smart_toy;
+    final icon =
+        match.isTitleMatch
+            ? PhosphorIconsRegular.textT
+            : match.message?.role == MessageRole.user
+            ? PhosphorIconsRegular.user
+            : PhosphorIconsRegular.robot;
 
     return InkWell(
-      onTap: match.isTitleMatch
-          ? null
-          : () => close(
+      onTap:
+          match.isTitleMatch
+              ? null
+              : () => close(
                 context,
                 HistorySearchSelection(
                   conversation: conversation,
@@ -228,12 +249,9 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 14,
-                color: theme.colorScheme.onSurfaceVariant),
+            Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 6),
-            Expanded(
-              child: _buildHighlightedText(context, match.snippet),
-            ),
+            Expanded(child: _buildHighlightedText(context, match.snippet)),
           ],
         ),
       ),
@@ -256,23 +274,22 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
       if (idx > start) {
         spans.add(TextSpan(text: text.substring(start, idx)));
       }
-      spans.add(TextSpan(
-        text: text.substring(idx, idx + query.length),
-        style: TextStyle(
-          backgroundColor: Colors.amber.withAlpha(80),
-          fontWeight: FontWeight.bold,
-          color: theme.colorScheme.primary,
+      spans.add(
+        TextSpan(
+          text: text.substring(idx, idx + query.length),
+          style: TextStyle(
+            backgroundColor: Colors.amber.withAlpha(80),
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
         ),
-      ));
+      );
       start = idx + query.length;
     }
 
     return RichText(
       text: TextSpan(
-        style: TextStyle(
-          fontSize: 13,
-          color: theme.colorScheme.onSurface,
-        ),
+        style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
         children: spans,
       ),
       maxLines: 3,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/diary_entry.dart';
 import '../services/app_providers.dart';
 import '../services/diary_generator.dart';
@@ -84,7 +85,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-                : const Icon(Icons.edit_outlined),
+                : const Icon(PhosphorIconsRegular.pencilSimple),
         label: Text(_hasToday ? '今天已写过' : (_generating ? '写作中…' : '记一篇今天的日记')),
       ),
       body:

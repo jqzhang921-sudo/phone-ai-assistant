@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/api_keys.dart';
 import '../config/settings.dart';
 import '../services/ai_client.dart';
@@ -66,13 +67,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _userNameController.text = _settings.userName;
     _externalServers = await ExternalMcpServerService.load();
 
-    // Select first config with a missing key
-    final missingKey =
-        _configs
-            .where((c) => c.apiKey == null || c.apiKey!.isEmpty)
-            .firstOrNull;
-    if (missingKey != null) {
-      _selectConfig(missingKey);
+    // 只在首次打开时自动选中一个配置（避免每次保存后被跳走）
+    if (_selectedProvider == null && _configs.isNotEmpty) {
+      final missingKey =
+          _configs
+              .where((c) => c.apiKey == null || c.apiKey!.isEmpty)
+              .firstOrNull;
+      _selectConfig(missingKey ?? _configs.first);
     }
 
     setState(() => _loading = false);
@@ -149,7 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // 称呼 —— 首页问候语用这个名字
-          _sectionHeader('称呼', Icons.person_outline, theme),
+          _sectionHeader('称呼', PhosphorIconsRegular.user, theme),
           const SizedBox(height: 8),
           TextField(
             controller: _userNameController,
@@ -158,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               border: const OutlineInputBorder(),
               isDense: true,
               suffixIcon: IconButton(
-                icon: const Icon(Icons.check, size: 20),
+                icon: const Icon(PhosphorIconsRegular.check, size: 20),
                 tooltip: '保存',
                 onPressed: () async {
                   final messenger = ScaffoldMessenger.of(context);
@@ -178,30 +179,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               await _settings.save();
             },
           ),
+
+          // 外观 —— 标题字体衬线/黑体切换
+          const SizedBox(height: 20),
+          _sectionHeader('外观', PhosphorIconsRegular.palette, theme),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: const Text('标题衬线体'),
+            subtitle: const Text('AppBar 标题用宋体（衬线）风格，关闭则用黑体'),
+            value: _settings.titleSerif,
+            onChanged: (v) {
+              setState(() => _settings.titleSerif = v);
+              context.read<SettingsProvider>().setTitleSerif(v);
+            },
+          ),
           const SizedBox(height: 20),
 
           // API Configuration Section
-          _sectionHeader('API 配置', Icons.key, theme),
+          _sectionHeader('API 配置', PhosphorIconsRegular.key, theme),
           const SizedBox(height: 8),
 
-          // Provider selector tabs
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children:
-                  _configs.map((config) {
-                    final selected = config.provider == _selectedProvider;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(config.name),
-                        selected: selected,
-                        onSelected: (_) => _selectConfig(config),
-                      ),
-                    );
-                  }).toList(),
-            ),
+          // Provider selector tabs（Wrap 保证所有标签都可见、可点）
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children:
+                _configs.map((config) {
+                  final selected = config.provider == _selectedProvider;
+                  return ChoiceChip(
+                    label: Text(config.name),
+                    selected: selected,
+                    onSelected: (_) => _selectConfig(config),
+                  );
+                }).toList(),
           ),
           const SizedBox(height: 16),
 
@@ -210,7 +221,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: _saveCurrent,
-              icon: const Icon(Icons.save),
+              icon: const Icon(PhosphorIconsRegular.floppyDisk),
               label: const Text('保存 API 配置'),
             ),
           ],
@@ -218,7 +229,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 40),
 
           // TTS Settings
-          _sectionHeader('TTS 语音', Icons.volume_up, theme),
+          _sectionHeader('TTS 语音', PhosphorIconsRegular.speakerHigh, theme),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -246,6 +257,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: const Text('自动朗读 AI 回复'),
+            subtitle: const Text('收到回复后自动播放语音'),
+            value: _settings.ttsAutoPlay,
+            onChanged: (v) {
+              setState(() => _settings.ttsAutoPlay = v);
+              _settings.save();
+            },
+          ),
           if (_settings.ttsProvider == TtsProvider.elevenlabs) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -254,10 +275,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 obscureText: false,
                 decoration: InputDecoration(
                   labelText: 'ElevenLabs API Key',
-                  hintText: 'elevenlabs.io → 头像 → API Keys',
+                  hintText: 'sk_ 开头，创建时仅显示一次，官网复制完整 key（列表里的是 ID 不能用）',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: const Icon(Icons.content_paste),
+                    icon: const Icon(PhosphorIconsRegular.clipboardText),
                     tooltip: '从剪贴板粘贴',
                     onPressed: () => _pasteInto(_elevenKeyController),
                   ),
@@ -273,7 +294,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   hintText: '留空用默认 Rachel；elevenlabs.io → Voices 复制 ID',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: const Icon(Icons.content_paste),
+                    icon: const Icon(PhosphorIconsRegular.clipboardText),
                     tooltip: '从剪贴板粘贴',
                     onPressed: () => _pasteInto(_elevenVoiceController),
                   ),
@@ -285,7 +306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  icon: const Icon(Icons.save),
+                  icon: const Icon(PhosphorIconsRegular.floppyDisk),
                   label: const Text('保存'),
                   onPressed: () async {
                     await _saveTts();
@@ -316,7 +337,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.play_circle_outline),
+            leading: const Icon(PhosphorIconsRegular.playCircle),
             title: const Text('测试语音'),
             subtitle: Text(
               _settings.ttsProvider == TtsProvider.elevenlabs
@@ -338,7 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 40),
 
           // Tavily 联网搜索
-          _sectionHeader('联网搜索', Icons.travel_explore, theme),
+          _sectionHeader('联网搜索', PhosphorIconsRegular.compass, theme),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
@@ -349,7 +370,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 hintText: 'tavily.com → Dashboard → API Keys',
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.save),
+                  icon: const Icon(PhosphorIconsRegular.floppyDisk),
                   tooltip: '保存',
                   onPressed: () async {
                     await SearchTool.saveKey(_tavilyKeyController.text.trim());
@@ -370,7 +391,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 40),
 
           // MCP Server Settings
-          _sectionHeader('MCP 服务器', Icons.link, theme),
+          _sectionHeader('MCP 服务器', PhosphorIconsRegular.link, theme),
           const SizedBox(height: 8),
           SwitchListTile(
             title: const Text('启用 MCP Server'),
@@ -398,7 +419,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           if (_settings.serverEnabled) ...[
             ListTile(
-              leading: const Icon(Icons.wifi),
+              leading: const Icon(PhosphorIconsRegular.wifiHigh),
               title: const Text('端口'),
               trailing: SizedBox(
                 width: 80,
@@ -423,7 +444,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 40),
 
           // External MCP Servers
-          _sectionHeader('自定义 MCP 服务器', Icons.link, theme),
+          _sectionHeader('自定义 MCP 服务器', PhosphorIconsRegular.link, theme),
           const SizedBox(height: 8),
 
           // Connected servers status
@@ -446,7 +467,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.check_circle,
+                              PhosphorIconsRegular.checkCircle,
                               size: 14,
                               color: Colors.green,
                             ),
@@ -480,7 +501,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ListTile(
                 dense: true,
                 leading: Icon(
-                  Icons.dns_outlined,
+                  PhosphorIconsRegular.database,
                   color:
                       server.enabled ? theme.colorScheme.primary : Colors.grey,
                 ),
@@ -509,7 +530,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 18),
+                      icon: const Icon(PhosphorIconsRegular.trash, size: 18),
                       onPressed: () async {
                         await ExternalMcpServerService.remove(server.id);
                         context.read<ExternalMcpProvider>().disconnect(
@@ -567,7 +588,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
-                          icon: const Icon(Icons.link, size: 16),
+                          icon: const Icon(PhosphorIconsRegular.link, size: 16),
                           label: const Text('添加并连接'),
                           onPressed: () async {
                             final name = _mcpNameController.text.trim();
@@ -637,14 +658,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _showAddMcp = true;
                 setState(() {});
               },
-              icon: const Icon(Icons.add, size: 16),
+              icon: const Icon(PhosphorIconsRegular.plus, size: 16),
               label: const Text('添加 MCP 服务器'),
             ),
 
           const Divider(height: 40),
 
           // About
-          _sectionHeader('关于', Icons.info_outline, theme),
+          _sectionHeader('关于', PhosphorIconsRegular.info, theme),
           ListTile(
             title: const Text('手机 AI 助手'),
             subtitle: const Text('v1.0.0\n支持 MCP 协议 & 手机工具'),

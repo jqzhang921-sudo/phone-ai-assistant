@@ -40,9 +40,9 @@ dependencies:
   file_picker: ^8.1.7
   geolocator: ^13.0.2
   sensors_plus: ^6.1.1
-  permission_handler: ^11.3.1
   flutter_tts: ^4.2.2
   audioplayers: ^6.1.0
+  phosphor_flutter: ^2.1.0
 
 dev_dependencies:
   flutter_test:
@@ -51,3 +51,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    - family: NotoSerifSC
+      fonts:
+        - asset: assets/fonts/NotoSerifSC.otf

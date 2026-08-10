@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../models/discussion_note.dart';
@@ -386,7 +387,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(PhosphorIconsRegular.arrowLeft),
             onPressed: () async {
               final shouldPop = await _handleBack();
               if (shouldPop && mounted) {
@@ -463,7 +464,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
                       value: 'refresh',
                       child: ListTile(
                         leading: Icon(
-                          Icons.sync,
+                          PhosphorIconsRegular.arrowsClockwise,
                           color:
                               widget.wereadBookId != null
                                   ? null
@@ -485,7 +486,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
                     const PopupMenuItem(
                       value: 'delete',
                       child: ListTile(
-                        leading: Icon(Icons.delete_outline),
+                        leading: Icon(PhosphorIconsRegular.trash),
                         title: Text('删除讨论'),
                         dense: true,
                         visualDensity: VisualDensity.compact,
@@ -538,7 +539,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.menu_book_rounded,
+            PhosphorIconsRegular.bookOpen,
             size: 80,
             color: theme.colorScheme.primary.withAlpha(60),
           ),
@@ -600,7 +601,9 @@ class _BookChatScreenState extends State<BookChatScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: Icon(
-              _isLoading ? Icons.stop : Icons.send_rounded,
+              _isLoading
+                  ? PhosphorIconsRegular.stop
+                  : PhosphorIconsRegular.paperPlaneTilt,
               color: theme.colorScheme.primary,
             ),
             onPressed: _isLoading ? null : _sendMessage,
