@@ -595,33 +595,51 @@ class _ChatScreenState extends State<ChatScreen> {
     _saveConversation();
   }
 
+  static const _toolTimeout = Duration(seconds: 60);
+
   Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
+    final extProvider = context.read<ExternalMcpProvider>();
+
+    // Try local MCP server first
+    final executor =
+        mcpServer.registeredTools
+            .where((r) => r.tool.name == tc.name)
+            .firstOrNull
+            ?.executor;
+    if (executor != null) {
+      return _runToolWithTimeout(
+        () async => (await executor(tc.arguments)).toString(),
+        tc.name,
+      );
+    }
+
+    // Try external MCP servers
+    for (final client in extProvider.clients) {
+      if (client.tools.any((t) => t.name == tc.name)) {
+        return _runToolWithTimeout(
+          () async => (await client.callTool(tc.name, tc.arguments)).toString(),
+          tc.name,
+        );
+      }
+    }
+
+    return '错误: 工具 ${tc.name} 未找到';
+  }
+
+  /// 工具执行统一加超时并吞掉异常：无论成功/超时/失败都返回字符串结果，
+  /// 避免 assistant(tool_calls) 成为“孤儿”导致下次发送报 invalid_request_error。
+  Future<String> _runToolWithTimeout(
+    Future<String> Function() run,
+    String toolName,
+  ) async {
     try {
-      // Try local MCP server first
-      final executor =
-          mcpServer.registeredTools
-              .where((r) => r.tool.name == tc.name)
-              .firstOrNull
-              ?.executor;
-      if (executor != null) {
-        final result = await executor(tc.arguments);
-        return result.toString();
-      }
-
-      // Try external MCP servers
-      final extProvider = context.read<ExternalMcpProvider>();
-      for (final client in extProvider.clients) {
-        if (client.tools.any((t) => t.name == tc.name)) {
-          final result = await client.callTool(tc.name, tc.arguments);
-          return result.toString();
-        }
-      }
-
-      return '错误: 工具 ${tc.name} 未找到';
+      return await run().timeout(
+        _toolTimeout,
+        onTimeout:
+            () => '错误: 工具 $toolName 执行超时（${_toolTimeout.inSeconds}秒），请重试',
+      );
     } catch (e) {
-      // 工具执行失败也要返回结果（不能抛异常），否则 assistant(tool_calls)
-      // 会留在历史里而没有对应的 tool 响应，下次发送报 invalid_request_error
-      return '错误: 工具 ${tc.name} 执行失败: $e';
+      return '错误: 工具 $toolName 执行失败: $e';
     }
   }
 
