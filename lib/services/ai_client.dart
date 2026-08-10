@@ -166,99 +166,142 @@ class AiClient {
     }
 
     try {
-      final request = http.Request(
-        'POST',
-        Uri.parse('$endpoint/chat/completions'),
-      );
-      request.headers.addAll({
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${config.apiKey}',
-      });
-      request.body = jsonEncode(body);
+      var attempt = 0;
+      while (true) {
+        attempt++;
+        final request = http.Request(
+          'POST',
+          Uri.parse('$endpoint/chat/completions'),
+        );
+        request.headers.addAll({
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${config.apiKey}',
+        });
+        request.body = jsonEncode(body);
 
-      final response = await http.Client().send(request);
+        final response = await http.Client().send(request);
 
-      if (response.statusCode != 200) {
+        if (response.statusCode == 200) {
+          yield* _streamOpenAiResponse(response);
+          return;
+        }
+
         final error = await response.stream.bytesToString();
+        final lowered = error.toLowerCase();
+        final toolHistoryError =
+            lowered.contains('invalid_request_error') &&
+            (lowered.contains('tool_call') ||
+                lowered.contains('tool messages') ||
+                lowered.contains('insufficient'));
+        if (toolHistoryError && attempt == 1) {
+          // 工具历史异常（如孤儿 tool_calls）：去掉全部工具消息，纯文本重试一次
+          body['messages'] = _stripAllToolMessages(apiMessages);
+          continue;
+        }
         yield AiStreamEvent.error('API 错误 (${response.statusCode}): $error');
         return;
-      }
-
-      String? contentBuffer;
-      List<ToolCallInfo>? toolCalls;
-      // Accumulate raw argument JSON text per tool call index
-      final Map<int, String> argBuffers = {};
-
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        final lines = chunk.split('\n');
-        for (final line in lines) {
-          if (!line.startsWith('data: ')) continue;
-          final data = line.substring(6).trim();
-          if (data == '[DONE]') break;
-
-          try {
-            final json = jsonDecode(data);
-            final delta = json['choices']?[0]?['delta'];
-
-            if (delta == null) continue;
-
-            if (delta['content'] != null) {
-              contentBuffer = (contentBuffer ?? '') + delta['content'];
-              yield AiStreamEvent.token(delta['content']);
-            }
-
-            if (delta['tool_calls'] != null) {
-              for (final tc in delta['tool_calls']) {
-                final idx = tc['index'] ?? 0;
-                toolCalls ??= [];
-
-                while (toolCalls!.length <= idx) {
-                  toolCalls!.add(ToolCallInfo(id: '', name: '', arguments: {}));
-                }
-
-                if (tc['id'] != null) {
-                  toolCalls![idx] = ToolCallInfo(
-                    id: tc['id'],
-                    name: toolCalls![idx].name,
-                    arguments: toolCalls![idx].arguments,
-                  );
-                }
-                if (tc['function']?['name'] != null) {
-                  toolCalls![idx] = ToolCallInfo(
-                    id: toolCalls![idx].id,
-                    name: tc['function']['name'],
-                    arguments: toolCalls![idx].arguments,
-                  );
-                }
-                // Accumulate arguments fragments and parse only when complete
-                if (tc['function']?['arguments'] != null) {
-                  final argText = tc['function']['arguments'].toString();
-                  argBuffers[idx] = (argBuffers[idx] ?? '') + argText;
-                  try {
-                    final parsed = jsonDecode(argBuffers[idx]!);
-                    toolCalls![idx] = ToolCallInfo(
-                      id: toolCalls![idx].id,
-                      name: toolCalls![idx].name,
-                      arguments: Map<String, dynamic>.from(parsed),
-                    );
-                  } catch (_) {
-                    // Partial JSON chunk, keep accumulating
-                  }
-                }
-              }
-            }
-          } catch (_) {}
-        }
-      }
-
-      if (toolCalls != null && toolCalls!.isNotEmpty) {
-        yield AiStreamEvent.toolCalls(toolCalls!);
-      } else if (contentBuffer != null) {
-        yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
       }
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
     }
+  }
+
+  /// 处理 OpenAI 兼容的流式响应并产出事件。
+  Stream<AiStreamEvent> _streamOpenAiResponse(
+    http.StreamedResponse response,
+  ) async* {
+    String? contentBuffer;
+    List<ToolCallInfo>? toolCalls;
+    // Accumulate raw argument JSON text per tool call index
+    final Map<int, String> argBuffers = {};
+
+    await for (final chunk in response.stream.transform(utf8.decoder)) {
+      final lines = chunk.split('\n');
+      for (final line in lines) {
+        if (!line.startsWith('data: ')) continue;
+        final data = line.substring(6).trim();
+        if (data == '[DONE]') break;
+
+        try {
+          final json = jsonDecode(data);
+          final delta = json['choices']?[0]?['delta'];
+
+          if (delta == null) continue;
+
+          if (delta['content'] != null) {
+            contentBuffer = (contentBuffer ?? '') + delta['content'];
+            yield AiStreamEvent.token(delta['content']);
+          }
+
+          if (delta['tool_calls'] != null) {
+            for (final tc in delta['tool_calls']) {
+              final idx = tc['index'] ?? 0;
+              toolCalls ??= [];
+
+              while (toolCalls!.length <= idx) {
+                toolCalls!.add(ToolCallInfo(id: '', name: '', arguments: {}));
+              }
+
+              if (tc['id'] != null) {
+                toolCalls![idx] = ToolCallInfo(
+                  id: tc['id'],
+                  name: toolCalls![idx].name,
+                  arguments: toolCalls![idx].arguments,
+                );
+              }
+              if (tc['function']?['name'] != null) {
+                toolCalls![idx] = ToolCallInfo(
+                  id: toolCalls![idx].id,
+                  name: tc['function']['name'],
+                  arguments: toolCalls![idx].arguments,
+                );
+              }
+              // Accumulate arguments fragments and parse only when complete
+              if (tc['function']?['arguments'] != null) {
+                final argText = tc['function']['arguments'].toString();
+                argBuffers[idx] = (argBuffers[idx] ?? '') + argText;
+                try {
+                  final parsed = jsonDecode(argBuffers[idx]!);
+                  toolCalls![idx] = ToolCallInfo(
+                    id: toolCalls![idx].id,
+                    name: toolCalls![idx].name,
+                    arguments: Map<String, dynamic>.from(parsed),
+                  );
+                } catch (_) {
+                  // Partial JSON chunk, keep accumulating
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (toolCalls != null && toolCalls!.isNotEmpty) {
+      yield AiStreamEvent.toolCalls(toolCalls!);
+    } else if (contentBuffer != null) {
+      yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
+    }
+  }
+
+  /// 纯文本兜底：去掉所有 tool 消息与 assistant 的 tool_calls，只保留文字消息。
+  static List<Map<String, dynamic>> _stripAllToolMessages(
+    List<Map<String, dynamic>> apiMessages,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final msg in apiMessages) {
+      final role = msg['role'];
+      if (role == 'tool') continue;
+      if (role == 'assistant') {
+        final copy = Map<String, dynamic>.from(msg)..remove('tool_calls');
+        final text = (copy['content'] as String?)?.trim() ?? '';
+        if (text.isEmpty) continue;
+        out.add(copy);
+      } else {
+        out.add(msg);
+      }
+    }
+    return out;
   }
 
   Stream<AiStreamEvent> _anthropicChat(
