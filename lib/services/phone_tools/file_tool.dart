@@ -85,13 +85,15 @@ class WriteFileTool {
 
   static McpTool get definition => McpTool(
         name: 'write_file',
-        description: '在手机的 App 私有文档目录下创建或写入文件。path 是文件名如 "test.txt" 或 "notes/日记.txt"。不需要提供完整路径，只需提供相对文件名。可以用来保存笔记、代码、配置文件等',
+        description: '在手机的 App 私有文档目录下创建或写入文件。path 是文件名如 "test.txt" 或 "notes/config.json"。不需要提供完整路径，只需提供相对文件名。可以用来保存代码、配置文件等。'
+            '注意：这个工具写出来的文件存在 App 私有目录里，用户在 App 界面上看不到。'
+            '要写日记请用 write_diary_entry 工具，不要用这个。',
         inputSchema: {
           'type': 'object',
           'properties': {
             'path': {
               'type': 'string',
-              'description': '文件名如 test.txt，或相对路径如 notes/diary.txt',
+              'description': '文件名如 test.txt，或相对路径如 notes/config.json',
             },
             'content': {
               'type': 'string',

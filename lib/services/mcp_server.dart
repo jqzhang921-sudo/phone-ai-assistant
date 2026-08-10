@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import '../models/mcp_tool.dart';
 import 'phone_tools/camera_tool.dart';
+import 'phone_tools/diary_tool.dart';
 import 'phone_tools/file_tool.dart';
 import 'phone_tools/location_tool.dart';
 import 'phone_tools/sensors_tool.dart';
@@ -44,6 +45,7 @@ class McpServer {
     _registerTool(SensorTool.definition, SensorTool.execute);
     _registerTool(SearchTool.definition, SearchTool.execute);
     _registerTool(TimeTool.definition, TimeTool.execute);
+    _registerTool(DiaryTool.definition, DiaryTool.execute);
   }
 
   void _registerTool(McpTool tool, ToolExecutor executor) {
