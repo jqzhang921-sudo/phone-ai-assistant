@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
 import '../../models/mcp_tool.dart';
@@ -9,6 +10,28 @@ class LocationTool {
     inputSchema: {'type': 'object', 'properties': {}},
     category: '手机工具',
   );
+
+  /// Android 上部分机型（尤其 Android 12+ 和一些华为定制系统）用默认的
+  /// FusedLocationProviderClient 会一直卡到超时（"Future not completed"），
+  /// 哪怕定位本身没问题。强制换成系统自带的老式 LocationManager 更稳。
+  static LocationSettings _settingsFor(
+    LocationAccuracy accuracy,
+    Duration timeLimit,
+  ) {
+    if (Platform.isAndroid) {
+      return AndroidSettings(
+        accuracy: accuracy,
+        distanceFilter: 0,
+        timeLimit: timeLimit,
+        forceLocationManager: true,
+      );
+    }
+    return LocationSettings(
+      accuracy: accuracy,
+      distanceFilter: 0,
+      timeLimit: timeLimit,
+    );
+  }
 
   /// 两点间大致距离（公里），用于判断新拿到的定位是不是"离谱跳变"。
   /// 用的是简化的球面距离公式，够用，不追求精确到米。
@@ -62,10 +85,9 @@ class LocationTool {
       String? gpsFailReason;
       try {
         pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 0,
-            timeLimit: Duration(seconds: 25),
+          locationSettings: _settingsFor(
+            LocationAccuracy.high,
+            const Duration(seconds: 25),
           ),
         );
       } catch (e) {
@@ -79,10 +101,9 @@ class LocationTool {
         source = 'network';
         try {
           pos = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.medium,
-              distanceFilter: 0,
-              timeLimit: Duration(seconds: 8),
+            locationSettings: _settingsFor(
+              LocationAccuracy.medium,
+              const Duration(seconds: 8),
             ),
           );
         } catch (e) {
