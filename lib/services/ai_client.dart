@@ -137,9 +137,14 @@ class AiClient {
       }
     }
 
+    // 兜底：确保每个 assistant 的 tool_calls 都有对应的 tool 响应。
+    // 若历史里存在"孤儿" tool_calls（工具执行中断/异常留下的），
+    // 直接补一条错误响应，否则 DeepSeek 报 invalid_request_error。
+    final cleaned = _repairToolMessages(apiMessages);
+
     final body = <String, dynamic>{
       'model': model,
-      'messages': apiMessages,
+      'messages': cleaned,
       'stream': true,
       'max_tokens': 4096,
     };
@@ -408,6 +413,41 @@ class AiClient {
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
     }
+  }
+
+  /// 修复消息历史：确保 assistant 的每个 tool_call_id 都有对应 tool 响应。
+  /// 若缺失（工具中断/异常留下孤儿 tool_calls），补一条错误响应，
+  /// 防止 DeepSeek/OpenAI 报 "insufficient tool messages"。
+  static List<Map<String, dynamic>> _repairToolMessages(
+    List<Map<String, dynamic>> apiMessages,
+  ) {
+    final cleaned = <Map<String, dynamic>>[];
+    final pendingIds = <String>{};
+
+    for (final msg in apiMessages) {
+      cleaned.add(msg);
+      if (msg['role'] == 'assistant' && msg['tool_calls'] != null) {
+        for (final tc in msg['tool_calls'] as List) {
+          final id = (tc as Map)['id'] as String?;
+          if (id != null && id.isNotEmpty) pendingIds.add(id);
+        }
+      } else if (msg['role'] == 'tool') {
+        final id = msg['tool_call_id'] as String?;
+        if (id != null) pendingIds.remove(id);
+      }
+    }
+
+    // 仍有未响应的 tool_call_id → 补错误响应
+    if (pendingIds.isNotEmpty) {
+      for (final id in pendingIds) {
+        cleaned.add({
+          'role': 'tool',
+          'tool_call_id': id,
+          'content': '错误: 工具调用未完成（历史恢复），请重试或忽略此工具结果',
+        });
+      }
+    }
+    return cleaned;
   }
 }
 

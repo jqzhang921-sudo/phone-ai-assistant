@@ -596,27 +596,33 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
-    // Try local MCP server first
-    final executor =
-        mcpServer.registeredTools
-            .where((r) => r.tool.name == tc.name)
-            .firstOrNull
-            ?.executor;
-    if (executor != null) {
-      final result = await executor(tc.arguments);
-      return result.toString();
-    }
-
-    // Try external MCP servers
-    final extProvider = context.read<ExternalMcpProvider>();
-    for (final client in extProvider.clients) {
-      if (client.tools.any((t) => t.name == tc.name)) {
-        final result = await client.callTool(tc.name, tc.arguments);
+    try {
+      // Try local MCP server first
+      final executor =
+          mcpServer.registeredTools
+              .where((r) => r.tool.name == tc.name)
+              .firstOrNull
+              ?.executor;
+      if (executor != null) {
+        final result = await executor(tc.arguments);
         return result.toString();
       }
-    }
 
-    return '错误: 工具 ${tc.name} 未找到';
+      // Try external MCP servers
+      final extProvider = context.read<ExternalMcpProvider>();
+      for (final client in extProvider.clients) {
+        if (client.tools.any((t) => t.name == tc.name)) {
+          final result = await client.callTool(tc.name, tc.arguments);
+          return result.toString();
+        }
+      }
+
+      return '错误: 工具 ${tc.name} 未找到';
+    } catch (e) {
+      // 工具执行失败也要返回结果（不能抛异常），否则 assistant(tool_calls)
+      // 会留在历史里而没有对应的 tool 响应，下次发送报 invalid_request_error
+      return '错误: 工具 ${tc.name} 执行失败: $e';
+    }
   }
 
   void _updateAssistantMessage(
