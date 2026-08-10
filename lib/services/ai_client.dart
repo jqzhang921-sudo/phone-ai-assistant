@@ -424,8 +424,28 @@ class AiClient {
     final cleaned = <Map<String, dynamic>>[];
     final pendingIds = <String>{};
 
+    Map<String, dynamic> errorToolResponse(String id) => {
+      'role': 'tool',
+      'tool_call_id': id,
+      'content': '错误: 工具调用未完成（历史恢复），请重试或忽略此工具结果',
+    };
+
+    void flushPending() {
+      if (pendingIds.isEmpty) return;
+      for (final id in pendingIds) {
+        cleaned.add(errorToolResponse(id));
+      }
+      pendingIds.clear();
+    }
+
     for (final msg in apiMessages) {
+      // 非 tool 消息出现前，先补齐未响应的 tool_calls，
+      // 保证 assistant(tool_calls) 后面紧跟 tool 消息（OpenAI 硬性要求）。
+      if (msg['role'] != 'tool') {
+        flushPending();
+      }
       cleaned.add(msg);
+
       if (msg['role'] == 'assistant' && msg['tool_calls'] != null) {
         for (final tc in msg['tool_calls'] as List) {
           final id = (tc as Map)['id'] as String?;
@@ -437,16 +457,8 @@ class AiClient {
       }
     }
 
-    // 仍有未响应的 tool_call_id → 补错误响应
-    if (pendingIds.isNotEmpty) {
-      for (final id in pendingIds) {
-        cleaned.add({
-          'role': 'tool',
-          'tool_call_id': id,
-          'content': '错误: 工具调用未完成（历史恢复），请重试或忽略此工具结果',
-        });
-      }
-    }
+    // 列表末尾仍有未响应的 tool_call_id → 补错误响应
+    flushPending();
     return cleaned;
   }
 }
