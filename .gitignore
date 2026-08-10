@@ -62,3 +62,8 @@ soul-knight-clone/
 
 # agent-bridge
 agent-bridge/.env
+
+# Android release signing — 绝对不要提交
+android/key.properties
+*.jks
+*.keystore
