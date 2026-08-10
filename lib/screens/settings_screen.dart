@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/backup_service.dart';
 import '../config/api_keys.dart';
 import '../config/settings.dart';
 import '../config/build_info.dart';
@@ -32,6 +36,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _elevenVoiceController = TextEditingController();
   final _tavilyKeyController = TextEditingController();
   final _userNameController = TextEditingController();
+
+  // 密钥默认打码，点小眼睛才明文——设置页经常被截图/投屏。
+  bool _showApiKey = false;
+  bool _showElevenKey = false;
+  bool _showTavilyKey = false;
+
+  bool _backupBusy = false;
+
+  Future<void> _exportBackup() async {
+    setState(() => _backupBusy = true);
+    try {
+      final file = await BackupService.exportToFile();
+      final size = (await file.length() / 1024).toStringAsFixed(0);
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], text: '手机 AI 助手数据备份（${size}KB，不含密钥）');
+    } catch (e) {
+      if (mounted) _snack('导出失败：$e');
+    } finally {
+      if (mounted) setState(() => _backupBusy = false);
+    }
+  }
+
+  Future<void> _importBackup() async {
+    final picked = await FilePicker.platform.pickFiles(withData: false);
+    final path = picked?.files.single.path;
+    if (path == null) return;
+
+    if (!mounted) return;
+    final replace = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('怎么导入？'),
+            content: const Text(
+              '合并：只补进本机没有的内容，现有的一律不动（推荐）。\n\n'
+              '覆盖：同一条内容以备份里的为准，本机改动会被冲掉。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(null),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('覆盖'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('合并'),
+              ),
+            ],
+          ),
+    );
+    if (replace == null) return;
+
+    setState(() => _backupBusy = true);
+    try {
+      final raw = await File(path).readAsString();
+      final summary = await BackupService.importBackup(
+        jsonDecode(raw) as Map<String, dynamic>,
+        replace: replace,
+      );
+      if (mounted) {
+        _snack(
+          '导入完成：对话 ${summary.conversations}、'
+          '讨论 ${summary.bookConversations}、'
+          '日记 ${summary.diaryEntries}、一隅 ${summary.musings}。'
+          '密钥需要重新填。',
+        );
+      }
+    } on FormatException catch (e) {
+      if (mounted) _snack(e.message);
+    } catch (e) {
+      if (mounted) _snack('导入失败：$e');
+    } finally {
+      if (mounted) setState(() => _backupBusy = false);
+    }
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 4)));
+  }
+
+  /// 密钥输入框右侧的「显示/隐藏」按钮。
+  Widget _revealButton(bool visible, VoidCallback onToggle) {
+    return IconButton(
+      icon: Icon(
+        visible ? PhosphorIconsRegular.eyeSlash : PhosphorIconsRegular.eye,
+      ),
+      tooltip: visible ? '隐藏' : '显示',
+      onPressed: onToggle,
+    );
+  }
 
   // External MCP server state
   List<ExternalMcpServer> _externalServers = [];
@@ -273,15 +373,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: TextField(
                 controller: _elevenKeyController,
-                obscureText: false,
+                obscureText: !_showElevenKey,
                 decoration: InputDecoration(
                   labelText: 'ElevenLabs API Key',
                   hintText: 'sk_ 开头，创建时仅显示一次，官网复制完整 key（列表里的是 ID 不能用）',
                   border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: const Icon(PhosphorIconsRegular.clipboardText),
-                    tooltip: '从剪贴板粘贴',
-                    onPressed: () => _pasteInto(_elevenKeyController),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _revealButton(
+                        _showElevenKey,
+                        () => setState(() => _showElevenKey = !_showElevenKey),
+                      ),
+                      IconButton(
+                        icon: const Icon(PhosphorIconsRegular.clipboardText),
+                        tooltip: '从剪贴板粘贴',
+                        onPressed: () => _pasteInto(_elevenKeyController),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -366,24 +475,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
             child: TextField(
               controller: _tavilyKeyController,
+              obscureText: !_showTavilyKey,
               decoration: InputDecoration(
                 labelText: 'Tavily API Key',
                 hintText: 'tavily.com → Dashboard → API Keys',
                 border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: const Icon(PhosphorIconsRegular.floppyDisk),
-                  tooltip: '保存',
-                  onPressed: () async {
-                    await SearchTool.saveKey(_tavilyKeyController.text.trim());
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tavily Key 已保存'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    }
-                  },
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _revealButton(
+                      _showTavilyKey,
+                      () => setState(() => _showTavilyKey = !_showTavilyKey),
+                    ),
+                    IconButton(
+                      icon: const Icon(PhosphorIconsRegular.floppyDisk),
+                      tooltip: '保存',
+                      onPressed: () async {
+                        await SearchTool.saveKey(
+                          _tavilyKeyController.text.trim(),
+                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Tavily Key 已保存'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -665,6 +786,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const Divider(height: 40),
 
+          // 数据备份
+          _sectionHeader('数据备份', PhosphorIconsRegular.floppyDisk, theme),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text(
+              '导出对话、讨论、日记、一隅。不含任何 API 密钥，'
+              '也不含书籍封面——导入后密钥需要重新填一次。',
+              style: TextStyle(fontSize: 12, height: 1.5),
+            ),
+          ),
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(PhosphorIconsRegular.export),
+            title: const Text('导出备份'),
+            subtitle: const Text('生成 json 文件，可发到微信或存网盘'),
+            enabled: !_backupBusy,
+            onTap: _backupBusy ? null : _exportBackup,
+          ),
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(PhosphorIconsRegular.downloadSimple),
+            title: const Text('导入备份'),
+            subtitle: const Text('从 json 文件恢复，可选合并或覆盖'),
+            enabled: !_backupBusy,
+            onTap: _backupBusy ? null : _importBackup,
+          ),
+
+          const Divider(height: 40),
+
           // About
           _sectionHeader('关于', PhosphorIconsRegular.info, theme),
           ListTile(
@@ -682,12 +832,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         TextField(
           controller: _keyController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'API Key',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
             hintText: 'sk-...',
+            suffixIcon: _revealButton(
+              _showApiKey,
+              () => setState(() => _showApiKey = !_showApiKey),
+            ),
           ),
-          obscureText: true,
+          obscureText: !_showApiKey,
           maxLines: 1,
         ),
         const SizedBox(height: 12),
