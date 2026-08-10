@@ -421,44 +421,53 @@ class AiClient {
   static List<Map<String, dynamic>> _repairToolMessages(
     List<Map<String, dynamic>> apiMessages,
   ) {
-    final cleaned = <Map<String, dynamic>>[];
-    final pendingIds = <String>{};
-
-    Map<String, dynamic> errorToolResponse(String id) => {
-      'role': 'tool',
-      'tool_call_id': id,
-      'content': '错误: 工具调用未完成（历史恢复），请重试或忽略此工具结果',
-    };
-
-    void flushPending() {
-      if (pendingIds.isEmpty) return;
-      for (final id in pendingIds) {
-        cleaned.add(errorToolResponse(id));
-      }
-      pendingIds.clear();
-    }
-
+    // 第一遍：收集所有被 assistant 引用过的 tool_call_id，以及已响应的 id
+    final allCallIds = <String>{};
+    final respondedIds = <String>{};
     for (final msg in apiMessages) {
-      // 非 tool 消息出现前，先补齐未响应的 tool_calls，
-      // 保证 assistant(tool_calls) 后面紧跟 tool 消息（OpenAI 硬性要求）。
-      if (msg['role'] != 'tool') {
-        flushPending();
-      }
-      cleaned.add(msg);
-
       if (msg['role'] == 'assistant' && msg['tool_calls'] != null) {
         for (final tc in msg['tool_calls'] as List) {
           final id = (tc as Map)['id'] as String?;
-          if (id != null && id.isNotEmpty) pendingIds.add(id);
+          if (id != null && id.isNotEmpty) allCallIds.add(id);
         }
       } else if (msg['role'] == 'tool') {
         final id = msg['tool_call_id'] as String?;
-        if (id != null) pendingIds.remove(id);
+        if (id != null && id.isNotEmpty) respondedIds.add(id);
       }
     }
 
-    // 列表末尾仍有未响应的 tool_call_id → 补错误响应
-    flushPending();
+    final completeIds = allCallIds.intersection(respondedIds);
+    final orphanIds = allCallIds.difference(respondedIds);
+
+    // 第二遍：剔除孤儿 tool_calls 及其对应的 tool 消息，
+    // 保证发出的每个 assistant(tool_calls) 都有完整响应（顺序保留）。
+    final cleaned = <Map<String, dynamic>>[];
+    for (final msg in apiMessages) {
+      if (msg['role'] == 'tool') {
+        final id = msg['tool_call_id'] as String?;
+        if (id != null && orphanIds.contains(id)) continue;
+        cleaned.add(msg);
+        continue;
+      }
+      if (msg['role'] == 'assistant' && msg['tool_calls'] != null) {
+        final calls =
+            (msg['tool_calls'] as List).where((tc) {
+              final id = (tc as Map)['id'] as String?;
+              return id != null && completeIds.contains(id);
+            }).toList();
+        if (calls.isEmpty) {
+          final text = (msg['content'] as String?)?.trim() ?? '';
+          if (text.isEmpty) continue; // 纯工具消息且无响应 → 整条丢弃
+          final copy = Map<String, dynamic>.from(msg)..remove('tool_calls');
+          cleaned.add(copy);
+        } else {
+          final copy = Map<String, dynamic>.from(msg)..['tool_calls'] = calls;
+          cleaned.add(copy);
+        }
+        continue;
+      }
+      cleaned.add(msg);
+    }
     return cleaned;
   }
 }
