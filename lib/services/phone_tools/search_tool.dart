@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import '../../models/mcp_tool.dart';
 
 class SearchTool {
-  static const _defaultKey = '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';
   static const _storageKey = 'tavily_api_key';
   static const _endpoint = 'https://api.tavily.com/search';
 
@@ -12,13 +11,14 @@ class SearchTool {
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
-  /// Read the active Tavily key: secure storage → fallback to default.
-  static Future<String> _apiKey() async {
+  /// 用户在设置里填的 Tavily key；没填返回 null。
+  ///
+  /// 这里**不要**放任何默认 key：源码是公开仓库，写死的 key 等于公开发布，
+  /// 而且会被编进每个 APK。没 key 时调用方直接走 Bing 兜底。
+  static Future<String?> _apiKey() async {
     final stored = await _secureStorage.read(key: _storageKey);
-    if (stored != null && stored.isNotEmpty) return stored;
-    // First run — migrate the default into secure storage
-    await _secureStorage.write(key: _storageKey, value: _defaultKey);
-    return _defaultKey;
+    if (stored == null || stored.isEmpty) return null;
+    return stored;
   }
 
   /// Save a new key (called from settings UI).
@@ -123,6 +123,9 @@ class SearchTool {
     if (query.isEmpty) return {'success': false, 'error': '搜索词不能为空'};
 
     final key = await _apiKey();
+
+    // 没配 Tavily key 就直接用 Bing——搜索照常可用，只是少了 Tavily 的摘要
+    if (key == null) return await _searchBing(query);
 
     // 1) 先走 Tavily
     try {
