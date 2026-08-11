@@ -15,6 +15,7 @@ import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
 import '../services/tts_service.dart';
+import '../services/weread_service.dart';
 import '../services/app_providers.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -35,12 +36,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _elevenKeyController = TextEditingController();
   final _elevenVoiceController = TextEditingController();
   final _tavilyKeyController = TextEditingController();
+  final _wereadKeyController = TextEditingController();
   final _userNameController = TextEditingController();
 
   // 密钥默认打码，点小眼睛才明文——设置页经常被截图/投屏。
   bool _showApiKey = false;
   bool _showElevenKey = false;
   bool _showTavilyKey = false;
+  bool _showWereadKey = false;
 
   bool _backupBusy = false;
 
@@ -153,6 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _elevenKeyController.dispose();
     _elevenVoiceController.dispose();
     _tavilyKeyController.dispose();
+    _wereadKeyController.dispose();
     _userNameController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
@@ -165,6 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _elevenKeyController.text = _settings.elevenLabsApiKey;
     _elevenVoiceController.text = _settings.elevenLabsVoiceId;
     _tavilyKeyController.text = await SearchTool.getStoredKey() ?? '';
+    _wereadKeyController.text = await WereadService.getKey() ?? '';
     _userNameController.text = _settings.userName;
     _externalServers = await ExternalMcpServerService.load();
 
@@ -502,6 +507,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           );
                         }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          const Divider(height: 40),
+
+          // 微信读书：这里是唯一能改 key 的地方（书架那边的弹窗只在首次没填时出现）
+          _sectionHeader('微信读书', PhosphorIconsRegular.books, theme),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: TextField(
+              controller: _wereadKeyController,
+              obscureText: !_showWereadKey,
+              decoration: InputDecoration(
+                labelText: '微信读书 API Key',
+                hintText: 'wrk- 开头；是登录凭证，会过期，失效后重新获取',
+                border: const OutlineInputBorder(),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _revealButton(
+                      _showWereadKey,
+                      () => setState(() => _showWereadKey = !_showWereadKey),
+                    ),
+                    IconButton(
+                      icon: const Icon(PhosphorIconsRegular.floppyDisk),
+                      tooltip: '保存',
+                      onPressed: () async {
+                        await WereadService.saveKey(
+                          _wereadKeyController.text.trim(),
+                        );
+                        if (mounted) _snack('微信读书 Key 已保存');
                       },
                     ),
                   ],
