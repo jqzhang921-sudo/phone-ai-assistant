@@ -23,11 +23,12 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
 
   Future<void> _load() async {
     final entries = await StorageService.listFavoritedMusings();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _entries = entries;
         _loading = false;
       });
+    }
   }
 
   Future<void> _delete(MusingEntry entry) async {

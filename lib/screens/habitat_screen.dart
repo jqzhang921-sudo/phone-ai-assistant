@@ -167,7 +167,13 @@ class _HabitatScreenState extends State<HabitatScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
+        // 0.72 的白底压不住背景照片：照片一深，卡片就被拉成中灰，正文
+        // （onSurfaceVariant #57544F）落在上面只有 3.8:1，达不到 AA 的 4.5:1，
+        // 而且照片越花越糊。抬到 0.88 还能透出一点底色，对比度回到 7:1 上下。
+        //
+        // 同时把写死的 Colors.white 换成 scheme.surface：深色主题下白卡片配
+        // 近白的标题字（titleMedium 用 onSurface）本来是看不见的。
+        color: scheme.surface.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.15)),
       ),
@@ -193,7 +199,10 @@ class _HabitatScreenState extends State<HabitatScreen> {
               child: Text(
                 line,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
+                  // 正文不用 onSurfaceVariant：它是给纯色底设计的次级灰，
+                  // 叠在半透明卡片上会直接掉到 AA 线下。用 onSurface 压 78%，
+                  // 既保留「比标题淡一档」的层次，又不牺牲可读性。
+                  color: scheme.onSurface.withValues(alpha: 0.78),
                   height: 1.5,
                 ),
               ),

@@ -11,8 +11,7 @@ import '../models/conversation.dart';
 import '../models/discussion_note.dart';
 import '../services/ai_client.dart';
 import '../services/mcp_server.dart';
-import '../widgets/message_bubble.dart';
-import '../widgets/tool_call_card.dart';
+import '../widgets/chat_message_item.dart';
 import '../services/discussion_generator.dart';
 import '../services/weread_service.dart';
 import '../services/app_providers.dart';
@@ -187,7 +186,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
           switch (event.type) {
             case AiEventType.token:
               fullResponse = (fullResponse ?? '') + (event.text ?? '');
-              _updateAssistantMessage(fullResponse ?? '');
+              _updateAssistantMessage(fullResponse);
               break;
 
             case AiEventType.toolCalls:
@@ -380,9 +379,12 @@ class _BookChatScreenState extends State<BookChatScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        // 先取 Navigator 再 await：await 之后这个 context 可能已经失效，
+        // 外层的 mounted 判断管不到 build 参数里的这个 context。
+        final navigator = Navigator.of(context);
         final shouldPop = await _handleBack();
         if (shouldPop && mounted) {
-          Navigator.of(context).pop();
+          navigator.pop();
         }
       },
       child: Scaffold(
@@ -390,9 +392,10 @@ class _BookChatScreenState extends State<BookChatScreen> {
           leading: IconButton(
             icon: const Icon(PhosphorIconsRegular.arrowLeft),
             onPressed: () async {
+              final navigator = Navigator.of(context);
               final shouldPop = await _handleBack();
               if (shouldPop && mounted) {
-                Navigator.of(context).pop();
+                navigator.pop();
               }
             },
           ),
@@ -400,16 +403,18 @@ class _BookChatScreenState extends State<BookChatScreen> {
           actions: [
             PopupMenuButton<String>(
               onSelected: (v) async {
+                final messenger = ScaffoldMessenger.of(context);
                 if (v == 'refresh') {
                   if (widget.wereadBookId == null) return;
                   final highlights = await WereadService.fetchHighlights(
                     widget.wereadBookId!,
                   );
                   if (highlights == null) {
-                    if (mounted)
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(const SnackBar(content: Text('没有新的划线')));
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('没有新的划线')),
+                      );
+                    }
                     return;
                   }
                   setState(() {
@@ -422,10 +427,11 @@ class _BookChatScreenState extends State<BookChatScreen> {
                     );
                   });
                   _saveConversation();
-                  if (mounted)
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('划线已刷新')));
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('划线已刷新')),
+                    );
+                  }
                 } else if (v == 'delete') {
                   final ok = await showDialog<bool>(
                     context: context,
@@ -453,8 +459,9 @@ class _BookChatScreenState extends State<BookChatScreen> {
                       _conversation.messages.clear();
                       setState(() {});
                       // Re-inject highlights
-                      if (widget.wereadBookId != null)
+                      if (widget.wereadBookId != null) {
                         _injectWereadHighlights();
+                      }
                     }
                   }
                 }
@@ -516,14 +523,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
                         itemCount: _conversation.messages.length,
                         itemBuilder: (context, index) {
                           final msg = _conversation.messages[index];
-                          if (msg.role == MessageRole.toolCall &&
-                              msg.toolCalls != null) {
-                            return ToolCallCard(toolCalls: msg.toolCalls!);
-                          }
-                          if (msg.role == MessageRole.toolResult) {
-                            return ToolResultCard(content: msg.content);
-                          }
-                          return MessageBubble(message: msg);
+                          return chatMessageItem(msg);
                         },
                       ),
             ),

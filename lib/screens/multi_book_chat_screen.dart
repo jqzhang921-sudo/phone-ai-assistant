@@ -14,8 +14,7 @@ import '../services/ai_client.dart';
 import '../services/mcp_server.dart';
 import '../services/discussion_generator.dart';
 import '../services/discussion_group_service.dart';
-import '../widgets/message_bubble.dart';
-import '../widgets/tool_call_card.dart';
+import '../widgets/chat_message_item.dart';
 import '../services/app_providers.dart';
 import '../config/app_shape.dart';
 
@@ -441,16 +440,19 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        // 先取 Navigator 再 await，理由同 book_chat_screen。
+        final navigator = Navigator.of(context);
         final shouldPop = await _handleBack();
-        if (shouldPop && mounted) Navigator.of(context).pop();
+        if (shouldPop && mounted) navigator.pop();
       },
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(PhosphorIconsRegular.arrowLeft),
             onPressed: () async {
+              final navigator = Navigator.of(context);
               final shouldPop = await _handleBack();
-              if (shouldPop && mounted) Navigator.of(context).pop();
+              if (shouldPop && mounted) navigator.pop();
             },
           ),
           title: Text(_title, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -482,14 +484,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
                         itemCount: _conversation.messages.length,
                         itemBuilder: (context, index) {
                           final msg = _conversation.messages[index];
-                          if (msg.role == MessageRole.toolCall &&
-                              msg.toolCalls != null) {
-                            return ToolCallCard(toolCalls: msg.toolCalls!);
-                          }
-                          if (msg.role == MessageRole.toolResult) {
-                            return ToolResultCard(content: msg.content);
-                          }
-                          return MessageBubble(message: msg);
+                          return chatMessageItem(msg);
                         },
                       ),
             ),

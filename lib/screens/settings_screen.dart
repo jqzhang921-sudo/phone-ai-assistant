@@ -425,9 +425,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: const Icon(PhosphorIconsRegular.floppyDisk),
                   label: const Text('保存'),
                   onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
                     await _saveTts();
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      messenger.showSnackBar(
                         const SnackBar(
                           content: Text('已保存'),
                           duration: Duration(seconds: 1),
@@ -497,11 +498,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: const Icon(PhosphorIconsRegular.floppyDisk),
                       tooltip: '保存',
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         await SearchTool.saveKey(
                           _tavilyKeyController.text.trim(),
                         );
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             const SnackBar(
                               content: Text('Tavily Key 已保存'),
                               duration: Duration(seconds: 1),
@@ -576,11 +578,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _settings.serverEnabled,
             onChanged: (v) async {
               setState(() => _settings.serverEnabled = v);
+              final messenger = ScaffoldMessenger.of(context);
               final server = context.read<McpServerProvider>().server;
               if (v) {
                 final ok = await server.start(_settings.webSocketPort);
                 if (!ok && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(
                       content: Text('启动 MCP Server 失败，请检查端口'),
                       backgroundColor: Colors.red,
@@ -693,14 +696,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Switch(
                       value: server.enabled,
                       onChanged: (v) async {
+                        final mcp = context.read<ExternalMcpProvider>();
                         server.enabled = v;
                         await ExternalMcpServerService.save(_externalServers);
                         if (v) {
-                          context.read<ExternalMcpProvider>().connectTo(server);
+                          mcp.connectTo(server);
                         } else {
-                          context.read<ExternalMcpProvider>().disconnect(
-                            server.url,
-                          );
+                          mcp.disconnect(server.url);
                         }
                         setState(() {});
                       },
@@ -709,10 +711,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     IconButton(
                       icon: const Icon(PhosphorIconsRegular.trash, size: 18),
                       onPressed: () async {
+                        final mcp = context.read<ExternalMcpProvider>();
                         await ExternalMcpServerService.remove(server.id);
-                        context.read<ExternalMcpProvider>().disconnect(
-                          server.url,
-                        );
+                        mcp.disconnect(server.url);
                         _externalServers =
                             await ExternalMcpServerService.load();
                         setState(() {});
@@ -773,7 +774,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             if (name.isEmpty || url.isEmpty) return;
 
                             // Show loading
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            final messenger = ScaffoldMessenger.of(context);
+                            messenger.showSnackBar(
                               const SnackBar(
                                 content: Text('⏳ 连接中...'),
                                 duration: Duration(seconds: 30),
@@ -792,16 +794,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             final error = await provider.connectTo(server);
 
                             if (mounted) {
-                              ScaffoldMessenger.of(
-                                context,
-                              ).hideCurrentSnackBar();
+                              messenger.hideCurrentSnackBar();
                               if (error == null) {
                                 // Success: save and clear
                                 await ExternalMcpServerService.add(server);
                                 _mcpNameController.clear();
                                 _mcpUrlController.clear();
                                 _showAddMcp = false;
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                messenger.showSnackBar(
                                   SnackBar(
                                     content: Text('✅ 已连接到 $name'),
                                     duration: Duration(seconds: 2),
@@ -809,7 +809,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 );
                               } else {
                                 // Failure: keep form, show error
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                messenger.showSnackBar(
                                   SnackBar(
                                     content: Text('❌ $error'),
                                     backgroundColor: Colors.orange,

@@ -24,9 +24,7 @@ import '../models/musing_entry.dart';
 import '../services/musing_generator.dart';
 import '../search/history_search_delegate.dart';
 import '../search/search_result_model.dart';
-import '../widgets/message_bubble.dart';
-import '../widgets/tool_call_card.dart';
-import 'tools_screen.dart';
+import '../widgets/chat_message_item.dart';
 import 'settings_screen.dart';
 import 'pc_chat_screen.dart';
 import '../config/app_shape.dart';
@@ -166,12 +164,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (image == null) return;
     await StorageService.setBackgroundImagePath(image.path);
     if (mounted) setState(() => _backgroundImagePath = image.path);
-    widget.onBackgroundChanged?.call();
-  }
-
-  Future<void> _clearBackground() async {
-    await StorageService.setBackgroundImagePath(null);
-    if (mounted) setState(() => _backgroundImagePath = null);
     widget.onBackgroundChanged?.call();
   }
 
@@ -512,7 +504,6 @@ class _ChatScreenState extends State<ChatScreen> {
       maxRounds--;
 
       String? fullResponse;
-      String? errorText;
 
       try {
         await for (final event in clientWithTools.chat(
@@ -522,7 +513,7 @@ class _ChatScreenState extends State<ChatScreen> {
           switch (event.type) {
             case AiEventType.token:
               fullResponse = (fullResponse ?? '') + (event.text ?? '');
-              _updateAssistantMessage(fullResponse ?? '');
+              _updateAssistantMessage(fullResponse);
               break;
 
             case AiEventType.toolCalls:
@@ -566,7 +557,7 @@ class _ChatScreenState extends State<ChatScreen> {
               break;
 
             case AiEventType.error:
-              print('[chat] AI error: ${event.error}');
+              debugPrint('[chat] AI error: ${event.error}');
               _updateAssistantMessage('⚠️ 错误: ${event.error ?? "未知"}');
               _finalizeStreamMessage();
               fullResponse = 'done';
@@ -587,9 +578,12 @@ class _ChatScreenState extends State<ChatScreen> {
             last.role == MessageRole.assistant &&
             last.content.trim().isNotEmpty) {
           try {
+            // 先把 service 取出来再 await：await 之后这个 State 可能已经销毁，
+            // 那时再碰 context 就是 use_build_context_synchronously 说的那种崩法。
+            final tts = context.read<TtsService>();
             final settings = await AppSettings.load();
             if (settings.ttsAutoPlay) {
-              await context.read<TtsService>().toggle(last.id, last.content);
+              await tts.toggle(last.id, last.content);
             }
           } catch (_) {
             // 自动朗读失败不影响聊天
@@ -599,7 +593,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // If there was a tool call, the loop continues
       // If there was an error or done with text, exit
-      if (fullResponse != null || errorText != null) break;
+      if (fullResponse != null) break;
     }
 
     if (!mounted) return;
@@ -957,7 +951,7 @@ class _ChatScreenState extends State<ChatScreen> {
       buffer.writeln('📱 手机 AI 助手 - 对话导出');
       buffer.writeln('标题: ${_conversation.title}');
       buffer.writeln('时间: ${DateTime.now().toLocal().toString()}');
-      buffer.writeln('${'=' * 40}');
+      buffer.writeln('=' * 40);
       buffer.writeln('');
 
       for (final msg in _conversation.messages) {
@@ -1000,12 +994,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _saveConversation() {
     if (!_conversation.titleManuallySet) {
+      // content 本身不可空，所以后面那个 `?.` 是无效的。顺手把空内容也归到
+      // 「新对话」：原来第一条消息是空串时，substring(0,0) 会把标题存成空字符串。
+      final first = _conversation.messages.firstOrNull?.content;
       _conversation.title =
-          _conversation.messages.firstOrNull?.content?.substring(
-            0,
-            (_conversation.messages.first.content.length).clamp(0, 30),
-          ) ??
-          '新对话';
+          (first == null || first.isEmpty)
+              ? '新对话'
+              : first.substring(0, first.length.clamp(0, 30));
     }
     StorageService.saveConversation(_conversation);
   }
@@ -1223,14 +1218,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             itemCount: _conversation.messages.length,
                             itemBuilder: (context, index) {
                               final msg = _conversation.messages[index];
-                              if (msg.role == MessageRole.toolCall &&
-                                  msg.toolCalls != null) {
-                                return ToolCallCard(toolCalls: msg.toolCalls!);
-                              }
-                              if (msg.role == MessageRole.toolResult) {
-                                return ToolResultCard(content: msg.content);
-                              }
-                              return MessageBubble(message: msg);
+                              return chatMessageItem(msg);
                             },
                           ))
                       : _buildHome(theme),
@@ -1446,8 +1434,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                         await StorageService.restoreConversation(
                                           conv.id,
                                         );
-                                        if (ctx.mounted)
+                                        if (ctx.mounted) {
                                           Navigator.of(ctx).pop();
+                                        }
                                         _loadConversations();
                                       },
                                       child: const Text('恢复'),
@@ -1960,7 +1949,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildTextField(ThemeData theme) {
-    final scheme = theme.colorScheme;
     return TextField(
       controller: _textController,
       focusNode: _focusNode,

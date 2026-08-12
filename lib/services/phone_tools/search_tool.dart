@@ -31,15 +31,25 @@ class SearchTool {
     return await _secureStorage.read(key: _storageKey);
   }
 
+  /// 描述里反复强调 query 必填，是为了压低空调用率。
+  ///
+  /// DeepSeek 偶尔会先发一个 `arguments: {}` 的调用，吃到「搜索词不能为空」
+  /// 再自己重试成功——白白多一轮往返。光把 query 放进 `required` 数组不够，
+  /// 模型更吃描述里的自然语言约束，所以描述、参数说明、minLength 三处都写死。
   static McpTool get definition => McpTool(
         name: 'web_search',
-        description: '搜索互联网获取最新信息，当需要实时数据、新闻、天气、价格等信息时使用',
+        description: '搜索互联网获取最新信息，当需要实时数据、新闻、天气、价格等信息时使用。'
+            '调用时必须带上非空的 query 参数，例如 {"query": "北京 今天 天气"}。'
+            '禁止发出 {} 或 query 为空字符串的调用——那样只会拿到报错。'
+            '如果还没想清楚要搜什么，就先别调用这个工具，或者先把用户的问题原样填进 query。',
         inputSchema: {
           'type': 'object',
           'properties': {
             'query': {
               'type': 'string',
-              'description': '搜索关键词',
+              'description': '搜索关键词，必填，不能为空字符串。'
+                  '写成具体的自然语言短句，例如「上海 明天 天气」「iPhone 17 售价」。',
+              'minLength': 1,
             },
           },
           'required': ['query'],
@@ -119,8 +129,18 @@ class SearchTool {
 
   static Future<Map<String, dynamic>> execute(
       Map<String, dynamic> args) async {
-    final query = args['query'] as String? ?? '';
-    if (query.isEmpty) return {'success': false, 'error': '搜索词不能为空'};
+    // 不要 `as String?`：模型偶尔会把 query 塞成数字或数组，硬转会抛类型异常。
+    // 顺手 trim，纯空格的 query 等同于没填。
+    final query = (args['query']?.toString() ?? '').trim();
+    if (query.isEmpty) {
+      // 报错文案写成「怎么修」而不是「哪里错」：模型收到后能一次重试对，
+      // 少绕一轮。
+      return {
+        'success': false,
+        'error': 'query 参数为空。请重新调用 web_search，'
+            '并在 arguments 里给出非空的 query，例如 {"query": "上海 明天 天气"}。',
+      };
+    }
 
     final key = await _apiKey();
 

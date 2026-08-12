@@ -18,7 +18,7 @@ class McpServer {
   bool _isRunning = false;
   final List<WebSocket> _clients = [];
   final Map<String, ToolExecutor> _tools = {};
-  final List<_ToolRegistration> _toolRegistrations = [];
+  final List<ToolRegistration> _toolRegistrations = [];
 
   /// Events stream for the UI to listen to
   final StreamController<McpServerEvent> _eventController =
@@ -27,7 +27,7 @@ class McpServer {
 
   bool get isRunning => _isRunning;
   int get clientCount => _clients.length;
-  List<_ToolRegistration> get registeredTools => _toolRegistrations;
+  List<ToolRegistration> get registeredTools => _toolRegistrations;
 
   McpServer() {
     _registerBuiltinTools();
@@ -50,7 +50,7 @@ class McpServer {
 
   void _registerTool(McpTool tool, ToolExecutor executor) {
     _tools[tool.name] = executor;
-    _toolRegistrations.add(_ToolRegistration(tool: tool, executor: executor));
+    _toolRegistrations.add(ToolRegistration(tool: tool, executor: executor));
   }
 
   /// Register a custom tool at runtime
@@ -232,9 +232,9 @@ class McpServerEvent {
   const McpServerEvent(this.type, this.data);
 }
 
-class _ToolRegistration {
+class ToolRegistration {
   final McpTool tool;
   final ToolExecutor executor;
 
-  const _ToolRegistration({required this.tool, required this.executor});
+  const ToolRegistration({required this.tool, required this.executor});
 }

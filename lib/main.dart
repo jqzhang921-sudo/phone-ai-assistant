@@ -67,7 +67,7 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
 
   Future<void> _autoStartMcpServer() async {
     final settings = await _settingsFuture;
-    if (!settings.serverEnabled) return;
+    if (!settings.serverEnabled || !mounted) return;
     final provider = context.read<McpServerProvider>();
     await provider.server.start(settings.webSocketPort);
     provider.markInitialized(); // notify UI

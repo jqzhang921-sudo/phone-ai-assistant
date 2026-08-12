@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../models/book.dart';
@@ -50,7 +51,7 @@ class WereadService {
     final data = jsonDecode(resp.body);
     if (data['errcode'] != null && data['errcode'] != 0) {
       final msg = data['errmsg'] ?? 'unknown';
-      print('[weread] API error: $api → $msg (body keys: ${body.keys})');
+      debugPrint('[weread] API error: $api → $msg (body keys: ${body.keys})');
       throw Exception(msg);
     }
     return data is Map<String, dynamic> ? [data] : [];
@@ -124,7 +125,7 @@ class WereadService {
       }
       return buf.toString().trim().isNotEmpty ? buf.toString() : null;
     } catch (e) {
-      print('[weread] highlights error for $wereadBookId: $e');
+      debugPrint('[weread] highlights error for $wereadBookId: $e');
       return null;
     }
   }
@@ -147,7 +148,7 @@ class WereadService {
       }
       return buf.toString().trim().isNotEmpty ? buf.toString() : null;
     } catch (e) {
-      print('[weread] thoughts error for $wereadBookId: $e');
+      debugPrint('[weread] thoughts error for $wereadBookId: $e');
       return null;
     }
   }

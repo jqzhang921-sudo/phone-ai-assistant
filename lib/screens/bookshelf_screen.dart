@@ -102,6 +102,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     // Check/save key
     var key = await WereadService.getKey();
     if (key == null || key.isEmpty) {
+      if (!mounted) return;
       final ctrl = TextEditingController();
       final ok = await showDialog<bool>(
         context: context,
@@ -408,8 +409,9 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                                           books,
                                           previews,
                                         );
-                                        if (groupId == null)
+                                        if (groupId == null) {
                                           return; // cancelled
+                                        }
                                       }
 
                                       // No overlap or chose "new" → create group
@@ -580,7 +582,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    '${selectedBooks.map((b) => '《${b.title}》').join('、')}',
+                    selectedBooks.map((b) => '《${b.title}》').join('、'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(ctx).textTheme.bodySmall,
@@ -784,6 +786,36 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                             ],
                           ],
                         ),
+                        // 「移除封面」另起一行：上面那行再塞一个带文字的按钮，
+                        // 窄屏（对话框内容区约 232dp）放不下三个，会直接溢出。
+                        if (book.coverPath != null)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Theme.of(ctx).colorScheme.error,
+                              ),
+                              onPressed: () async {
+                                // 立刻落盘，不等外面点「保存」。
+                                //
+                                // 上面「更换封面」是改完内存等保存，用户点取消就会
+                                // 留下「文件已经换了、coverPath 却没存」的错位。
+                                // 移除这条路不跟着错：图片文件删了就是删了，撤不回来，
+                                // 那持久化的状态也应该当场对齐。
+                                final old = book.coverPath;
+                                book.coverPath = null;
+                                setDlg(() {});
+                                if (old != null) {
+                                  try {
+                                    await File(old).delete();
+                                  } catch (_) {}
+                                }
+                                await _saveBooks();
+                                if (mounted) setState(() {});
+                              },
+                              child: const Text('移除封面'),
+                            ),
+                          ),
                         const SizedBox(height: 10),
                         // delete button
                         SizedBox(
@@ -1004,10 +1036,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   }
 
   Widget _buildFilterChips(ThemeData theme) {
-    final filtered =
-        _filterStatus == null
-            ? _books
-            : _books.where((b) => b.status == _filterStatus).toList();
     final allCount = _books.length;
     final readingCount =
         _books.where((b) => b.status == ReadingStatus.reading).length;

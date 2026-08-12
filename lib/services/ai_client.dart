@@ -143,7 +143,7 @@ class AiClient {
           break;
         case MessageRole.assistant:
           if (msg.toolCalls != null && msg.toolCalls!.isNotEmpty) {
-            final contentText = msg.content ?? '';
+            final contentText = msg.content;
             apiMessages.add({
               'role': 'assistant',
               'content':
@@ -175,7 +175,7 @@ class AiClient {
           apiMessages.add({
             'role': 'tool',
             'tool_call_id': msg.toolCallId ?? '',
-            'content': msg.content ?? '',
+            'content': msg.content,
           });
           break;
         case MessageRole.toolCall:
@@ -183,8 +183,6 @@ class AiClient {
           break;
         case MessageRole.system:
           apiMessages.add({'role': 'system', 'content': msg.content});
-          break;
-        default:
           break;
       }
     }
@@ -277,7 +275,9 @@ class AiClient {
     http.StreamedResponse response,
   ) async* {
     String? contentBuffer;
-    List<ToolCallInfo>? toolCalls;
+    // 直接建成非空 list：原来是 `List<ToolCallInfo>? toolCalls` 加一路 `!`，
+    // 空列表和 null 在这里本来就是同一个意思（末尾按 isNotEmpty 判断）。
+    final toolCalls = <ToolCallInfo>[];
     // Accumulate raw argument JSON text per tool call index
     final Map<int, String> argBuffers = {};
 
@@ -302,24 +302,23 @@ class AiClient {
           if (delta['tool_calls'] != null) {
             for (final tc in delta['tool_calls']) {
               final idx = tc['index'] ?? 0;
-              toolCalls ??= [];
 
-              while (toolCalls!.length <= idx) {
-                toolCalls!.add(ToolCallInfo(id: '', name: '', arguments: {}));
+              while (toolCalls.length <= idx) {
+                toolCalls.add(ToolCallInfo(id: '', name: '', arguments: {}));
               }
 
               if (tc['id'] != null) {
-                toolCalls![idx] = ToolCallInfo(
+                toolCalls[idx] = ToolCallInfo(
                   id: tc['id'],
-                  name: toolCalls![idx].name,
-                  arguments: toolCalls![idx].arguments,
+                  name: toolCalls[idx].name,
+                  arguments: toolCalls[idx].arguments,
                 );
               }
               if (tc['function']?['name'] != null) {
-                toolCalls![idx] = ToolCallInfo(
-                  id: toolCalls![idx].id,
+                toolCalls[idx] = ToolCallInfo(
+                  id: toolCalls[idx].id,
                   name: tc['function']['name'],
-                  arguments: toolCalls![idx].arguments,
+                  arguments: toolCalls[idx].arguments,
                 );
               }
               // 只累积，不在分片阶段解析——解析统一放到流结束后。
@@ -339,17 +338,17 @@ class AiClient {
       }
     }
 
-    if (toolCalls != null && toolCalls!.isNotEmpty) {
+    if (toolCalls.isNotEmpty) {
       // 流结束了，参数分片已经完整，这时才解析
-      for (var i = 0; i < toolCalls!.length; i++) {
+      for (var i = 0; i < toolCalls.length; i++) {
         final raw = argBuffers[i]?.trim();
         if (raw == null || raw.isEmpty) continue;
         try {
           final parsed = jsonDecode(raw);
           if (parsed is Map) {
-            toolCalls![i] = ToolCallInfo(
-              id: toolCalls![i].id,
-              name: toolCalls![i].name,
+            toolCalls[i] = ToolCallInfo(
+              id: toolCalls[i].id,
+              name: toolCalls[i].name,
               arguments: Map<String, dynamic>.from(parsed),
             );
           }
@@ -357,7 +356,7 @@ class AiClient {
           debugPrint('[ai_client] 工具参数解析失败，原始内容：$raw（$e）');
         }
       }
-      yield AiStreamEvent.toolCalls(toolCalls!);
+      yield AiStreamEvent.toolCalls(toolCalls);
     } else if (contentBuffer != null) {
       yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
     }
@@ -442,8 +441,6 @@ class AiClient {
         case MessageRole.system:
           apiMessages.add({'role': 'user', 'content': msg.content});
           break;
-        default:
-          break;
       }
     }
 
@@ -491,7 +488,7 @@ class AiClient {
       }
 
       String contentBuffer = '';
-      List<ToolCallInfo>? toolCalls;
+      final toolCalls = <ToolCallInfo>[];
 
       await for (final chunk in response.stream.transform(utf8.decoder)) {
         final lines = chunk.split('\n');
@@ -513,8 +510,7 @@ class AiClient {
             } else if (type == 'content_block_start') {
               final block = json['content_block'];
               if (block?['type'] == 'tool_use') {
-                toolCalls ??= [];
-                toolCalls!.add(
+                toolCalls.add(
                   ToolCallInfo(
                     id: block['id'],
                     name: block['name'],
@@ -527,8 +523,8 @@ class AiClient {
         }
       }
 
-      if (toolCalls != null && toolCalls!.isNotEmpty) {
-        yield AiStreamEvent.toolCalls(toolCalls!);
+      if (toolCalls.isNotEmpty) {
+        yield AiStreamEvent.toolCalls(toolCalls);
       } else {
         yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
       }
