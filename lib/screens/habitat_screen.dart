@@ -6,6 +6,7 @@ import '../services/app_providers.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
 import 'musing_corner_screen.dart';
+import '../config/app_shape.dart';
 
 /// 「栖息」页：给用户留的专属空间（陪伴状态 / 阅读角落 / 日记）。
 class HabitatScreen extends StatefulWidget {
@@ -167,7 +168,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: scheme.outline.withValues(alpha: 0.15)),
       ),
       child: Column(

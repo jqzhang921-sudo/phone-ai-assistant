@@ -16,6 +16,7 @@ import '../widgets/tool_call_card.dart';
 import '../services/discussion_generator.dart';
 import '../services/weread_service.dart';
 import '../services/app_providers.dart';
+import '../config/app_shape.dart';
 
 class BookChatScreen extends StatefulWidget {
   final String bookId;
@@ -586,7 +587,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
               decoration: InputDecoration(
                 hintText: '聊聊这本书...',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,

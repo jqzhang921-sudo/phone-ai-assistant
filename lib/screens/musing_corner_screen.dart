@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/musing_entry.dart';
 import '../services/storage_service.dart';
+import '../config/app_shape.dart';
 
 class MusingCornerScreen extends StatefulWidget {
   const MusingCornerScreen({super.key});
@@ -65,7 +66,7 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
                       color: scheme.surfaceContainerHighest.withValues(
                         alpha: 0.5,
                       ),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       border: Border.all(
                         color: scheme.outline.withValues(alpha: 0.12),
                       ),

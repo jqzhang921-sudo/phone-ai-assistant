@@ -6,6 +6,7 @@ import '../models/diary_entry.dart';
 import '../services/app_providers.dart';
 import '../services/diary_generator.dart';
 import '../services/storage_service.dart';
+import '../config/app_shape.dart';
 
 /// 同一天的所有日记聚成一组，列表里显示为一张卡。
 class _DayGroup {
@@ -261,13 +262,13 @@ class _DayCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final showCount = hit.isPartial || hit.matched.length > 1;
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: () => _openDay(context),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
         ),
         child: Column(
@@ -291,7 +292,7 @@ class _DayCard extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
                       _countLabel(),
@@ -435,7 +436,7 @@ class _DayDetailSheetState extends State<_DayDetailSheet> {
                           const Spacer(),
                           InkWell(
                             onTap: () => _delete(entry),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
                             child: Padding(
                               padding: const EdgeInsets.all(4),
                               child: Icon(

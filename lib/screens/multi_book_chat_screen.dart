@@ -17,6 +17,7 @@ import '../services/discussion_group_service.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/tool_call_card.dart';
 import '../services/app_providers.dart';
+import '../config/app_shape.dart';
 
 class MultiBookChatScreen extends StatefulWidget {
   final List<Book> books;
@@ -549,7 +550,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
             decoration: InputDecoration(
               hintText: '聊聊这几本书...',
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
                 borderSide: BorderSide.none,
               ),
               filled: true,

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../services/tts_service.dart';
+import '../config/app_shape.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
@@ -76,7 +77,7 @@ class MessageBubble extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 6),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
                               child: Image.memory(
                                 base64Decode(message.imageData!),
                                 height: 160,
@@ -103,7 +104,7 @@ class MessageBubble extends StatelessWidget {
                               ),
                               codeblockDecoration: BoxDecoration(
                                 color: theme.colorScheme.surfaceContainerHigh,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(AppRadius.sm),
                               ),
                             ),
                           ),
@@ -197,7 +198,7 @@ class MessageBubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 36, top: 2),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: () async {
           final messenger = ScaffoldMessenger.of(context);
           try {

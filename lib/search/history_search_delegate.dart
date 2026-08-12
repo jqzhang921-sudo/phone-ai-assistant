@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import 'search_result_model.dart';
+import '../config/app_shape.dart';
 
 class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
   final List<Conversation> _allConversations;
@@ -153,7 +154,7 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         onTap:
             () => close(
               context,
@@ -185,7 +186,7 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
                     ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
                       '${result.matches.length}条匹配',

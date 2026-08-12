@@ -15,6 +15,7 @@ import 'book_chat_screen.dart';
 import 'book_discussion_screen.dart';
 import 'multi_book_chat_screen.dart';
 import 'reading_profile_screen.dart';
+import '../config/app_shape.dart';
 
 class BookshelfScreen extends StatefulWidget {
   const BookshelfScreen({super.key});
@@ -303,7 +304,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                           color: Theme.of(
                             context,
                           ).colorScheme.onSurfaceVariant.withAlpha(60),
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
                         ),
                       ),
                       Padding(
@@ -464,7 +465,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                     color: Theme.of(
                       context,
                     ).colorScheme.onSurfaceVariant.withAlpha(60),
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -563,7 +564,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                       color: Theme.of(
                         ctx,
                       ).colorScheme.onSurfaceVariant.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
                     ),
                   ),
                 ),
@@ -897,7 +898,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
                 color: Theme.of(
                   context,
@@ -983,7 +984,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
             alpha: 0.5,
           ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
             borderSide: BorderSide.none,
           ),
           suffixIcon:
@@ -1124,7 +1125,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
           Expanded(
             flex: 5,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               child:
                   hasCover
                       ? Image.file(File(book.coverPath!), fit: BoxFit.cover)
@@ -1192,7 +1193,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         book.status.label,
