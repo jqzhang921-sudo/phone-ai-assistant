@@ -24,15 +24,11 @@ class _ToolCallCardState extends State<ToolCallCard> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, left: 40),
       child: Container(
-        // 工具调用是元信息，不是内容：不描边、不用主题色染色，
-        // 只用一层极淡的中性底把它和消息区分开。
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(
-            alpha: 0.35,
-          ),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-        ),
+        // 无底色、无边框，同结果卡
+        decoration: const BoxDecoration(),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
               borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -150,26 +146,29 @@ class _ToolResultCardState extends State<ToolResultCard> {
     final success = _resultMap?['success'] == true;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8, left: 40),
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(
-            alpha: 0.35,
-          ),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-        ),
-        child: Column(
-          children: [
-            InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
+      padding: const EdgeInsets.only(bottom: 6, left: 40),
+      child: Align(
+        // 只占实际需要的宽度：工具结果是元信息，不该像消息一样铺满整行
+        alignment: Alignment.centerLeft,
+        child: Container(
+          // 无底色、无边框：工具调用是元信息，一行灰字加箭头就够，
+          // 给它一个带背景的卡片会让它和真正的消息抢注意力。
+          decoration: const BoxDecoration(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                     // 成功是常态，不值得用绿色去强调；只有失败才需要抢注意力。
                     // 之前用的是写死的 Colors.green / Colors.orange，绕开了
                     // ColorScheme，在暖色背景上会显得很跳。
@@ -183,49 +182,50 @@ class _ToolResultCardState extends State<ToolResultCard> {
                               ? theme.colorScheme.onSurfaceVariant
                               : theme.colorScheme.error,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      success ? '完成' : '未成功',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color:
-                            success
-                                ? theme.colorScheme.onSurfaceVariant
-                                : theme.colorScheme.error,
+                      const SizedBox(width: 5),
+                      Text(
+                        success ? '完成' : '未成功',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color:
+                              success
+                                  ? theme.colorScheme.onSurfaceVariant
+                                  : theme.colorScheme.error,
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    Icon(
-                      _expanded
-                          ? PhosphorIconsRegular.caretUp
-                          : PhosphorIconsRegular.caretDown,
-                      size: 18,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
+                      const SizedBox(width: 2),
+                      Icon(
+                        _expanded
+                            ? PhosphorIconsRegular.caretUp
+                            : PhosphorIconsRegular.caretDown,
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            if (_expanded && _resultMap != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children:
-                      _resultMap!.entries
-                          .where((e) => e.key != 'data')
-                          .map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                '${e.key}: ${e.value}',
-                                style: theme.textTheme.bodySmall,
+              if (_expanded && _resultMap != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children:
+                        _resultMap!.entries
+                            .where((e) => e.key != 'data')
+                            .map(
+                              (e) => Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '${e.key}: ${e.value}',
+                                  style: theme.textTheme.bodySmall,
+                                ),
                               ),
-                            ),
-                          )
-                          .toList(),
+                            )
+                            .toList(),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

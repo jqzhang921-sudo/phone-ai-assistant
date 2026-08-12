@@ -108,9 +108,9 @@ class _HomeShellState extends State<HomeShell> {
       case 'dark':
         return const BoxDecoration(color: Color(0xFF121212));
       case 'light':
-        // 原来是 #F6F3EA：蓝通道比红低 12，满屏铺开明显发黄，且亮度偏高会刺眼。
-        // 收窄到差 8、整体压暗两档——仍是暖调，但不再抢眼。
-        return const BoxDecoration(color: Color(0xFFEFEDE7));
+        // 原来是 #F6F3EA：蓝通道比红低 12，满屏铺开明显发黄。
+        // 红蓝差收到 7 去掉黄气，亮度取在两者之间——比 #EFEDE7 亮一档。
+        return const BoxDecoration(color: Color(0xFFF3F1EC));
       default:
         return null;
     }

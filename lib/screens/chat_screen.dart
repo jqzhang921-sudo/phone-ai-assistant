@@ -619,9 +619,15 @@ class _ChatScreenState extends State<ChatScreen> {
             .where((r) => r.tool.name == tc.name)
             .firstOrNull
             ?.executor;
+    // 一律 jsonEncode，不要用 .toString()。
+    //
+    // 工具返回的是 Map，Map.toString() 出来是 Dart 格式（`{success: true, ...}`）——
+    // 键和字符串值都没有引号，不是合法 JSON。这个字符串既发回给模型（于是模型
+    // 从来没真正读到过工具结果），又被界面拿去 jsonDecode（于是每次都解析失败、
+    // 显示「未成功」且展开空白）。
     if (executor != null) {
       return _runToolWithTimeout(
-        () async => (await executor(tc.arguments)).toString(),
+        () async => jsonEncode(await executor(tc.arguments)),
         tc.name,
       );
     }
@@ -630,13 +636,13 @@ class _ChatScreenState extends State<ChatScreen> {
     for (final client in extProvider.clients) {
       if (client.tools.any((t) => t.name == tc.name)) {
         return _runToolWithTimeout(
-          () async => (await client.callTool(tc.name, tc.arguments)).toString(),
+          () async => jsonEncode(await client.callTool(tc.name, tc.arguments)),
           tc.name,
         );
       }
     }
 
-    return '错误: 工具 ${tc.name} 未找到';
+    return jsonEncode({'success': false, 'error': '工具 ${tc.name} 未找到'});
   }
 
   /// 工具执行统一加超时并吞掉异常：无论成功/超时/失败都返回字符串结果，
@@ -645,14 +651,22 @@ class _ChatScreenState extends State<ChatScreen> {
     Future<String> Function() run,
     String toolName,
   ) async {
+    // 失败路径同样返回 JSON：模型和界面都按 JSON 解析，
+    // 混进裸字符串会让两边都拿不到结构化的失败原因。
     try {
       return await run().timeout(
         _toolTimeout,
         onTimeout:
-            () => '错误: 工具 $toolName 执行超时（${_toolTimeout.inSeconds}秒），请重试',
+            () => jsonEncode({
+              'success': false,
+              'error': '工具 $toolName 执行超时（${_toolTimeout.inSeconds} 秒），请重试',
+            }),
       );
     } catch (e) {
-      return '错误: 工具 $toolName 执行失败: $e';
+      return jsonEncode({
+        'success': false,
+        'error': '工具 $toolName 执行失败: $e',
+      });
     }
   }
 
