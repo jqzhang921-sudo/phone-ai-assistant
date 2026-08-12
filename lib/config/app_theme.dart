@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_shape.dart';
 
 /// 黑白灰主题：以中性灰阶为主，深浅色两套。
 class AppTheme {
@@ -17,12 +18,16 @@ class AppTheme {
     final light = brightness == Brightness.light;
     return ColorScheme(
       brightness: brightness,
-      primary: light ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
-      onPrimary: light ? Colors.white : const Color(0xFF1A1A1A),
+      // 全 App 唯一的强调色：赤陶。
+      // primary 驱动发送键、FAB、填充按钮、开关、聚焦态——出现频率低，
+      // 所以才有强调的意义。其余一律走中性灰阶，不要再引入第二个彩色。
+      primary: light ? const Color(0xFFB0552F) : const Color(0xFFE39775),
+      onPrimary: light ? Colors.white : const Color(0xFF4A1F0E),
+      // primaryContainer 是用户气泡的底色，压得很淡，避免整屏发红
       primaryContainer:
-          light ? const Color(0xFFE6E6E6) : const Color(0xFF2E2E2E),
+          light ? const Color(0xFFF4E7DF) : const Color(0xFF7A3A1F),
       onPrimaryContainer:
-          light ? const Color(0xFF1A1A1A) : const Color(0xFFE0E0E0),
+          light ? const Color(0xFF4A1F0E) : const Color(0xFFFFDBCB),
       secondary: light ? const Color(0xFF616161) : const Color(0xFFBDBDBD),
       onSecondary: light ? Colors.white : const Color(0xFF1F1F1F),
       secondaryContainer:
@@ -40,27 +45,30 @@ class AppTheme {
       errorContainer: light ? const Color(0xFFFFDAD6) : const Color(0xFF93000A),
       onErrorContainer:
           light ? const Color(0xFF410002) : const Color(0xFFFFDAD6),
-      surface: light ? const Color(0xFFFAFAFA) : const Color(0xFF141414),
-      onSurface: light ? const Color(0xFF171717) : const Color(0xFFECECEC),
+      // 中性色只做「极轻微」的暖化：红蓝差控制在 3~6，肉眼几乎看不出偏色，
+      // 但和暖调背景放在一起不会显得发灰发冷。刻意不做得更黄——
+      // 满屏的黄会刺眼，这是背景预设已经踩过的坑。
+      surface: light ? const Color(0xFFF8F7F5) : const Color(0xFF161514),
+      onSurface: light ? const Color(0xFF1A1917) : const Color(0xFFECEBE8),
       surfaceContainerLowest:
-          light ? const Color(0xFFFFFFFF) : const Color(0xFF0E0E0E),
+          light ? const Color(0xFFFFFFFF) : const Color(0xFF100F0E),
       surfaceContainerLow:
-          light ? const Color(0xFFF4F4F4) : const Color(0xFF1A1A1A),
+          light ? const Color(0xFFF3F2EF) : const Color(0xFF1C1B1A),
       surfaceContainer:
-          light ? const Color(0xFFEFEFEF) : const Color(0xFF1F1F1F),
+          light ? const Color(0xFFEEEDEA) : const Color(0xFF211F1E),
       surfaceContainerHigh:
-          light ? const Color(0xFFE9E9E9) : const Color(0xFF262626),
+          light ? const Color(0xFFE8E7E3) : const Color(0xFF282625),
       surfaceContainerHighest:
-          light ? const Color(0xFFE2E2E2) : const Color(0xFF2E2E2E),
+          light ? const Color(0xFFE2E1DD) : const Color(0xFF302E2C),
       onSurfaceVariant:
-          light ? const Color(0xFF555555) : const Color(0xFFA0A0A0),
-      outline: light ? const Color(0xFF8C8C8C) : const Color(0xFF8A8A8A),
-      outlineVariant: light ? const Color(0xFFD9D9D9) : const Color(0xFF3D3D3D),
+          light ? const Color(0xFF57544F) : const Color(0xFFA29F9A),
+      outline: light ? const Color(0xFF8C8983) : const Color(0xFF8A8783),
+      outlineVariant: light ? const Color(0xFFD9D6D0) : const Color(0xFF3E3C3A),
       shadow: Colors.black26,
       scrim: Colors.black38,
-      inverseSurface: light ? const Color(0xFF2B2B2B) : const Color(0xFFECECEC),
+      inverseSurface: light ? const Color(0xFF2B2A27) : const Color(0xFFECEBE8),
       onInverseSurface:
-          light ? const Color(0xFFF2F2F2) : const Color(0xFF141414),
+          light ? const Color(0xFFF2F1EE) : const Color(0xFF161514),
       inversePrimary: light ? const Color(0xFFCFCFCF) : const Color(0xFF333333),
     );
   }
@@ -89,7 +97,7 @@ class AppTheme {
         elevation: 0,
         color: scheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           side: BorderSide(color: scheme.outlineVariant),
         ),
       ),
@@ -100,15 +108,15 @@ class AppTheme {
           color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: scheme.primary, width: 1.4),
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -139,7 +147,7 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -147,18 +155,18 @@ class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.lgAll),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: scheme.surface,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       ),
       dividerTheme: DividerThemeData(
         color: scheme.outlineVariant,
