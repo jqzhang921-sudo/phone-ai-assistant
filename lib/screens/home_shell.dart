@@ -8,6 +8,7 @@ import '../services/storage_service.dart';
 import 'chat_screen.dart';
 import 'bookshelf_screen.dart';
 import 'habitat_screen.dart';
+import '../config/app_shape.dart';
 
 /// App 一级页面容器：底部导航 + IndexedStack。
 class HomeShell extends StatefulWidget {
@@ -42,11 +43,17 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  void _switchTo(AppTab tab) {
-    if (mounted && tab.index != _index) {
-      setState(() => _index = tab.index);
-    }
+  /// 切 tab 的唯一入口——底部导航和 [_switchTo] 都走这里。
+  ///
+  /// IndexedStack 让三个 tab 常驻，聊天页输入框的焦点会一直留着。不主动收掉的话，
+  /// 从别的页面 push 再 pop 回来时焦点被还给它，于是在「栖息」页也会莫名弹出键盘。
+  void _selectIndex(int index) {
+    if (!mounted || index == _index) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _index = index);
   }
+
+  void _switchTo(AppTab tab) => _selectIndex(tab.index);
 
   void _onChatModeChanged(bool inChat) {
     if (mounted && inChat != _hideNav) {
@@ -78,7 +85,10 @@ class _HomeShellState extends State<HomeShell> {
                 ],
               ),
             ),
-            if (!_hideNav) _buildFloatingNav(scheme),
+            // 键盘弹起时收掉导航条：它在 Column 里，否则会被顶到键盘正上方，
+            // 既挤占了输入区，打字时也用不上。
+            if (!_hideNav && MediaQuery.of(context).viewInsets.bottom == 0)
+              _buildFloatingNav(scheme),
           ],
         ),
       ),
@@ -98,7 +108,9 @@ class _HomeShellState extends State<HomeShell> {
       case 'dark':
         return const BoxDecoration(color: Color(0xFF121212));
       case 'light':
-        return const BoxDecoration(color: Color(0xFFF6F3EA));
+        // 原来是 #F6F3EA：蓝通道比红低 12，满屏铺开明显发黄，且亮度偏高会刺眼。
+        // 收窄到差 8、整体压暗两档——仍是暖调，但不再抢眼。
+        return const BoxDecoration(color: Color(0xFFEFEDE7));
       default:
         return null;
     }
@@ -117,7 +129,7 @@ class _HomeShellState extends State<HomeShell> {
                 isDark
                     ? Colors.black.withValues(alpha: 0.72)
                     : Colors.white.withValues(alpha: 0.86),
-            borderRadius: BorderRadius.circular(29),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
             border: Border.all(
               color:
                   isDark
@@ -172,15 +184,15 @@ class _HomeShellState extends State<HomeShell> {
     final selected = _index == index;
     return Expanded(
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: () => setState(() => _index = index),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        onTap: () => _selectIndex(index),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
           margin: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: selected ? scheme.inverseSurface : Colors.transparent,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
