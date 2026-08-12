@@ -322,20 +322,16 @@ class AiClient {
                   arguments: toolCalls![idx].arguments,
                 );
               }
-              // Accumulate arguments fragments and parse only when complete
+              // 只累积，不在分片阶段解析——解析统一放到流结束后。
+              //
+              // 原来每来一个分片就试着 jsonDecode：只要某个中间状态恰好是合法
+              // JSON（比如先到一个 `{}`），arguments 就被锁成空对象；之后拼上
+              // 真内容，缓冲区变成 `{}{"query":"…"}` 永远解析失败，catch 静默吞掉，
+              // 于是发出去的调用里 query 一直是空的。
               if (tc['function']?['arguments'] != null) {
-                final argText = tc['function']['arguments'].toString();
-                argBuffers[idx] = (argBuffers[idx] ?? '') + argText;
-                try {
-                  final parsed = jsonDecode(argBuffers[idx]!);
-                  toolCalls![idx] = ToolCallInfo(
-                    id: toolCalls![idx].id,
-                    name: toolCalls![idx].name,
-                    arguments: Map<String, dynamic>.from(parsed),
-                  );
-                } catch (_) {
-                  // Partial JSON chunk, keep accumulating
-                }
+                argBuffers[idx] =
+                    (argBuffers[idx] ?? '') +
+                    tc['function']['arguments'].toString();
               }
             }
           }
@@ -344,6 +340,23 @@ class AiClient {
     }
 
     if (toolCalls != null && toolCalls!.isNotEmpty) {
+      // 流结束了，参数分片已经完整，这时才解析
+      for (var i = 0; i < toolCalls!.length; i++) {
+        final raw = argBuffers[i]?.trim();
+        if (raw == null || raw.isEmpty) continue;
+        try {
+          final parsed = jsonDecode(raw);
+          if (parsed is Map) {
+            toolCalls![i] = ToolCallInfo(
+              id: toolCalls![i].id,
+              name: toolCalls![i].name,
+              arguments: Map<String, dynamic>.from(parsed),
+            );
+          }
+        } catch (e) {
+          debugPrint('[ai_client] 工具参数解析失败，原始内容：$raw（$e）');
+        }
+      }
       yield AiStreamEvent.toolCalls(toolCalls!);
     } else if (contentBuffer != null) {
       yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
