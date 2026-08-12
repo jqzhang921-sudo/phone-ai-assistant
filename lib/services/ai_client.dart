@@ -41,11 +41,18 @@ List<ChatMessage> _sanitizeToolCallHistory(List<ChatMessage> messages) {
     }
     // 收集紧随其后、属于这一轮的 toolResult 消息，看看有没有覆盖所有
     // tool_call_id（一直找到下一条非 toolResult 消息为止）
+    // 扫描其后的全部历史，而不是只看紧邻的连续 toolResult。
+    //
+    // 原来一遇到非 toolResult 消息就 break：只要结果之间夹了任何一条别的消息
+    // （模型在工具调用之间说了句话、或多轮工具交错），后面的结果就被判成
+    // 「没有响应」，于是补上占位、真结果反而被 _repairToolMessages 当孤儿剔除，
+    // 服务端照样报 tool_call_id 缺响应。
     final answered = <String>{};
     for (var j = i + 1; j < messages.length; j++) {
       final next = messages[j];
-      if (next.role != MessageRole.toolResult) break;
-      if (next.toolCallId != null) answered.add(next.toolCallId!);
+      if (next.role == MessageRole.toolResult && next.toolCallId != null) {
+        answered.add(next.toolCallId!);
+      }
     }
     for (final tc in msg.toolCalls!) {
       if (!answered.contains(tc.id)) {
@@ -246,7 +253,15 @@ class AiClient {
           // 于是两边都看不见问题。先打出来，好定位第一次请求为什么非法。
           debugPrint('[ai_client] 工具历史被服务端拒绝，将丢弃全部工具消息重试。'
               '原始错误：$error');
-          body['messages'] = _stripAllToolMessages(apiMessages);
+          // 手机上看不到日志，所以直接显示在对话里——否则这个降级完全无声，
+          // 用户只会看到模型说「我没收到结果」，看不出是 App 丢掉的。
+          // 定位完根因后应当移除。
+          yield AiStreamEvent.token(
+            '⚠️ 工具结果被服务端拒绝，已丢弃后重试。原始错误：\n'
+            '${error.length > 500 ? '${error.substring(0, 500)}…' : error}\n\n',
+          );
+          // 用 cleaned 而不是 apiMessages：后者没经过 _repairToolMessages
+          body['messages'] = _stripAllToolMessages(cleaned);
           continue;
         }
         yield AiStreamEvent.error('API 错误 (${response.statusCode}): $error');
