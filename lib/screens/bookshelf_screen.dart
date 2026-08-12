@@ -766,6 +766,17 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                                       }
                                       book.coverPath = dest.path;
                                       setDlg(() {});
+                                      // 立刻落盘，同「移除封面」。
+                                      //
+                                      // 上面两步已经不可逆地动过文件了（旧封面
+                                      // 删了、新图写了）。不在这里存，用户点
+                                      // 「取消」就会留下「JSON 里的 coverPath 还
+                                      // 指着已删的旧文件」——当场看着是换好了
+                                      // （内存对象已改），下次启动封面反而没了，
+                                      // 新图还留在 book_covers 里成孤儿。
+                                      // 「取消」只该撤销书名/作者/日期/状态。
+                                      await _saveBooks();
+                                      if (mounted) setState(() {});
                                     }
                                   } catch (_) {}
                                 },
