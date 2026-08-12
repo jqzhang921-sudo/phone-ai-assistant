@@ -144,17 +144,30 @@ class SearchTool {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final results = (data['results'] as List?)?.take(5).map((r) => {
-              'title': r['title'],
-              'url': r['url'],
-              'content': r['content'],
-            }).toList() ?? [];
+        // 每条结果截断到 600 字：Tavily 返回的是整页抓取原文，里面混着
+        // 「扫一扫 分享到微信」「返回顶部」「京ICP备…」这类导航垃圾。
+        // 原样送回去，模型收到的是几万字符的噪音，真正的信息反而被埋掉。
+        final results =
+            (data['results'] as List?)?.take(5).map((r) {
+              final content = (r['content'] ?? '').toString().trim();
+              return {
+                'title': r['title'],
+                'url': r['url'],
+                'content':
+                    content.length > 600
+                        ? '${content.substring(0, 600)}…'
+                        : content,
+              };
+            }).toList() ??
+            [];
         if (results.isNotEmpty) {
+          final answer = (data['answer'] ?? '').toString().trim();
           return {
             'success': true,
             'query': query,
             'results': results,
-            'answer': data['answer'] ?? '',
+            // 空字段不要送出去：模型看到 `answer:` 是空的，容易判断成「没结果」
+            if (answer.isNotEmpty) 'answer': answer,
             'source': 'tavily',
           };
         }
