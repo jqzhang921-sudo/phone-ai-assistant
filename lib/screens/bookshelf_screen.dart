@@ -771,51 +771,55 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                                 },
                               ),
                             ),
+                            // 「查看 / 移除」收成图标按钮，跟「更换封面」挤在同一行。
+                            //
+                            // 之前把「移除封面」单独做成一行右对齐的红字，视觉上像
+                            // 块飘着的补丁，而且和下面真正危险的「删除此书」抢同一个
+                            // 红色。移除封面并不危险——重新加一张就回来了，所以这里
+                            // 用中性色，红色留给删书。
                             if (book.coverPath != null) ...[
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
+                              const SizedBox(width: 4),
+                              IconButton(
                                 icon: const Icon(
                                   PhosphorIconsRegular.magnifyingGlassPlus,
-                                  size: 18,
+                                  size: 20,
                                 ),
-                                label: const Text('查看'),
+                                tooltip: '查看封面',
+                                visualDensity: VisualDensity.compact,
                                 onPressed: () {
                                   _viewCover(context, book);
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  PhosphorIconsRegular.imageBroken,
+                                  size: 20,
+                                ),
+                                tooltip: '移除封面',
+                                visualDensity: VisualDensity.compact,
+                                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                                onPressed: () async {
+                                  // 立刻落盘，不等外面点「保存」。
+                                  //
+                                  // 上面「更换封面」是改完内存等保存，用户点取消就会
+                                  // 留下「文件已经换了、coverPath 却没存」的错位。
+                                  // 移除这条路不跟着错：图片文件删了就是删了，撤不
+                                  // 回来，那持久化的状态也应该当场对齐。
+                                  final old = book.coverPath;
+                                  book.coverPath = null;
+                                  setDlg(() {});
+                                  if (old != null) {
+                                    try {
+                                      await File(old).delete();
+                                    } catch (_) {}
+                                  }
+                                  await _saveBooks();
+                                  if (mounted) setState(() {});
                                 },
                               ),
                             ],
                           ],
                         ),
-                        // 「移除封面」另起一行：上面那行再塞一个带文字的按钮，
-                        // 窄屏（对话框内容区约 232dp）放不下三个，会直接溢出。
-                        if (book.coverPath != null)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              style: TextButton.styleFrom(
-                                foregroundColor: Theme.of(ctx).colorScheme.error,
-                              ),
-                              onPressed: () async {
-                                // 立刻落盘，不等外面点「保存」。
-                                //
-                                // 上面「更换封面」是改完内存等保存，用户点取消就会
-                                // 留下「文件已经换了、coverPath 却没存」的错位。
-                                // 移除这条路不跟着错：图片文件删了就是删了，撤不回来，
-                                // 那持久化的状态也应该当场对齐。
-                                final old = book.coverPath;
-                                book.coverPath = null;
-                                setDlg(() {});
-                                if (old != null) {
-                                  try {
-                                    await File(old).delete();
-                                  } catch (_) {}
-                                }
-                                await _saveBooks();
-                                if (mounted) setState(() {});
-                              },
-                              child: const Text('移除封面'),
-                            ),
-                          ),
                         const SizedBox(height: 10),
                         // delete button
                         SizedBox(

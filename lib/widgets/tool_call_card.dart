@@ -205,23 +205,34 @@ class _ToolResultCardState extends State<ToolResultCard> {
                 ),
               ),
               if (_expanded && _resultMap != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children:
-                        _resultMap!.entries
-                            .where((e) => e.key != 'data')
-                            .map(
-                              (e) => Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  '${e.key}: ${e.value}',
-                                  style: theme.textTheme.bodySmall,
-                                ),
+                ConstrainedBox(
+                  // 高度封顶 + 自己滚。
+                  //
+                  // 一次网页搜索能吐出几千字符（5 条结果，每条正文截到 600 字），
+                  // 原来整段直接铺在聊天流里，把整屏顶满；看完想收起，还得往回
+                  // 滚很远才够得到上面那个「完成」。封到 260 之后，展开区自己滚，
+                  // 头部始终在手边。
+                  constraints: const BoxConstraints(maxHeight: 260),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final e in _resultMap!.entries.where(
+                          (e) => e.key != 'data',
+                        ))
+                          if (e.key == 'results' && e.value is List)
+                            _buildResultList(theme, e.value as List)
+                          else
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                '${e.key}: ${_clip(e.value.toString(), 200)}',
+                                style: theme.textTheme.bodySmall,
                               ),
-                            )
-                            .toList(),
+                            ),
+                      ],
+                    ),
                   ),
                 ),
             ],
@@ -229,6 +240,47 @@ class _ToolResultCardState extends State<ToolResultCard> {
         ),
       ),
     );
+  }
+
+  /// 搜索类工具的 results 是一整个列表，`toString()` 出来是几千字符的 Dart
+  /// Map 原文（`[{title: …, url: …, content: …}]`），键值没引号、正文里的换行
+  /// 全铺开，基本没法读。这里拆成「标题 + 一句摘要」，想看全文点原始链接。
+  Widget _buildResultList(ThemeData theme, List<dynamic> results) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final r in results)
+          if (r is Map)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _clip((r['title'] ?? '(无标题)').toString(), 60),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if ((r['content'] ?? '').toString().trim().isNotEmpty)
+                    Text(
+                      _clip(r['content'].toString(), 140),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+      ],
+    );
+  }
+
+  /// 压成一行再截断：抓回来的正文里全是换行和连续空格，原样显示会把
+  /// 一条结果拉成十几行。
+  static String _clip(String s, int max) {
+    final oneLine = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return oneLine.length > max ? '${oneLine.substring(0, max)}…' : oneLine;
   }
 
   /// 工具结果是 jsonEncode 出来的真 JSON，直接解析。
