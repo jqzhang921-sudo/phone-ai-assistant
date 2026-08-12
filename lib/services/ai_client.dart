@@ -577,7 +577,49 @@ class AiClient {
       }
       cleaned.add(msg);
     }
-    return cleaned;
+    return _reorderToolMessages(cleaned);
+  }
+
+  /// 把每组 tool 响应挪回它对应的 assistant(tool_calls) 紧后面。
+  ///
+  /// 服务端要求的不只是「存在响应」，而是响应必须**紧邻**排在 tool_calls 之后
+  /// （报错原文：insufficient tool messages following tool_calls message）。
+  /// 而模型经常在发起调用和拿到结果之间说话，那条文本消息会把两者隔开，
+  /// 于是整条历史被判非法。这里按 tool_call_id 归位，不改变其余消息的相对顺序。
+  static List<Map<String, dynamic>> _reorderToolMessages(
+    List<Map<String, dynamic>> msgs,
+  ) {
+    // 先把所有 tool 消息按 id 索引出来
+    final toolById = <String, Map<String, dynamic>>{};
+    for (final m in msgs) {
+      if (m['role'] == 'tool') {
+        final id = m['tool_call_id'] as String?;
+        if (id != null && id.isNotEmpty) toolById[id] = m;
+      }
+    }
+    if (toolById.isEmpty) return msgs;
+
+    final placed = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final m in msgs) {
+      if (m['role'] == 'tool') {
+        final id = m['tool_call_id'] as String?;
+        // 已经跟着 assistant 放过了，这里跳过，避免重复
+        if (id != null && placed.contains(id)) continue;
+        out.add(m);
+        continue;
+      }
+      out.add(m);
+      if (m['role'] == 'assistant' && m['tool_calls'] != null) {
+        for (final tc in m['tool_calls'] as List) {
+          final id = (tc as Map)['id'] as String?;
+          if (id == null) continue;
+          final toolMsg = toolById[id];
+          if (toolMsg != null && placed.add(id)) out.add(toolMsg);
+        }
+      }
+    }
+    return out;
   }
 }
 
