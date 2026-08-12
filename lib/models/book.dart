@@ -36,6 +36,12 @@ class Book {
   final DateTime createdAt;
   String? wereadBookId;
 
+  /// 在 App 里被标记成「已读」的时刻。写信时靠它筛出「这段时间读完的书」。
+  ///
+  /// 老数据和从微信读书导入时就已经是「已读」的书都是 null——那些不算
+  /// 「刚读完」，不该被当成新素材。只有在 App 内发生的状态变化才记。
+  DateTime? finishedAt;
+
   Book({
     required this.id,
     required this.title,
@@ -44,7 +50,15 @@ class Book {
     this.status = ReadingStatus.wantToRead,
     DateTime? createdAt,
     this.wereadBookId,
+    this.finishedAt,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  /// 改状态请走这里，别直接赋值 [status]——finishedAt 要跟着一起维护。
+  void changeStatus(ReadingStatus next) {
+    if (next == status) return;
+    status = next;
+    finishedAt = next == ReadingStatus.done ? DateTime.now() : null;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -54,6 +68,7 @@ class Book {
         'status': status.name,
         'createdAt': createdAt.toIso8601String(),
         if (wereadBookId != null) 'wereadBookId': wereadBookId,
+        if (finishedAt != null) 'finishedAt': finishedAt!.toIso8601String(),
       };
 
   factory Book.fromJson(Map<String, dynamic> json) => Book(
@@ -64,5 +79,9 @@ class Book {
         status: ReadingStatus.fromString(json['status'] ?? ''),
         createdAt: DateTime.parse(json['createdAt']),
         wereadBookId: json['wereadBookId'] as String?,
+        finishedAt:
+            json['finishedAt'] == null
+                ? null
+                : DateTime.tryParse(json['finishedAt']),
       );
 }

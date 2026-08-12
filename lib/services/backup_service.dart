@@ -11,6 +11,7 @@ class ImportSummary {
   int bookConversations = 0;
   int diaryEntries = 0;
   int musings = 0;
+  int letters = 0;
   int otherKeys = 0;
 
   int get total =>
@@ -18,7 +19,8 @@ class ImportSummary {
       trashedConversations +
       bookConversations +
       diaryEntries +
-      musings;
+      musings +
+      letters;
 }
 
 /// 全 App 数据的导出 / 导入。
@@ -36,6 +38,8 @@ class BackupService {
     'diary_entries',
     'favorited_musings',
     'today_musing',
+    'letters',
+    'last_letter_attempt_at',
     'chat_background_preset',
     'api_providers',
   ];
@@ -52,6 +56,7 @@ class BackupService {
   static const _mergeableListKeys = <String>[
     'diary_entries',
     'favorited_musings',
+    'letters',
   ];
 
   static bool _isAllowed(String key) {
@@ -210,6 +215,8 @@ class BackupService {
           final added = await _mergeListPref(prefs, key, value, replace);
           if (key == 'diary_entries') {
             summary.diaryEntries += added;
+          } else if (key == 'letters') {
+            summary.letters += added;
           } else {
             summary.musings += added;
           }

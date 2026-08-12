@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import '../models/book.dart';
 import '../models/conversation.dart';
 import '../models/diary_entry.dart';
+import '../models/letter.dart';
 import '../models/musing_entry.dart';
 
 class StorageService {
@@ -276,5 +278,88 @@ class StorageService {
     final entries = await listFavoritedMusings();
     final todayKey = _todayKey();
     return entries.where((e) => e.dateKey == todayKey).toList();
+  }
+
+  // ---------------- 信 ----------------
+  static const _kLettersKey = 'letters';
+  static const _kLastLetterAttemptKey = 'last_letter_attempt_at';
+
+  /// 按时间倒序（最新的在最前）。
+  static Future<List<Letter>> listLetters() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kLettersKey);
+    if (raw == null) return [];
+    final list =
+        (jsonDecode(raw) as List)
+            .map((e) => Letter.fromJson(e as Map<String, dynamic>))
+            .toList();
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  static Future<void> _writeLetters(List<Letter> letters) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kLettersKey,
+      jsonEncode(letters.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  static Future<void> addLetter(Letter letter) async {
+    final letters = await listLetters();
+    letters.add(letter);
+    await _writeLetters(letters);
+  }
+
+  static Future<void> deleteLetter(String id) async {
+    final letters = await listLetters();
+    letters.removeWhere((e) => e.id == id);
+    await _writeLetters(letters);
+  }
+
+  static Future<void> markLetterRead(String id) async {
+    final letters = await listLetters();
+    final idx = letters.indexWhere((e) => e.id == id);
+    if (idx < 0 || letters[idx].read) return;
+    letters[idx] = letters[idx].copyWith(read: true);
+    await _writeLetters(letters);
+  }
+
+  /// 未读的 AI 来信数量（给栖息页卡片和底部角标用）。
+  static Future<int> unreadLetterCount() async {
+    final letters = await listLetters();
+    return letters.where((e) => e.isFromAi && !e.read).length;
+  }
+
+  /// 上次**尝试**写信的时间——包括 AI 判断「这次没什么可写」而跳过的那次。
+  ///
+  /// 记「尝试」而不是「发出」是有意的：跳过时如果不记，素材会一直堆在那儿，
+  /// 之后每次进栖息页都会重新触发一遍，白白烧 token。
+  static Future<DateTime?> getLastLetterAttempt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kLastLetterAttemptKey);
+    if (raw == null) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  static Future<void> setLastLetterAttempt(DateTime t) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kLastLetterAttemptKey, t.toIso8601String());
+  }
+
+  /// 书架的只读视图，给写信时统计素材用。
+  ///
+  /// 写入归 bookshelf_screen 管，这里只读，所以键名在两处各写了一遍。
+  static Future<List<Book>> listBooks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('bookshelf_books');
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => Book.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 }

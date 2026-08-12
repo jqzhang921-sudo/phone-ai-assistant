@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
+import '../models/letter.dart';
 import '../services/app_providers.dart';
+import '../services/letter_generator.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
+import 'letter_screen.dart';
 import 'musing_corner_screen.dart';
 import '../config/app_shape.dart';
 
@@ -19,11 +23,15 @@ class HabitatScreen extends StatefulWidget {
 }
 
 class _HabitatScreenState extends State<HabitatScreen> {
+  final _uuid = const Uuid();
   int _todayMessages = 0;
   int _totalMessages = 0;
   int _readingCount = 0;
   int _diaryCount = 0;
   int _musingCount = 0;
+  int _letterCount = 0;
+  int _unreadLetters = 0;
+  bool _writingLetter = false;
 
   @override
   void initState() {
@@ -35,6 +43,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final convs = await StorageService.listConversations();
     final diaries = await StorageService.listDiaryEntries();
     final musings = await StorageService.listFavoritedMusings();
+    final letters = await StorageService.listLetters();
     final now = DateTime.now();
     var today = 0;
     var total = 0;
@@ -52,7 +61,54 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _readingCount = convs.length;
         _diaryCount = diaries.length;
         _musingCount = musings.length;
+        _letterCount = letters.length;
+        _unreadLetters = letters.where((l) => l.isFromAi && !l.read).length;
       });
+    }
+    if (!mounted) return;
+    await _maybeWriteLetter();
+  }
+
+  /// 素材够了、也过了冷却期，就让它写一封。
+  ///
+  /// 检查放在进栖息页时，不做后台任务：信箱就在这一页，用户来这儿本来就是
+  /// 看这类东西的，而且生成要联网，人在前台。国产 ROM 的后台限制也让定时
+  /// 生成不可能可靠。
+  Future<void> _maybeWriteLetter() async {
+    if (_writingLetter) return;
+    // context 的读取放在任何 await 之前——await 之后这个 State 可能已经销毁。
+    final aiClient = context.read<AiClientProvider>().currentClient;
+    if (aiClient == null) return;
+    if (!await shouldWriteLetter()) return;
+    if (!mounted) return;
+
+    setState(() => _writingLetter = true);
+    try {
+      final content = await generateLetter(aiClient: aiClient);
+      // 无论写没写成都记一次尝试。不记的话素材一直堆着，每次进这一页
+      // 都会重新触发，白烧 token。
+      await StorageService.setLastLetterAttempt(DateTime.now());
+      if (content != null) {
+        await StorageService.addLetter(
+          Letter(
+            id: _uuid.v4(),
+            author: LetterAuthor.ai,
+            content: content,
+          ),
+        );
+        final letters = await StorageService.listLetters();
+        if (mounted) {
+          setState(() {
+            _letterCount = letters.length;
+            _unreadLetters =
+                letters.where((l) => l.isFromAi && !l.read).length;
+          });
+        }
+      }
+    } catch (_) {
+      // 写信失败不打扰，下次进来再说（这次不记 attempt，素材留着）
+    } finally {
+      if (mounted) setState(() => _writingLetter = false);
     }
   }
 
@@ -110,6 +166,31 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 14),
           _card(
             theme,
+            icon: PhosphorIconsRegular.envelopeSimple,
+            title: '信',
+            highlight: _unreadLetters > 0,
+            lines:
+                _writingLetter
+                    ? ['它正在写一封信…']
+                    : _unreadLetters > 0
+                    ? [
+                      _unreadLetters == 1 ? '有一封信在等你。' : '有 $_unreadLetters 封信在等你。',
+                      '不着急，什么时候看都行。',
+                    ]
+                    : _letterCount > 0
+                    ? ['往来 $_letterCount 封。', '想说点什么的话，也可以写给它。']
+                    : ['还没有信。', '聊得多了、日记攒下了、书读完了，它会写一封过来。'],
+            actionLabel: '去信箱',
+            onAction: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LetterScreen()),
+              );
+              _load();
+            },
+          ),
+          const SizedBox(height: 14),
+          _card(
+            theme,
             icon: PhosphorIconsRegular.bookOpen,
             title: '阅读角落',
             lines: ['书架上还有 $_readingCount 个对话和书在等你。', '去书架看看今天读点什么。'],
@@ -162,6 +243,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     required List<String> lines,
     String? actionLabel,
     VoidCallback? onAction,
+    bool highlight = false,
   }) {
     final scheme = theme.colorScheme;
     return Container(
@@ -175,21 +257,42 @@ class _HabitatScreenState extends State<HabitatScreen> {
         // 近白的标题字（titleMedium 用 onSurface）本来是看不见的。
         color: scheme.surface.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.15)),
+        border: Border.all(
+          color:
+              highlight
+                  ? scheme.primary.withValues(alpha: 0.5)
+                  : scheme.outline.withValues(alpha: 0.15),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: scheme.onSurface),
+              Icon(
+                icon,
+                size: 20,
+                color: highlight ? scheme.primary : scheme.onSurface,
+              ),
               const SizedBox(width: 8),
               Text(
                 title,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
+                  color: highlight ? scheme.primary : null,
                 ),
               ),
+              if (highlight) ...[
+                const SizedBox(width: 6),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),

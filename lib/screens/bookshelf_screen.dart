@@ -902,14 +902,12 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       if ((result['author'] as String?)?.trim().isEmpty == true) {
         book.author = null;
       }
-      // parse date
-      try {
-        final parts = (result['date'] as String).split('-');
-        if (parts.length == 3) {
-          book.status = result['status'] as ReadingStatus;
-        }
-      } catch (_) {}
-      book.status = result['status'] as ReadingStatus;
+      // 走 changeStatus 而不是直接赋值：finishedAt 要跟着一起维护，
+      // 「这段时间读完的书」是写信时的素材来源之一。
+      //
+      // 原来这里在 date 解析的 try 里还赋值了一次 status，和下面这句重复，
+      // 顺手去掉——日期本身从来没被解析进 book。
+      book.changeStatus(result['status'] as ReadingStatus);
     });
     await _saveBooks();
   }
