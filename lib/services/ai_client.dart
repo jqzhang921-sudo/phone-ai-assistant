@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_keys.dart';
 import '../models/chat_message.dart';
@@ -238,7 +239,13 @@ class AiClient {
                 lowered.contains('tool messages') ||
                 lowered.contains('insufficient'));
         if (toolHistoryError && attempt == 1) {
-          // 工具历史异常（如孤儿 tool_calls）：去掉全部工具消息，纯文本重试一次
+          // 工具历史异常（如孤儿 tool_calls）：去掉全部工具消息，纯文本重试一次。
+          //
+          // ⚠️ 这个兜底会让模型完全看不到工具结果——工具明明执行成功了，
+          // 模型却回答「我这边是空的」。原来这里把服务端错误直接吞掉，
+          // 于是两边都看不见问题。先打出来，好定位第一次请求为什么非法。
+          debugPrint('[ai_client] 工具历史被服务端拒绝，将丢弃全部工具消息重试。'
+              '原始错误：$error');
           body['messages'] = _stripAllToolMessages(apiMessages);
           continue;
         }
