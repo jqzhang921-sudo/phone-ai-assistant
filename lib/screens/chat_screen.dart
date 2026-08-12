@@ -29,6 +29,7 @@ import '../widgets/tool_call_card.dart';
 import 'tools_screen.dart';
 import 'settings_screen.dart';
 import 'pc_chat_screen.dart';
+import '../config/app_shape.dart';
 
 class ChatScreen extends StatefulWidget {
   /// 底部导航切换回调，用于从聊天页跳转到书架 / 工具 / 设置。
@@ -332,7 +333,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: Theme.of(
                         ctx,
                       ).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -378,7 +379,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final scheme = Theme.of(ctx).colorScheme;
     return Expanded(
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: () {
           onClose();
           action();
@@ -1006,7 +1007,7 @@ class _ChatScreenState extends State<ChatScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(color: scheme.outlineVariant),
           ),
           child: Column(
@@ -1077,9 +1078,9 @@ class _ChatScreenState extends State<ChatScreen> {
     return Expanded(
       child: Material(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1278,7 +1279,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildDrawer(ThemeData theme) {
     final scheme = theme.colorScheme;
     return Drawer(
-      backgroundColor: scheme.surface.withValues(alpha: 0.96),
+      // 实底：半透明会让背后花花绿绿的内容透上来，压低菜单文字的可读性
+      backgroundColor: scheme.surface,
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1320,16 +1322,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 _showConversationList();
               },
             ),
-            _drawerItem(theme, PhosphorIconsRegular.bookOpen, '书架', () {
-              Navigator.of(context).pop();
-              widget.onSwitchTab?.call(AppTab.bookshelf);
-            }),
-            _drawerItem(theme, PhosphorIconsRegular.wrench, '工具', () {
-              Navigator.of(context).pop();
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const ToolsScreen()));
-            }),
+            // 「书架」不放这里：底部导航已经有了，同一个目的地两个入口只会
+            // 让人多想一秒。「工具」是诊断页，收进设置里，不与设置平级。
+            const Divider(),
             _drawerItem(theme, PhosphorIconsRegular.gear, '设置', () async {
               Navigator.of(context).pop();
               await Navigator.of(
@@ -1362,7 +1357,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return ListTile(
       leading: Icon(icon, color: scheme.onSurfaceVariant),
       title: Text(label, style: const TextStyle(fontSize: 15)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
       onTap: onTap,
     );
   }
@@ -1387,7 +1382,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         height: 4,
                         decoration: BoxDecoration(
                           color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
                         ),
                       ),
                       Padding(
@@ -1495,7 +1490,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   height: 4,
                   decoration: BoxDecoration(
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                 ),
                 Padding(
@@ -1634,11 +1629,11 @@ class _ChatScreenState extends State<ChatScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: scheme.primary,
-            borderRadius: BorderRadius.circular(20),
+            color: scheme.inverseSurface,
+            borderRadius: BorderRadius.circular(AppRadius.md),
             boxShadow: [
               BoxShadow(
-                color: scheme.primary.withValues(alpha: 0.25),
+                color: scheme.inverseSurface.withValues(alpha: 0.25),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -1656,7 +1651,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 1,
-                      color: scheme.onPrimary.withValues(alpha: 0.7),
+                      color: scheme.onInverseSurface.withValues(alpha: 0.7),
                     ),
                   ),
                   Row(
@@ -1668,22 +1663,22 @@ class _ChatScreenState extends State<ChatScreen> {
                           height: 14,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: scheme.onPrimary.withValues(alpha: 0.6),
+                            color: scheme.onInverseSurface.withValues(alpha: 0.6),
                           ),
                         )
                       else
                         InkWell(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
                           onTap: _refreshMusing,
                           child: Icon(
                             PhosphorIconsRegular.arrowsClockwise,
                             size: 18,
-                            color: scheme.onPrimary.withValues(alpha: 0.7),
+                            color: scheme.onInverseSurface.withValues(alpha: 0.7),
                           ),
                         ),
                       const SizedBox(width: 10),
                       InkWell(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                         onTap:
                             _musingContent == null
                                 ? null
@@ -1693,7 +1688,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               ? PhosphorIconsRegular.star
                               : PhosphorIconsRegular.star,
                           size: 20,
-                          color: scheme.onPrimary,
+                          color: scheme.onInverseSurface,
                         ),
                       ),
                     ],
@@ -1707,7 +1702,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 style: TextStyle(
                   fontSize: 14.5,
                   height: 1.6,
-                  color: scheme.onPrimary,
+                  color: scheme.onInverseSurface,
                 ),
               ),
             ],
@@ -1789,10 +1784,10 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: Colors.white.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         child: ListTile(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           title: Text(
             conv.title,
@@ -1932,17 +1927,18 @@ class _ChatScreenState extends State<ChatScreen> {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color:
-                active
-                    ? scheme.onSurface
-                    : Colors.white.withValues(alpha: 0.85),
+            // 发送键是这一行唯一的主操作，用强调色；「+」保持中性
+            color: active ? scheme.primary : Colors.white.withValues(alpha: 0.85),
             shape: BoxShape.circle,
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.35)),
+            border:
+                active
+                    ? null
+                    : Border.all(color: scheme.outline.withValues(alpha: 0.35)),
           ),
           child: Icon(
             icon,
             size: 20,
-            color: active ? scheme.surface : scheme.onSurface,
+            color: active ? scheme.onPrimary : scheme.onSurface,
           ),
         ),
       ),
@@ -1960,13 +1956,20 @@ class _ChatScreenState extends State<ChatScreen> {
       textInputAction: TextInputAction.newline,
       decoration: InputDecoration(
         hintText: '输入消息...',
+        // 输入框只靠填充色成形，不描边。
+        // 之前描边 + 聚焦态的深色粗边让一个空输入框成了整屏最重的元素，
+        // 而这一行里真正该被强调的是右边的发送键。键盘弹起本身已经说明了聚焦。
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderSide: BorderSide.none,
         ),
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.75),

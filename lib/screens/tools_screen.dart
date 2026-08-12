@@ -7,6 +7,7 @@ import '../services/phone_tools/camera_tool.dart';
 import '../services/phone_tools/location_tool.dart';
 import '../services/phone_tools/sensors_tool.dart';
 import '../services/app_providers.dart';
+import '../config/app_shape.dart';
 
 class ToolsScreen extends StatelessWidget {
   const ToolsScreen({super.key});
@@ -228,7 +229,7 @@ class _ToolCard extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: Text(
                     tool.category,
@@ -246,10 +247,9 @@ class _ToolCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (tool.description.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(tool.description, style: theme.textTheme.bodySmall),
-            ],
+            // 不展示 tool.description：那段文字是写给模型看的提示词
+            // （里面会有「要写日记请用 xxx，不要用这个」这类调度指令），
+            // 给用户看只会出戏。要调试就去看代码里的工具定义。
           ],
         ),
       ),

@@ -16,6 +16,7 @@ import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
 import '../services/tts_service.dart';
 import '../services/weread_service.dart';
+import 'tools_screen.dart';
 import '../services/app_providers.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -557,6 +558,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // MCP Server Settings
           _sectionHeader('MCP 服务器', PhosphorIconsRegular.link, theme),
           const SizedBox(height: 8),
+          // 从抽屉挪过来的：这是诊断页，属于设置，不该和「设置」平级
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(PhosphorIconsRegular.wrench),
+            title: const Text('已注册的工具'),
+            subtitle: const Text('查看 AI 能调用哪些手机能力，以及服务运行状态'),
+            trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),
+            onTap:
+                () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const ToolsScreen())),
+          ),
           SwitchListTile(
             title: const Text('启用 MCP Server'),
             subtitle: Text('允许其他设备通过端口 ${_settings.webSocketPort} 连接'),

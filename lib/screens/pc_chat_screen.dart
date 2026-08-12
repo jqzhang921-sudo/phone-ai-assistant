@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../services/pc_bridge_service.dart';
+import '../config/app_shape.dart';
 
 class _Msg {
   final String role; // 'user' | 'pc' | 'status' | 'error'
@@ -28,6 +29,13 @@ class _PcChatScreenState extends State<PcChatScreen> {
   bool _connected = false;
   bool _busy = false;
 
+  /// 连接状态：只保留「当前是什么」，会被后来的状态替换掉。
+  ///
+  /// 之前这些和任务事件一起塞进 [_messages]，于是「还没配置连接」和
+  /// 「已连接电脑」会同时留在屏幕上互相打架。连上之后标题栏的绿点就够了，
+  /// 这里置空。
+  String? _connectionNote;
+
   @override
   void initState() {
     super.initState();
@@ -46,7 +54,7 @@ class _PcChatScreenState extends State<PcChatScreen> {
     _config = await PcBridgeStorage.load();
     if (!mounted) return;
     if (_config.token.isEmpty) {
-      _add(_Msg('status', '还没配置连接，点右上角设置'));
+      setState(() => _connectionNote = '还没配置连接，点右上角的齿轮');
       return;
     }
     _connect();
@@ -57,16 +65,18 @@ class _PcChatScreenState extends State<PcChatScreen> {
     setState(() {
       _connected = false;
       _busy = false;
+      _connectionNote = '正在连接 ${_config.url}';
     });
-    _add(_Msg('status', '连接 ${_config.url} …'));
     try {
       final chat = PcBridgeChat();
       _chat = chat;
       final stream = await chat.start(_config);
       stream.listen(_onEvent);
     } catch (e) {
-      _add(_Msg('error', '连接失败：$e'));
-      setState(() => _connected = false);
+      setState(() {
+        _connected = false;
+        _connectionNote = '连接失败：$e';
+      });
     }
   }
 
@@ -76,8 +86,16 @@ class _PcChatScreenState extends State<PcChatScreen> {
       case PcBridgeText(:final text):
         _appendPcText(text);
       case PcBridgeStatus(:final message):
-        _add(_Msg('status', message));
-        if (message == '已连接电脑') setState(() => _connected = true);
+        if (message == '已连接电脑') {
+          // 连上了：绿点已经表达了这件事，横幅收掉
+          setState(() {
+            _connected = true;
+            _connectionNote = null;
+          });
+        } else {
+          // 任务级的状态（在跑什么、到哪一步）仍然属于对话流
+          _add(_Msg('status', message));
+        }
       case PcBridgeDone(:final exitCode):
         setState(() => _busy = false);
         _add(_Msg('status', exitCode == 0 ? '完成' : '结束（exit $exitCode）'));
@@ -206,7 +224,9 @@ class _PcChatScreenState extends State<PcChatScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // 这页是独立 push 出来的，背后没有 HomeShell 的背景层——
+      // 用 transparent 会直接露出路由的黑底，所以给一个实色。
+      backgroundColor: scheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -241,6 +261,18 @@ class _PcChatScreenState extends State<PcChatScreen> {
       ),
       body: Column(
         children: [
+          if (_connectionNote != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+              child: Text(
+                _connectionNote!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           Expanded(
             child:
                 _messages.isEmpty
@@ -295,7 +327,7 @@ class _PcChatScreenState extends State<PcChatScreen> {
                 isUser
                     ? scheme.primaryContainer
                     : scheme.surfaceContainerHighest.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Text(m.text, style: TextStyle(color: scheme.onSurface)),
         ),
@@ -321,7 +353,7 @@ class _PcChatScreenState extends State<PcChatScreen> {
               decoration: InputDecoration(
                 hintText: '输入消息…',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
                   borderSide: BorderSide(
                     color: scheme.outline.withValues(alpha: 0.3),
                   ),
