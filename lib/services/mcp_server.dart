@@ -46,6 +46,7 @@ class McpServer {
     _registerTool(LocationTool.definition, LocationTool.execute);
     _registerTool(SensorTool.definition, SensorTool.execute);
     _registerTool(SearchTool.definition, SearchTool.execute);
+    _registerTool(NewsTool.definition, NewsTool.execute);
     _registerTool(WeatherTool.definition, WeatherTool.execute);
     _registerTool(TimeTool.definition, TimeTool.execute);
     _registerTool(DiaryTool.definition, DiaryTool.execute);

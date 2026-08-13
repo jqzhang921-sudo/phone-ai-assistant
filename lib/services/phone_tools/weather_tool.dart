@@ -53,7 +53,7 @@ class WeatherTool {
     final days = rawDays.clamp(1, 7);
 
     try {
-      final place = await _geocode(location);
+      final place = await _resolvePlace(location);
       if (place == null) {
         return {
           'success': false,
@@ -86,6 +86,12 @@ class WeatherTool {
       return {
         'success': true,
         'location': place['label'],
+        // 只匹配到人口为 0 的小地名时说一声。地名库里同名的村镇一大堆，
+        // 静默返回一个村子的天气是最坏的情况——错了也没人看得出来。
+        if (place['weak'] == true)
+          'match_warning': '只匹配到「${place['label']}」这个小地名，'
+              '可能不是用户说的那个地方。回答时提一句你查的是哪儿，'
+              '让 TA 确认，或者请 TA 补上省市。',
         if (current != null)
           'current': {
             'time': current['time'],
@@ -103,38 +109,111 @@ class WeatherTool {
     }
   }
 
-  /// 地名 → 经纬度。取第一条，并拼一个「河南 郑州市」这样的可读标签，
-  /// 免得同名地方查错了没人发现。
-  static Future<Map<String, dynamic>?> _geocode(String name) async {
-    final uri = Uri.parse(_geoUrl).replace(queryParameters: {
-      'name': name,
-      'count': '1',
-      'language': 'zh',
-      'format': 'json',
-    });
-    final resp = await http.get(uri).timeout(_timeout);
-    if (resp.statusCode != 200) return null;
+  /// 定位地名。两件事：换写法重试，以及在候选里挑对的那个。
+  ///
+  /// 一、提示词里写了「只写地名」，模型照样会把「周口明天天气」整串传进来，
+  /// 接口对这种直接返回空。与其把错误抛回去让它重试一轮（用户看到的就是连着
+  /// 好几个「未成功」卡片），不如在这儿剥掉赘词再试。
+  ///
+  /// 二、更要命的是**选错地方还不报错**。实测「周口」返回的三条全是人口为 0
+  /// 的同名村（四川南充、广西玉林、河南洛阳），真正的河南周口市要搜「周口市」
+  /// 才出得来。直接取第一条的话，用户问周口天气，拿到的是某个村子的，而且
+  /// 没人看得出来错了。所以按行政级别 + 人口排序，弱的还会再补一次「市」。
+  static Future<Map<String, dynamic>?> _resolvePlace(String raw) async {
+    final cleaned = _stripNoise(raw);
+    final variants = <String>{
+      raw.trim(),
+      cleaned,
+      if (cleaned.isNotEmpty && !cleaned.endsWith('市')) '$cleaned市',
+    }..removeWhere((e) => e.isEmpty);
 
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    final results = data['results'] as List?;
-    if (results == null || results.isEmpty) return null;
+    final all = <Map<String, dynamic>>[];
+    for (final name in variants) {
+      all.addAll(await _geocodeAll(name));
+      // 已经有像样的候选（行政中心或有人口数据）就不用再多打一次接口
+      if (all.any(_isStrong)) break;
+    }
+    if (all.isEmpty) return null;
 
-    final r = results.first as Map<String, dynamic>;
+    all.sort((a, b) => _score(b).compareTo(_score(a)));
+    return _toPlace(all.first, weak: !_isStrong(all.first));
+  }
+
+  /// 地级市以上、或者有人口数据的，才算「像样的候选」。
+  ///
+  /// 注意不能把 PPLA3/PPLA4（乡镇级）也算进来：实测「周口」第一条是
+  /// 「四川 南充市 周口」，feature_code 恰好是 PPLA3、人口 0，放行的话就在
+  /// 第一轮停下了，永远试不到真正的「周口市」。
+  static bool _isStrong(Map<String, dynamic> r) {
+    final pop = (r['population'] as num?)?.toInt() ?? 0;
+    final fc = r['feature_code']?.toString() ?? '';
+    return pop > 0 || fc == 'PPLC' || fc == 'PPLA' || fc == 'PPLA2';
+  }
+
+  /// 排序分：先看行政级别，同级再比人口。
+  static int _score(Map<String, dynamic> r) {
+    const rank = {
+      'PPLC': 6, // 首都
+      'PPLA': 5, // 省会
+      'PPLA2': 4, // 地级市
+      'PPLA3': 3, // 县级
+      'PPLA4': 2,
+    };
+    final fc = r['feature_code']?.toString() ?? '';
+    final pop = (r['population'] as num?)?.toInt() ?? 0;
+    return (rank[fc] ?? 0) * 100000000 + pop;
+  }
+
+  /// 剥掉时间词和「天气/气温/预报」这类赘词，只留地名。
+  static String _stripNoise(String s) => s
+      .replaceAll(
+        RegExp(r'(今天|明天|后天|昨天|前天|今日|明日|未来几天|这几天|周末|'
+            r'天气|气温|温度|预报|情况|怎么样|如何|查一下|查询|的)'),
+        '',
+      )
+      .trim();
+
+  /// 拿一批候选回来，挑哪个交给上面的排序。
+  static Future<List<Map<String, dynamic>>> _geocodeAll(String name) async {
+    try {
+      final uri = Uri.parse(_geoUrl).replace(queryParameters: {
+        'name': name,
+        'count': '6',
+        'language': 'zh',
+        'format': 'json',
+      });
+      final resp = await http.get(uri).timeout(_timeout);
+      if (resp.statusCode != 200) return [];
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      return ((data['results'] as List?) ?? [])
+          .cast<Map<String, dynamic>>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 拼一个「中国 河南 周口市」这样的完整标签——同名地方选错了，
+  /// 至少让用户和模型都能一眼看出来。
+  static Map<String, dynamic> _toPlace(
+    Map<String, dynamic> r, {
+    required bool weak,
+  }) {
     final parts = [
       r['country'],
       r['admin1'],
       r['admin2'],
       r['name'],
     ].where((e) => e != null && e.toString().isNotEmpty).map((e) => '$e');
-    // 去掉重复的层级（「河南 郑州市 郑州」这种）
+    // 去掉重复的层级（「河南 周口市 周口市」这种）
     final seen = <String>{};
-    final label = parts.where(seen.add).join(' ');
 
     return {
       'latitude': r['latitude'],
       'longitude': r['longitude'],
       'timezone': r['timezone'],
-      'label': label,
+      'label': parts.where(seen.add).join(' '),
+      'weak': weak,
     };
   }
 

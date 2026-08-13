@@ -3,6 +3,26 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../../models/mcp_tool.dart';
 
+/// 两个都试：不同网络落到的 Bing 不一样。
+///
+/// 实测国内直连时 www 通、cn 连不上；换个运营商/地区可能正好相反。一个不行
+/// 就换另一个，比赌哪个能通靠谱。SearchTool 和 NewsTool 共用。
+const _kBingHosts = ['www.bing.com', 'cn.bing.com'];
+
+const _kBrowserHeaders = {
+  'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+  'Accept-Language': 'zh-CN,zh;q=0.9',
+};
+
+String _unescapeHtml(String s) => s
+    .replaceAll('&amp;', '&')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&nbsp;', ' ');
+
 class SearchTool {
   static const _storageKey = 'tavily_api_key';
   static const _endpoint = 'https://api.tavily.com/search';
@@ -59,12 +79,6 @@ class SearchTool {
         category: '网络工具',
       );
 
-  /// 两个都试：不同网络落到的 Bing 不一样。
-  ///
-  /// 实测国内直连时 www 通、cn 连不上；换个运营商/地区可能正好相反。一个不行
-  /// 就换另一个，比赌哪个能通靠谱。
-  static const _bingHosts = ['www.bing.com', 'cn.bing.com'];
-
   /// Bing 兜底搜索（无需 key）：抓搜索结果页解析标题/链接/摘要。
   ///
   /// ⚠️ 这条路查不了天气。Bing 的天气答案卡靠 JS 渲染或只发给完整浏览器会话，
@@ -73,19 +87,11 @@ class SearchTool {
   static Future<Map<String, dynamic>> _searchBing(String query) async {
     final failures = <String>[];
 
-    for (final host in _bingHosts) {
+    for (final host in _kBingHosts) {
       try {
         final url = Uri.parse(
             'https://$host/search?q=${Uri.encodeQueryComponent(query)}&setlang=zh-CN');
-        final resp = await http.get(
-          url,
-          headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-                    '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-          },
-        );
+        final resp = await http.get(url, headers: _kBrowserHeaders);
         if (resp.statusCode != 200) {
           failures.add('$host 返回 ${resp.statusCode}');
           continue;
@@ -287,4 +293,115 @@ class SearchTool {
       return {'success': false, 'error': '搜索网络错误: $e；Bing 兜底也失败: ${bing['error']}'};
     }
   }
+}
+
+/// 新闻单独一条路，抓 Bing 新闻频道。
+///
+/// 起因：用户问「DeepSeek 今天开源了 harness」，web_search 连搜三轮，回来的
+/// 全是 DeepSeek 官网那几页（两周前的），模型只好说没搜到——而那条新闻当时
+/// 已经发出来一小时了。
+///
+/// 普通搜索抓的是常青网页，排序看权重不看时间，天然搜不到「今天的事」。
+/// 新闻频道支持 sortbydate，而且卡片属性里直接带标题/链接/来源/相对时间，
+/// 比解析正文稳得多。
+class NewsTool {
+  static McpTool get definition => McpTool(
+        name: 'search_news',
+        description: '搜最新新闻，按发布时间倒序，每条带来源和「几分钟前 / 几小时前」。'
+            '用户问「最近有什么消息」「今天出了什么事」「XX 的新闻」，'
+            '或者话题明显是刚发生的事情时，用这个。'
+            '**web_search 抓的是常青网页、按权重排序，搜不到今天的新闻**——'
+            '只要问的是时效性的事，一律用 search_news，别用 web_search 硬试。',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'query': {
+              'type': 'string',
+              'description': '要搜的关键词，必填。写主体就行，'
+                  '例如「DeepSeek Harness」「杭州 台风」；'
+                  '不用加「新闻」「最新」这类词，这个工具本来就按时间排。',
+              'minLength': 1,
+            },
+          },
+          'required': ['query'],
+        },
+        category: '网络工具',
+      );
+
+  static Future<Map<String, dynamic>> execute(
+      Map<String, dynamic> args) async {
+    final query = (args['query']?.toString() ?? '').trim();
+    if (query.isEmpty) {
+      return {
+        'success': false,
+        'error': 'query 参数为空。请重新调用 search_news 并给出关键词，'
+            '例如 {"query": "DeepSeek Harness"}。',
+      };
+    }
+
+    final failures = <String>[];
+    for (final host in _kBingHosts) {
+      try {
+        // qft=sortbydate="1" 让 Bing 按时间倒序，而不是按权重
+        final url = Uri.parse('https://$host/news/search'
+            '?q=${Uri.encodeQueryComponent(query)}'
+            '&qft=sortbydate%3d%221%22&setlang=zh-CN');
+        final resp = await http.get(url, headers: _kBrowserHeaders);
+        if (resp.statusCode != 200) {
+          failures.add('$host 返回 ${resp.statusCode}');
+          continue;
+        }
+
+        final items = _parseNews(resp.body);
+        if (items.isNotEmpty) {
+          return {
+            'success': true,
+            'query': query,
+            'news': items,
+            'source': 'bing-news($host)',
+          };
+        }
+        failures.add('$host 没有解析到新闻卡片（${resp.body.length} 字符）');
+      } catch (e) {
+        failures.add('$host 网络错误: $e');
+      }
+    }
+    return {'success': false, 'error': '新闻搜索失败——${failures.join('；')}'};
+  }
+
+  /// 直接从卡片开标签的属性里取，不解析正文——属性比嵌套结构稳定得多。
+  static List<Map<String, dynamic>> _parseNews(String html) {
+    final out = <Map<String, dynamic>>[];
+    for (final m in _cardRe.allMatches(html)) {
+      if (out.length >= 8) break;
+      final tag = m.group(0)!;
+      final title = _attr(tag, 'data-title');
+      final url = _attr(tag, 'data-url') ?? _attr(tag, 'url');
+      if (title == null || title.isEmpty) continue;
+      if (url == null || url.isEmpty) continue;
+
+      // 相对时间在开标签之后的一小段里，截个窗口找就行
+      final end = (m.start + 1500).clamp(0, html.length);
+      final block = html.substring(m.start, end);
+
+      out.add({
+        'title': _unescapeHtml(title),
+        'url': url,
+        'source': _unescapeHtml(_attr(tag, 'data-author') ?? ''),
+        'published': _tsRe.firstMatch(block)?.group(1)?.trim() ?? '',
+      });
+    }
+    return out;
+  }
+
+  static String? _attr(String tag, String name) =>
+      RegExp('$name="([^"]*)"', caseSensitive: false).firstMatch(tag)?.group(1);
+
+  static final _cardRe =
+      RegExp(r'<div class="newscard[^"]*"[^>]*>', caseSensitive: false);
+
+  static final _tsRe = RegExp(
+    r'<span class="timestamp"[^>]*>([^<]*)</span>',
+    caseSensitive: false,
+  );
 }
