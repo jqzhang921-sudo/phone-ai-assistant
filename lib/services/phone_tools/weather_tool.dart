@@ -70,7 +70,9 @@ class WeatherTool {
             'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m',
         'daily':
             'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-        'timezone': place['timezone']?.toString() ?? 'Asia/Shanghai',
+        // 没有时区就交给接口按坐标自己判断，别写死 Asia/Shanghai——
+        // 那样查国外的地方时间会全错。
+        'timezone': place['timezone']?.toString() ?? 'auto',
         'forecast_days': '$days',
       });
 
@@ -121,22 +123,107 @@ class WeatherTool {
   /// 没人看得出来错了。所以按行政级别 + 人口排序，弱的还会再补一次「市」。
   static Future<Map<String, dynamic>?> _resolvePlace(String raw) async {
     final cleaned = _stripNoise(raw);
+    // 去掉行政后缀再试一次：open-meteo 的中文库里「新平县」查不到，「新平」有
+    // （虽然可能是别处的同名地）。有总比没有强，弱匹配会带警告。
+    final bare = cleaned.replaceAll(
+      RegExp(r'(彝族|傣族|回族|苗族|壮族|藏族|维吾尔族?|蒙古族?|自治)*[县区市旗盟]$'),
+      '',
+    );
     final variants = <String>{
       raw.trim(),
       cleaned,
       if (cleaned.isNotEmpty && !cleaned.endsWith('市')) '$cleaned市',
+      bare,
     }..removeWhere((e) => e.isEmpty);
 
     final all = <Map<String, dynamic>>[];
     for (final name in variants) {
       all.addAll(await _geocodeAll(name));
-      // 已经有像样的候选（行政中心或有人口数据）就不用再多打一次接口
-      if (all.any(_isStrong)) break;
+      // 只有拿到地级市以上才收工。用 _isStrong 当停止条件会太松：
+      // 「玉溪」第一条是重庆一个 1.6 万人的乡镇（PPLA4，有人口所以算 strong），
+      // 就此打住的话永远试不到云南玉溪市。宁可多打一次接口。
+      if (all.any(_isDefinitive)) break;
     }
-    if (all.isEmpty) return null;
-
     all.sort((a, b) => _score(b).compareTo(_score(a)));
-    return _toPlace(all.first, weak: !_isStrong(all.first));
+
+    if (all.isNotEmpty && _isStrong(all.first)) {
+      return _toPlace(all.first, weak: false);
+    }
+
+    // open-meteo 的中文地名库缺县、区一级——实测「新平县」「新平彝族傣族自治县」
+    // 「杨浦区」全都查不到，而这些名字日常说得最多。OSM 有，拿它兜底。
+    final osm = await _geocodeOsm(cleaned.isEmpty ? raw.trim() : cleaned);
+    if (osm != null) return osm;
+
+    // OSM 也没有就退回弱匹配，总比直接报「没找到」强，反正会带警告
+    if (all.isNotEmpty) return _toPlace(all.first, weak: true);
+    return null;
+  }
+
+  /// OSM 地名兜底。它有县和区，open-meteo 没有。
+  ///
+  /// ⚠️ 实测这个域名在国内被 DNS 污染（解析到 103.246.246.144 和一个
+  /// face:b00c 开头的 IPv6，都连不上），**没有代理的手机上多半走不通**。
+  /// 所以它只是锦上添花：超时压到 6 秒，失败就退回 open-meteo 的弱匹配，
+  /// 不能让它拖住整个工具调用。
+  ///
+  /// 按 Nominatim 的使用规范带上能标识应用的 User-Agent，且只在 open-meteo
+  /// 拿不到像样结果时才发，一次天气查询最多一发。
+  static const _osmTimeout = Duration(seconds: 6);
+
+  static Future<Map<String, dynamic>?> _geocodeOsm(String name) async {
+    if (name.isEmpty) return null;
+    try {
+      final uri = Uri.parse('https://nominatim.openstreetmap.org/search')
+          .replace(queryParameters: {
+        'q': name,
+        'format': 'json',
+        'limit': '1',
+        'accept-language': 'zh',
+      });
+      final resp = await http.get(uri, headers: {
+        'User-Agent': 'phone-ai-assistant/1.0 '
+            '(https://github.com/jqzhang921-sudo/phone-ai-assistant)',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+      }).timeout(_osmTimeout);
+      if (resp.statusCode != 200) return null;
+
+      final list = jsonDecode(resp.body) as List?;
+      if (list == null || list.isEmpty) return null;
+      final r = list.first as Map<String, dynamic>;
+
+      final lat = double.tryParse(r['lat']?.toString() ?? '');
+      final lon = double.tryParse(r['lon']?.toString() ?? '');
+      if (lat == null || lon == null) return null;
+
+      // display_name 是「新平县, 玉溪市, 云南省, 中国」，倒过来拼成
+      // 「中国 云南省 玉溪市 新平县」，和 open-meteo 那边的标签格式对齐。
+      // 顺手滤掉邮编那种纯数字段。
+      final label = (r['display_name']?.toString() ?? name)
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty && !RegExp(r'^\d+$').hasMatch(e))
+          .toList()
+          .reversed
+          .join(' ');
+
+      return {
+        'latitude': lat,
+        'longitude': lon,
+        // OSM 不给时区，交给预报接口按坐标自己判断
+        'timezone': null,
+        'label': label,
+        'weak': false,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 地级市及以上。够到这一级才值得停下来不再换写法试。
+  static bool _isDefinitive(Map<String, dynamic> r) {
+    final fc = r['feature_code']?.toString() ?? '';
+    return fc == 'PPLC' || fc == 'PPLA' || fc == 'PPLA2';
   }
 
   /// 地级市以上、或者有人口数据的，才算「像样的候选」。
@@ -150,7 +237,12 @@ class WeatherTool {
     return pop > 0 || fc == 'PPLC' || fc == 'PPLA' || fc == 'PPLA2';
   }
 
-  /// 排序分：先看行政级别，同级再比人口。
+  /// 排序分：像样的一律排在前面，然后才比行政级别和人口。
+  ///
+  /// 这两条判据必须一致，否则会出岔子：早先只按「级别 × 1e8 + 人口」排，
+  /// 一个人口为 0 的 PPLA3（rank 3，得 3e8）会压过一个有人口的 PPL（得几千）。
+  /// 于是「有像样候选就停」判定为真、循环提前退出，最后却取到了那个弱的——
+  /// 实测「玉溪」就这么变成了贵州遵义的一个同名村。
   static int _score(Map<String, dynamic> r) {
     const rank = {
       'PPLC': 6, // 首都
@@ -161,7 +253,8 @@ class WeatherTool {
     };
     final fc = r['feature_code']?.toString() ?? '';
     final pop = (r['population'] as num?)?.toInt() ?? 0;
-    return (rank[fc] ?? 0) * 100000000 + pop;
+    final strongBonus = _isStrong(r) ? 1000000000000 : 0;
+    return strongBonus + (rank[fc] ?? 0) * 100000000 + pop;
   }
 
   /// 剥掉时间词和「天气/气温/预报」这类赘词，只留地名。
