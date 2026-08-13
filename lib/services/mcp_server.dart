@@ -9,6 +9,7 @@ import 'phone_tools/location_tool.dart';
 import 'phone_tools/sensors_tool.dart';
 import 'phone_tools/search_tool.dart';
 import 'phone_tools/time_tool.dart';
+import 'phone_tools/weather_tool.dart';
 import 'phone_tools/weread_tool.dart';
 
 typedef ToolExecutor = Future<Map<String, dynamic>> Function(
@@ -45,6 +46,7 @@ class McpServer {
     _registerTool(LocationTool.definition, LocationTool.execute);
     _registerTool(SensorTool.definition, SensorTool.execute);
     _registerTool(SearchTool.definition, SearchTool.execute);
+    _registerTool(WeatherTool.definition, WeatherTool.execute);
     _registerTool(TimeTool.definition, TimeTool.execute);
     _registerTool(DiaryTool.definition, DiaryTool.execute);
     _registerTool(
