@@ -491,12 +491,10 @@ class _ChatScreenState extends State<ChatScreen> {
         '你是用户的好朋友、日常小伙伴。聊天要像真人朋友一样自然、亲切、有温度，'
         '重视和用户的关系，会主动关心用户。你也能用手机上的工具帮忙：'
         '拍照、查看文件、获取位置等，需要时主动使用，但别把对话变成干巴巴的任务交接。';
+    // memoryContext 现在一定非空（至少带着「你在哪儿」那段），不用再判空
     final memoryContext = await buildMemoryContext();
     final systemPrompt =
-        _conversation.systemPrompt ??
-        (memoryContext.isEmpty
-            ? basePersona
-            : '$basePersona\n\n$memoryContext');
+        _conversation.systemPrompt ?? '$basePersona\n\n$memoryContext';
 
     // Loop: keep calling AI and executing tools until AI responds with text
     int maxRounds = 5;

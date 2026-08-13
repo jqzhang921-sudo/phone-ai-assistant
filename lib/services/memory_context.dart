@@ -1,22 +1,135 @@
+import '../models/book.dart';
 import 'storage_service.dart';
 
-/// 读取最近几篇日记，拼成一段"近期记忆"文字，附加到聊天的 system prompt 里。
-/// 这样 AI 才真的"知道"自己写过日记、写了什么，而不是凭空声称记得。
-/// 没有日记时返回空字符串（调用方应跳过拼接）。
-Future<String> buildMemoryContext({int maxEntries = 3}) async {
-  final entries = await StorageService.listDiaryEntries();
-  if (entries.isEmpty) return '';
-
-  final recent = entries.take(maxEntries).toList();
+/// 拼给聊天 system prompt 的上下文块。
+///
+/// 原来这里只塞最近 3 篇日记，于是整个 App 是**单向流水**：对话喂给日记、
+/// 日记和收藏喂给信，但除了日记以外没有任何东西回流到对话。结果就是你刚写完
+/// 一封信、它还亲手回了，转头到聊天里它完全不知道有这回事——因为信不在注入
+/// 内容里；它连自己住在一个有信箱的 App 里都不知道。
+///
+/// 现在汇总四路：它住在哪儿、近期日记、被收藏的话、在读的书，外加通信状态。
+Future<String> buildMemoryContext({
+  int maxDiaries = 3,
+  int maxMusings = 5,
+  int maxBooks = 5,
+}) async {
   final buf = StringBuffer();
-  buf.writeln('## 你自己写下的近期日记（仅供你参考，不是要背诵给用户听）');
-  for (final e in recent) {
+
+  buf.writeln(_whereYouLive);
+
+  await _appendDiaries(buf, maxDiaries);
+  await _appendMusings(buf, maxMusings);
+  await _appendBooks(buf, maxBooks);
+  await _appendLetterStatus(buf);
+
+  buf.writeln(
+    '以上都是你自己那边的记录，供你参考，不用背诵给用户听，也不要主动罗列。'
+    '用户问起「记不记得」某件事时可以照上面如实回答；上面没有的就说不记得，'
+    '不要编造。',
+  );
+  return buf.toString();
+}
+
+/// 它不知道自己住在什么地方——问起写信会反问「是那个开源项目里的 letter 吗」。
+/// 这段成本极低，但直接决定它能不能接住用户提起的任何一个功能。
+const _whereYouLive = '''
+## 你在哪儿
+
+你住在用户手机上的这个 App 里。除了聊天，这里还有几个地方：
+
+- **书架**：用户收藏的书，可以单独就某本书或几本书和你讨论。
+- **日记**：你用自己的口吻记下的日记，一天可以有几篇。
+- **我想说 / 一隅**：首页那段你随口说的话；用户觉得值得留的会收藏进「一隅」。
+- **信**：你和用户互相写信的地方，在「栖息」页。信是慢的，和聊天不一样。
+
+用户提到这些名字时，指的就是这个 App 里的功能，不是别的产品。
+''';
+
+Future<void> _appendDiaries(StringBuffer buf, int max) async {
+  final entries = await StorageService.listDiaryEntries();
+  if (entries.isEmpty) return;
+  buf.writeln('## 你写下的近期日记');
+  for (final e in entries.take(max)) {
     buf.writeln('- ${e.dateKey}：${e.content}');
   }
   buf.writeln();
+}
+
+Future<void> _appendMusings(StringBuffer buf, int max) async {
+  final musings = await StorageService.listFavoritedMusings();
+  if (musings.isEmpty) return;
+  buf.writeln('## 你说过、被用户收藏的话');
+  buf.writeln('（用户主动留下来的，说明这些话对 TA 有分量）');
+  for (final m in musings.take(max)) {
+    buf.writeln('- ${m.dateKey}：${_clip(m.content, 80)}');
+  }
+  buf.writeln();
+}
+
+Future<void> _appendBooks(StringBuffer buf, int max) async {
+  final books = await StorageService.listBooks();
+  if (books.isEmpty) return;
+
+  final reading = books.where((b) => b.status == ReadingStatus.reading).toList();
+  final finished =
+      books.where((b) => b.status == ReadingStatus.done).toList()..sort((a, b) {
+        final at = a.finishedAt ?? a.createdAt;
+        final bt = b.finishedAt ?? b.createdAt;
+        return bt.compareTo(at);
+      });
+
+  if (reading.isEmpty && finished.isEmpty) return;
+
+  buf.writeln('## 用户的书');
+  if (reading.isNotEmpty) {
+    buf.writeln('在读：${reading.take(max).map(_title).join('、')}');
+  }
+  if (finished.isNotEmpty) {
+    buf.writeln('最近读完：${finished.take(3).map(_title).join('、')}');
+  }
+  buf.writeln();
+}
+
+/// 信只给**存在性**，不给内容。
+///
+/// 信的价值有一部分正来自它不在实时对话里——全文塞进聊天上下文，等于让聊天
+/// 把信吃掉：用户在信里慢慢写的话，它在聊天里随时能引用，那个「慢」和距离感
+/// 就没了。所以这里只让它知道「我们在通信、最后一封是谁写的、多久之前」，
+/// 具体说了什么，让用户自己提。
+Future<void> _appendLetterStatus(StringBuffer buf) async {
+  final letters = await StorageService.listLetters();
+  if (letters.isEmpty) return;
+
+  final latest = letters.first; // 已按时间倒序
+  final unread = letters.where((l) => l.isFromAi && !l.read).length;
+  final days = DateTime.now().difference(latest.createdAt).inDays;
+  final whenText =
+      days <= 0
+          ? '今天'
+          : days == 1
+          ? '昨天'
+          : '$days 天前';
+
+  buf.writeln('## 通信');
   buf.writeln(
-    '如果用户问起"记不记得"某件事、"有没有写日记"之类的问题，'
-    '可以参考上面的内容如实回答；上面没提到的事，就如实说不记得，不要编造。',
+    '你和用户之间已经有 ${letters.length} 封往来，'
+    '最近的一封是$whenText${latest.isFromAi ? '你写给 TA 的' : 'TA 写给你的'}。',
   );
-  return buf.toString();
+  if (unread > 0) {
+    buf.writeln('其中有 $unread 封你写的信 TA 还没拆开看。');
+  }
+  buf.writeln(
+    '**你只知道有这些信，不知道里面写了什么**——信是慢的，内容留在信里。'
+    '用户提起某封信时，顺着 TA 说的聊，不要假装记得原文，也不要凭空复述。',
+  );
+  buf.writeln();
+}
+
+String _title(Book b) =>
+    '《${b.title}》${b.author == null || b.author!.isEmpty ? '' : '（${b.author}）'}';
+
+String _clip(String s, int max) {
+  final oneLine = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return oneLine.length > max ? '${oneLine.substring(0, max)}…' : oneLine;
 }
