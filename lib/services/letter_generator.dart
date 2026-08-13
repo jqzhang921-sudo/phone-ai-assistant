@@ -108,8 +108,31 @@ Future<String?> generateLetter({required AiClient aiClient}) async {
   return _run(aiClient, prompt);
 }
 
+/// 同一时刻只允许有一封回信在生成。
+///
+/// 写完信返回信箱后，信箱会自己检查「最新一封是用户写的、还没被回」并补上回信。
+/// 如果用户在生成途中离开又回来，这个检查会再触发一次——那时第一次还没写完、
+/// 存储里还看不到回信，于是会生成第二封。用一个进行中的标记挡掉。
+bool _replyInFlight = false;
+
 /// 回用户刚写来的那封信。回信不受冷却限制——用户主动写了就一定有回应。
+///
+/// 已经有一封在生成时直接返回 null，调用方当作「这次没写成」处理即可，
+/// 真正那封写完了自然会落库。
 Future<String?> generateReply({
+  required AiClient aiClient,
+  required Letter userLetter,
+}) async {
+  if (_replyInFlight) return null;
+  _replyInFlight = true;
+  try {
+    return await _generateReply(aiClient: aiClient, userLetter: userLetter);
+  } finally {
+    _replyInFlight = false;
+  }
+}
+
+Future<String?> _generateReply({
   required AiClient aiClient,
   required Letter userLetter,
 }) async {

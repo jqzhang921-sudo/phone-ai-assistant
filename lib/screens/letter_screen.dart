@@ -142,10 +142,35 @@ class _LetterScreenState extends State<LetterScreen> {
               )
               : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                itemCount: _letters.length,
+                // 多出来的第一项是「它在写回信…」，写完就消失
+                itemCount: _letters.length + (_replying ? 1 : 0),
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
-                  final letter = _letters[index];
+                  if (_replying && index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '它在写回信…',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  final letter = _letters[index - (_replying ? 1 : 0)];
                   return _LetterCard(
                     letter: letter,
                     onTap: () => _openLetter(letter),
@@ -372,54 +397,32 @@ class _ComposeLetterScreenState extends State<_ComposeLetterScreen> {
     super.dispose();
   }
 
+  /// 只负责存下用户这封信，然后立刻返回。
+  ///
+  /// 回信交给信箱去生成——它本来就有「最新一封是用户写的、还没被回就补上」
+  /// 的逻辑，走同一条路。这样你写完就能走，不用被扣在这一页等模型。
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final aiClient = context.read<AiClientProvider>().currentClient;
-
     setState(() => _sending = true);
 
-    final userLetter = Letter(
-      id: _uuid.v4(),
-      author: LetterAuthor.user,
-      content: text,
-      replyToId: widget.replyTo?.id,
+    await StorageService.addLetter(
+      Letter(
+        id: _uuid.v4(),
+        author: LetterAuthor.user,
+        content: text,
+        replyToId: widget.replyTo?.id,
+      ),
     );
-    await StorageService.addLetter(userLetter);
 
-    // 信已经存下了，回信失败也不会丢——下次进信箱会自动补上。
-    if (aiClient != null) {
-      try {
-        final reply = await generateReply(
-          aiClient: aiClient,
-          userLetter: userLetter,
-        );
-        if (reply != null) {
-          await StorageService.addLetter(
-            Letter(
-              id: _uuid.v4(),
-              author: LetterAuthor.ai,
-              content: reply,
-              replyToId: userLetter.id,
-            ),
-          );
-        }
-      } catch (_) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('信已寄出，回信没写成——下次打开信箱会再试')),
-        );
-      }
-    }
-
+    if (!mounted) return;
     navigator.pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.replyTo == null ? '写一封信' : '回信'),
@@ -443,16 +446,6 @@ class _ComposeLetterScreenState extends State<_ComposeLetterScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_sending)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  '寄出了，它在写回信…',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
             Expanded(
               child: TextField(
                 controller: _controller,
