@@ -49,7 +49,10 @@ class MessageBubble extends StatelessWidget {
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           GestureDetector(
-            onLongPress: () => _showCopyMenu(context),
+            onLongPress: () {
+              HapticFeedback.mediumImpact();
+              _showCopyMenu(context);
+            },
             child: Row(
               mainAxisAlignment:
                   isUser ? MainAxisAlignment.end : MainAxisAlignment.start,

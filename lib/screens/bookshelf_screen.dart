@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -876,6 +877,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     if (result == null || !mounted) return;
 
     if (result['delete'] == true) {
+      // 确认删除之后才震，不是点开菜单就震
+      HapticFeedback.mediumImpact();
       if (book.coverPath != null) {
         try {
           await File(book.coverPath!).delete();

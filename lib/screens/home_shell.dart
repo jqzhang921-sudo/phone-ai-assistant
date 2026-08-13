@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
@@ -49,6 +50,8 @@ class _HomeShellState extends State<HomeShell> {
   /// 从别的页面 push 再 pop 回来时焦点被还给它，于是在「栖息」页也会莫名弹出键盘。
   void _selectIndex(int index) {
     if (!mounted || index == _index) return;
+    // 放在早退之后：重复点当前 Tab 不该震。
+    HapticFeedback.selectionClick();
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _index = index);
   }

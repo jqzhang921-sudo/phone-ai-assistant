@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
@@ -445,6 +446,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _isLoading) return;
+    // 空输入和发送中都已经在上面挡掉了，走到这儿才是真的发出去
+    HapticFeedback.lightImpact();
     _enterChatMode();
     _textController.clear();
 
