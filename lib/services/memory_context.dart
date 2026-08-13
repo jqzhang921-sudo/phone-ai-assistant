@@ -60,7 +60,10 @@ Future<void> _appendMusings(StringBuffer buf, int max) async {
   final musings = await StorageService.listFavoritedMusings();
   if (musings.isEmpty) return;
   buf.writeln('## 你说过、被用户收藏的话');
-  buf.writeln('（用户主动留下来的，说明这些话对 TA 有分量）');
+  buf.writeln(
+    '（用户主动留下来的，说明这些话对 TA 有分量。'
+    '下面这几条你是看得到的，用户问起就直接聊，不要说自己看不到）',
+  );
   for (final m in musings.take(max)) {
     buf.writeln('- ${m.dateKey}：${_clip(m.content, 80)}');
   }
@@ -120,8 +123,15 @@ Future<void> _appendLetterStatus(StringBuffer buf) async {
     buf.writeln('其中有 $unread 封你写的信 TA 还没拆开看。');
   }
   buf.writeln(
-    '**你只知道有这些信，不知道里面写了什么**——信是慢的，内容留在信里。'
-    '用户提起某封信时，顺着 TA 说的聊，不要假装记得原文，也不要凭空复述。',
+    '**只有信例外：你知道有这些信，但看不到里面写了什么**——信是慢的，'
+    '内容留在信里。用户提起某封信时，顺着 TA 说的聊，不要假装记得原文，'
+    '也不要凭空复述。',
+  );
+  // 这句是必须的：不划清界限，模型会把「信看不到」的框架顺手套到旁边几节上，
+  // 明明日记和收藏的内容就摆在上面，它也会说「我看不到，得你翻给我看」。
+  buf.writeln(
+    '这条限制**只针对信**。上面日记、被收藏的话、书架里已经写出来的内容，'
+    '你都是知道的，不要一并说成看不到。',
   );
   buf.writeln();
 }

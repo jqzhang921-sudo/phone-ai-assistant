@@ -1684,12 +1684,24 @@ class _ChatScreenState extends State<ChatScreen> {
                             _musingContent == null
                                 ? null
                                 : _toggleFavoriteMusing,
+                        // 收藏了就换成实心 + 满亮度，没收藏是描边 + 压暗。
+                        //
+                        // 原来三元的两个分支是同一个 PhosphorIconsRegular.star，
+                        // 两种状态长得一模一样，点了根本看不出有没有收上。
+                        //
+                        // 不给它上第二种彩色：这张卡是 inverseSurface 深底，
+                        // 白色实心已经够跳，而全 App 只留赤陶一个强调色。
                         child: Icon(
                           _musingFavorited
-                              ? PhosphorIconsRegular.star
+                              ? PhosphorIconsFill.star
                               : PhosphorIconsRegular.star,
                           size: 20,
-                          color: scheme.onInverseSurface,
+                          color:
+                              _musingFavorited
+                                  ? scheme.onInverseSurface
+                                  : scheme.onInverseSurface.withValues(
+                                    alpha: 0.55,
+                                  ),
                         ),
                       ),
                     ],
