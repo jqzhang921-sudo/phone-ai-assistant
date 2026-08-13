@@ -14,6 +14,7 @@ class AppSettings {
   static const _serverEnabledKey = 'server_enabled';
   static const _ttsProviderKey = 'tts_provider';
   static const _userNameKey = 'user_name';
+  static const _aiNameKey = 'ai_name';
   static const _ttsAutoPlayKey = 'tts_auto_play';
   static const _titleSerifKey = 'title_serif';
 
@@ -35,6 +36,9 @@ class AppSettings {
   String elevenLabsApiKey;
   String elevenLabsVoiceId;
   String userName;
+
+  /// AI 的名字。用在信的落款上，也会告诉它自己叫什么。空着就不落款。
+  String aiName;
   bool ttsAutoPlay;
   bool titleSerif; // true=衬线体(宋体)，false=黑体
 
@@ -48,6 +52,7 @@ class AppSettings {
     this.elevenLabsApiKey = '',
     this.elevenLabsVoiceId = defaultElevenLabsVoice,
     this.userName = '',
+    this.aiName = '',
     this.ttsAutoPlay = false,
     this.titleSerif = true,
   });
@@ -84,6 +89,7 @@ class AppSettings {
       elevenLabsVoiceId:
           prefs.getString(_elevenLabsVoiceKey) ?? defaultElevenLabsVoice,
       userName: prefs.getString(_userNameKey) ?? '',
+      aiName: prefs.getString(_aiNameKey) ?? '',
       ttsAutoPlay: prefs.getBool(_ttsAutoPlayKey) ?? false,
       titleSerif: prefs.getBool(_titleSerifKey) ?? true,
     );
@@ -105,6 +111,7 @@ class AppSettings {
 
     await prefs.setString(_elevenLabsVoiceKey, elevenLabsVoiceId);
     await prefs.setString(_userNameKey, userName);
+    await prefs.setString(_aiNameKey, aiName);
     await prefs.setBool(_ttsAutoPlayKey, ttsAutoPlay);
     await prefs.setBool(_titleSerifKey, titleSerif);
   }

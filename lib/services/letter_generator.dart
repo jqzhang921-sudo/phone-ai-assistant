@@ -1,3 +1,4 @@
+import '../config/settings.dart';
 import '../models/book.dart';
 import '../models/chat_message.dart';
 import '../models/letter.dart';
@@ -207,7 +208,7 @@ String _buildPrompt({
 - 长度你自己定。有话就多写，没什么可写就三五行，不要凑。
 - 你想怎么开头就怎么开头，包括怎么称呼 TA——但要用你平时叫 TA 的方式，
   不要套「亲爱的X」这类信件模板话。
-- 不要写标题和日期，界面会显示。
+- 不要写标题、日期和落款，界面会显示。
 - 不要用列表和分点，信就该像信。''');
 
   // 主动写的才给跳过的出口。人家专程写信来了，不能不回。
@@ -226,11 +227,15 @@ Future<String?> _run(AiClient aiClient, String prompt) async {
     ChatMessage(id: 'letter_gen', role: MessageRole.user, content: prompt),
   ];
 
+  final settings = await AppSettings.load();
+  final namePart =
+      settings.aiName.isEmpty ? '' : '你叫${settings.aiName}。';
+
   String content = '';
   await for (final event in aiClient.chat(
     messages,
     systemPrompt:
-        '你是用户长期陪伴的 AI 伙伴，正在给 TA 写一封信。'
+        '$namePart你是用户长期陪伴的 AI 伙伴，正在给 TA 写一封信。'
         '信不是即时对话——它慢、有距离、可以说些平时聊天里不会说的话。'
         '不要预设你和 TA 是什么关系，那由你们相处的方式决定。',
   )) {

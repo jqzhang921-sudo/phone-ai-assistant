@@ -281,60 +281,72 @@ class AiClient {
     // Accumulate raw argument JSON text per tool call index
     final Map<int, String> argBuffers = {};
 
-    await for (final chunk in response.stream.transform(utf8.decoder)) {
-      final lines = chunk.split('\n');
-      for (final line in lines) {
-        if (!line.startsWith('data: ')) continue;
-        final data = line.substring(6).trim();
-        if (data == '[DONE]') break;
+    // 必须走 LineSplitter，不能对每个分片各自 split('\n')。
+    //
+    // response.stream 给的是任意大小的字节块，不保证按行对齐。一行 SSE 被切在
+    // 两个分片里时，原来的写法两半都会丢：前半段 `data: {"delta":{"content":"想`
+    // jsonDecode 失败被下面的 catch 吞掉，后半段 `到了"}}]}` 不以 data: 开头被
+    // 跳过——于是这个 token 无声消失。表现是长回复里零星掉字（不是尾部截断），
+    // 回复越长分片越多、掉得越厉害。
+    //
+    // LineSplitter 自己维护跨分片的缓冲，只吐完整的行，末尾没有换行符的最后
+    // 一行也会补吐出来。
+    await for (final line in response.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
+      if (!line.startsWith('data: ')) continue;
+      final data = line.substring(6).trim();
+      if (data == '[DONE]') break;
 
-        try {
-          final json = jsonDecode(data);
-          final delta = json['choices']?[0]?['delta'];
+      try {
+        final json = jsonDecode(data);
+        final delta = json['choices']?[0]?['delta'];
 
-          if (delta == null) continue;
+        if (delta == null) continue;
 
-          if (delta['content'] != null) {
-            contentBuffer = (contentBuffer ?? '') + delta['content'];
-            yield AiStreamEvent.token(delta['content']);
-          }
+        if (delta['content'] != null) {
+          contentBuffer = (contentBuffer ?? '') + delta['content'];
+          yield AiStreamEvent.token(delta['content']);
+        }
 
-          if (delta['tool_calls'] != null) {
-            for (final tc in delta['tool_calls']) {
-              final idx = tc['index'] ?? 0;
+        if (delta['tool_calls'] != null) {
+          for (final tc in delta['tool_calls']) {
+            final idx = tc['index'] ?? 0;
 
-              while (toolCalls.length <= idx) {
-                toolCalls.add(ToolCallInfo(id: '', name: '', arguments: {}));
-              }
+            while (toolCalls.length <= idx) {
+              toolCalls.add(ToolCallInfo(id: '', name: '', arguments: {}));
+            }
 
-              if (tc['id'] != null) {
-                toolCalls[idx] = ToolCallInfo(
-                  id: tc['id'],
-                  name: toolCalls[idx].name,
-                  arguments: toolCalls[idx].arguments,
-                );
-              }
-              if (tc['function']?['name'] != null) {
-                toolCalls[idx] = ToolCallInfo(
-                  id: toolCalls[idx].id,
-                  name: tc['function']['name'],
-                  arguments: toolCalls[idx].arguments,
-                );
-              }
-              // 只累积，不在分片阶段解析——解析统一放到流结束后。
-              //
-              // 原来每来一个分片就试着 jsonDecode：只要某个中间状态恰好是合法
-              // JSON（比如先到一个 `{}`），arguments 就被锁成空对象；之后拼上
-              // 真内容，缓冲区变成 `{}{"query":"…"}` 永远解析失败，catch 静默吞掉，
-              // 于是发出去的调用里 query 一直是空的。
-              if (tc['function']?['arguments'] != null) {
-                argBuffers[idx] =
-                    (argBuffers[idx] ?? '') +
-                    tc['function']['arguments'].toString();
-              }
+            if (tc['id'] != null) {
+              toolCalls[idx] = ToolCallInfo(
+                id: tc['id'],
+                name: toolCalls[idx].name,
+                arguments: toolCalls[idx].arguments,
+              );
+            }
+            if (tc['function']?['name'] != null) {
+              toolCalls[idx] = ToolCallInfo(
+                id: toolCalls[idx].id,
+                name: tc['function']['name'],
+                arguments: toolCalls[idx].arguments,
+              );
+            }
+            // 只累积，不在分片阶段解析——解析统一放到流结束后。
+            //
+            // 原来每来一个分片就试着 jsonDecode：只要某个中间状态恰好是合法
+            // JSON（比如先到一个 `{}`），arguments 就被锁成空对象；之后拼上
+            // 真内容，缓冲区变成 `{}{"query":"…"}` 永远解析失败，catch 静默吞掉，
+            // 于是发出去的调用里 query 一直是空的。
+            if (tc['function']?['arguments'] != null) {
+              argBuffers[idx] =
+                  (argBuffers[idx] ?? '') +
+                  tc['function']['arguments'].toString();
             }
           }
-        } catch (_) {}
+        }
+      } catch (e) {
+        // 别再静默吞了——掉字的 bug 就是藏在这个 catch 后面躲了这么久。
+        debugPrint('[ai_client] SSE 行解析失败（$e）：$data');
       }
     }
 
@@ -490,36 +502,38 @@ class AiClient {
       String contentBuffer = '';
       final toolCalls = <ToolCallInfo>[];
 
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
-        final lines = chunk.split('\n');
-        for (final line in lines) {
-          if (!line.startsWith('data: ')) continue;
-          final data = line.substring(6);
-          if (data == '[DONE]') break;
+      // 同 _streamOpenAiResponse：按分片切行会丢掉跨分片的那一行。
+      await for (final line in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
+        if (!line.startsWith('data: ')) continue;
+        final data = line.substring(6);
+        if (data == '[DONE]') break;
 
-          try {
-            final json = jsonDecode(data);
-            final type = json['type'];
+        try {
+          final json = jsonDecode(data);
+          final type = json['type'];
 
-            if (type == 'content_block_delta') {
-              final delta = json['delta'];
-              if (delta?['type'] == 'text_delta') {
-                contentBuffer += delta['text'];
-                yield AiStreamEvent.token(delta['text']);
-              }
-            } else if (type == 'content_block_start') {
-              final block = json['content_block'];
-              if (block?['type'] == 'tool_use') {
-                toolCalls.add(
-                  ToolCallInfo(
-                    id: block['id'],
-                    name: block['name'],
-                    arguments: Map<String, dynamic>.from(block['input'] ?? {}),
-                  ),
-                );
-              }
-            } else if (type == 'message_delta') {}
-          } catch (_) {}
+          if (type == 'content_block_delta') {
+            final delta = json['delta'];
+            if (delta?['type'] == 'text_delta') {
+              contentBuffer += delta['text'];
+              yield AiStreamEvent.token(delta['text']);
+            }
+          } else if (type == 'content_block_start') {
+            final block = json['content_block'];
+            if (block?['type'] == 'tool_use') {
+              toolCalls.add(
+                ToolCallInfo(
+                  id: block['id'],
+                  name: block['name'],
+                  arguments: Map<String, dynamic>.from(block['input'] ?? {}),
+                ),
+              );
+            }
+          } else if (type == 'message_delta') {}
+        } catch (e) {
+          debugPrint('[ai_client] SSE 行解析失败（$e）：$data');
         }
       }
 

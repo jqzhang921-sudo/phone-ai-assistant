@@ -26,6 +26,7 @@ class _LetterScreenState extends State<LetterScreen> {
   bool _loading = true;
   bool _replying = false;
   String _userName = '';
+  String _aiName = '';
 
   @override
   void initState() {
@@ -40,6 +41,7 @@ class _LetterScreenState extends State<LetterScreen> {
     setState(() {
       _letters = letters;
       _userName = settings.userName;
+      _aiName = settings.aiName;
       _loading = false;
     });
     await _replyToPendingLetter();
@@ -89,7 +91,12 @@ class _LetterScreenState extends State<LetterScreen> {
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _LetterDetailScreen(letter: letter, userName: _userName),
+        builder:
+            (_) => _LetterDetailScreen(
+              letter: letter,
+              userName: _userName,
+              aiName: _aiName,
+            ),
       ),
     );
     await _load();
@@ -269,8 +276,16 @@ class _LetterCard extends StatelessWidget {
 class _LetterDetailScreen extends StatelessWidget {
   final Letter letter;
   final String userName;
+  final String aiName;
 
-  const _LetterDetailScreen({required this.letter, required this.userName});
+  const _LetterDetailScreen({
+    required this.letter,
+    required this.userName,
+    required this.aiName,
+  });
+
+  /// 落款：AI 的信用设置里的名字，你的信用你的名字。任一为空就不落款。
+  String get _signature => letter.isFromAi ? aiName : userName;
 
   @override
   Widget build(BuildContext context) {
@@ -331,13 +346,11 @@ class _LetterDetailScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            // AI 还没有名字，所以只给用户那边落款。要给它起名的话是设置里
-            // 加一个字段的事。
-            if (!letter.isFromAi && userName.isNotEmpty)
+            if (_signature.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  userName,
+                  _signature,
                   style: TextStyle(
                     fontFamily: 'NotoSerifSC',
                     fontSize: 15,

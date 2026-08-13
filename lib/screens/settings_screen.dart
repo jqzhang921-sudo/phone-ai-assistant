@@ -39,6 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _tavilyKeyController = TextEditingController();
   final _wereadKeyController = TextEditingController();
   final _userNameController = TextEditingController();
+  final _aiNameController = TextEditingController();
 
   // 密钥默认打码，点小眼睛才明文——设置页经常被截图/投屏。
   bool _showApiKey = false;
@@ -159,6 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _tavilyKeyController.dispose();
     _wereadKeyController.dispose();
     _userNameController.dispose();
+    _aiNameController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
     super.dispose();
@@ -172,6 +174,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _tavilyKeyController.text = await SearchTool.getStoredKey() ?? '';
     _wereadKeyController.text = await WereadService.getKey() ?? '';
     _userNameController.text = _settings.userName;
+    _aiNameController.text = _settings.aiName;
     _externalServers = await ExternalMcpServerService.load();
 
     // 只在首次打开时自动选中一个配置（避免每次保存后被跳走）
@@ -283,6 +286,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onSubmitted: (v) async {
               _settings.userName = v.trim();
+              await _settings.save();
+            },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _aiNameController,
+            decoration: InputDecoration(
+              hintText: 'TA 叫什么（留空则信里不落款）',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              suffixIcon: IconButton(
+                icon: const Icon(PhosphorIconsRegular.check, size: 20),
+                tooltip: '保存',
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  _settings.aiName = _aiNameController.text.trim();
+                  await _settings.save();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('已保存'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+              ),
+            ),
+            onSubmitted: (v) async {
+              _settings.aiName = v.trim();
               await _settings.save();
             },
           ),
