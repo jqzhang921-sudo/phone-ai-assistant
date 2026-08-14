@@ -55,6 +55,9 @@ test_mcp_server.js
 *.log
 flutter_*
 
+# 补丁文件（工作产物，应用后即删，不进仓库）
+*.patch
+
 # Project specific
 APP_DESIGN.md
 build.sh
