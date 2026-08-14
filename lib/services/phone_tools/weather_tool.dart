@@ -14,25 +14,38 @@ class WeatherTool {
 
   static McpTool get definition => McpTool(
         name: 'get_weather',
-        description: '查某个地方的天气（当前实况 + 未来几天预报）。'
+        description: '查天气（当前实况 + 未来几天预报）。'
             '问到天气、要不要带伞、明天冷不冷、适不适合出门这类事情时用这个，'
             '**不要用 web_search 查天气**——搜索引擎抓回来的是城市百科，查不到天气。'
-            '地名写中文即可，市、区、县都能查。',
+            '\n'
+            '两种用法，优先用坐标：\n'
+            '1. 用户问「我这儿」「附近」「今天要不要带伞」这类跟自身位置有关的，'
+            '**先调 get_location 拿到经纬度，再把 latitude / longitude 传进来**。'
+            '这样最准，也绕开了地名查不到的问题。\n'
+            '2. 用户明确说了地方，就传 location 地名。',
         inputSchema: {
           'type': 'object',
           'properties': {
             'location': {
               'type': 'string',
-              'description': '地名，必填。中文，例如「郑州」「上海杨浦」「新平」。'
-                  '不要写「明天」「天气」这类词，只写地名。',
-              'minLength': 1,
+              'description': '地名。中文，例如「郑州」「玉溪」。只写地名，'
+                  '不要带「明天」「天气」这类词。'
+                  '县和区经常查不到，查不到时改用它所在的市。',
+            },
+            'latitude': {
+              'type': 'number',
+              'description': '纬度。和 longitude 成对给，给了就直接用坐标查，'
+                  '不再查地名——从 get_location 拿到的坐标走这里。',
+            },
+            'longitude': {
+              'type': 'number',
+              'description': '经度，和 latitude 成对给。',
             },
             'days': {
               'type': 'integer',
               'description': '要几天的预报，含今天。默认 3，最多 7。',
             },
           },
-          'required': ['location'],
         },
         category: '网络工具',
       );
@@ -41,11 +54,15 @@ class WeatherTool {
       Map<String, dynamic> args) async {
     // 不用 as String?：模型偶尔会塞别的类型，硬转会抛。
     final location = (args['location']?.toString() ?? '').trim();
-    if (location.isEmpty) {
+    final lat = double.tryParse(args['latitude']?.toString() ?? '');
+    final lon = double.tryParse(args['longitude']?.toString() ?? '');
+    final hasCoords = lat != null && lon != null;
+
+    if (!hasCoords && location.isEmpty) {
       return {
         'success': false,
-        'error': 'location 参数为空。请重新调用 get_weather 并给出地名，'
-            '例如 {"location": "郑州"}。',
+        'error': '要么给 location（地名），要么给 latitude + longitude（坐标）。'
+            '要查用户当前所在位置的天气，先调 get_location 拿坐标，再传进来。',
       };
     }
 
@@ -53,13 +70,28 @@ class WeatherTool {
     final days = rawDays.clamp(1, 7);
 
     try {
-      final place = await _resolvePlace(location);
+      // 给了坐标就直接用，跳过地名解析这一整套。
+      //
+      // 这条路是最准的：地名库里县、区大面积缺失，而手机上的 GPS 本来就直接
+      // 给经纬度，open-meteo 的预报接口本来就按坐标查——中间那次「名字→坐标」
+      // 纯属自找麻烦。
+      final place = hasCoords
+          ? {
+              'latitude': lat,
+              'longitude': lon,
+              'timezone': null,
+              'label': '坐标 ${lat.toStringAsFixed(3)}, ${lon.toStringAsFixed(3)}',
+              'weak': false,
+            }
+          : await _resolvePlace(location);
+
       if (place == null) {
         return {
           'success': false,
           'error': '没找到「$location」这个地方。'
-              '换个写法试试——只写地名，别带「明天」「天气」这类词；'
-              '小地方可以写成「县名」或者上一级的市名。',
+              '如果是县或区，改用它所在的市试试；'
+              '如果问的是用户当前位置，先调 get_location 拿坐标再传 '
+              'latitude / longitude 过来，那条路不受地名库限制。',
         };
       }
 
