@@ -1803,82 +1803,96 @@ class _ChatScreenState extends State<ChatScreen> {
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        child: ListTile(
-          shape: RoundedRectangleBorder(
+      child: Dismissible(
+        key: ValueKey('conv_${conv.id}'),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(
+            color: scheme.errorContainer,
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          title: Text(
-            conv.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600),
+          child: Icon(
+            PhosphorIconsRegular.trash,
+            color: scheme.onErrorContainer,
           ),
-          leading:
-              conv.isPinned
-                  ? Icon(
-                    PhosphorIconsRegular.pushPin,
-                    size: 18,
-                    color: scheme.primary,
-                  )
-                  : null,
-          subtitle: Text(
-            '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
-            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: Icon(
+        ),
+        confirmDismiss: (_) async {
+          await StorageService.deleteConversation(conv.id);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('已移到回收站'),
+                behavior: SnackBarBehavior.floating,
+                action: SnackBarAction(
+                  label: '撤销',
+                  onPressed: () async {
+                    await StorageService.restoreConversation(conv.id);
+                    _loadConversations();
+                  },
+                ),
+              ),
+            );
+          }
+          return true;
+        },
+        onDismissed: (_) => _loadConversations(),
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.94),
+          elevation: 0,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            title: Text(
+              conv.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+            // 置顶：只保留一个状态入口，选中态用实心图标+背景色块，一眼能看出跟未置顶的区别
+            trailing: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () async {
+                await StorageService.setConversationPinned(
+                  conv.id,
+                  !conv.isPinned,
+                );
+                _loadConversations();
+              },
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration:
+                    conv.isPinned
+                        ? BoxDecoration(
+                          color: scheme.primaryContainer,
+                          shape: BoxShape.circle,
+                        )
+                        : null,
+                child: Icon(
                   conv.isPinned
-                      ? PhosphorIconsRegular.pushPin
+                      ? PhosphorIconsFill.pushPin
                       : PhosphorIconsRegular.pushPin,
                   size: 18,
                   color:
-                      conv.isPinned ? scheme.primary : scheme.onSurfaceVariant,
+                      conv.isPinned
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurfaceVariant.withValues(alpha: 0.5),
                 ),
-                tooltip: conv.isPinned ? '取消置顶' : '置顶',
-                onPressed: () async {
-                  await StorageService.setConversationPinned(
-                    conv.id,
-                    !conv.isPinned,
-                  );
-                  _loadConversations();
-                },
               ),
-              IconButton(
-                icon: const Icon(PhosphorIconsRegular.pencilSimple, size: 18),
-                tooltip: '重命名',
-                onPressed: () => _showRenameConversationDialog(conv),
-              ),
-              IconButton(
-                icon: const Icon(PhosphorIconsRegular.trash, size: 18),
-                onPressed: () async {
-                  await StorageService.deleteConversation(conv.id);
-                  _loadConversations();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('已移到回收站'),
-                        behavior: SnackBarBehavior.floating,
-                        action: SnackBarAction(
-                          label: '撤销',
-                          onPressed: () async {
-                            await StorageService.restoreConversation(conv.id);
-                            _loadConversations();
-                          },
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ],
+            ),
+            onTap: () => _switchConversation(conv),
+            onLongPress: () {
+              HapticFeedback.mediumImpact();
+              _showRenameConversationDialog(conv);
+            },
           ),
-          onTap: () => _switchConversation(conv),
         ),
       ),
     );

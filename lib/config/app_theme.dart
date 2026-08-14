@@ -48,7 +48,9 @@ class AppTheme {
       // 中性色只做「极轻微」的暖化：红蓝差控制在 3~6，肉眼几乎看不出偏色，
       // 但和暖调背景放在一起不会显得发灰发冷。刻意不做得更黄——
       // 满屏的黄会刺眼，这是背景预设已经踩过的坑。
-      surface: light ? const Color(0xFFF8F7F5) : const Color(0xFF161514),
+      // 背景比卡片明显深一档（暖灰而不是近乎纯白），让卡片能"浮"出来，
+      // 不是像之前那样跟背景糊在一起分不清层次。
+      surface: light ? const Color(0xFFEDEBE6) : const Color(0xFF161514),
       onSurface: light ? const Color(0xFF1A1917) : const Color(0xFFECEBE8),
       surfaceContainerLowest:
           light ? const Color(0xFFFFFFFF) : const Color(0xFF100F0E),
