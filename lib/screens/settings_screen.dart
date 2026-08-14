@@ -15,6 +15,7 @@ import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
 import '../services/tts_service.dart';
+import '../services/vision_service.dart';
 import '../services/weread_service.dart';
 import 'tools_screen.dart';
 import '../services/app_providers.dart';
@@ -37,6 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _elevenKeyController = TextEditingController();
   final _elevenVoiceController = TextEditingController();
   final _tavilyKeyController = TextEditingController();
+  final _visionKeyController = TextEditingController();
+  bool _visionSectionExpanded = false;
   final _wereadKeyController = TextEditingController();
   final _userNameController = TextEditingController();
   final _aiNameController = TextEditingController();
@@ -122,9 +125,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 4)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 4)),
+    );
   }
 
   /// 密钥输入框右侧的「显示/隐藏」按钮。
@@ -158,6 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _elevenKeyController.dispose();
     _elevenVoiceController.dispose();
     _tavilyKeyController.dispose();
+    _visionKeyController.dispose();
     _wereadKeyController.dispose();
     _userNameController.dispose();
     _aiNameController.dispose();
@@ -172,6 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _elevenKeyController.text = _settings.elevenLabsApiKey;
     _elevenVoiceController.text = _settings.elevenLabsVoiceId;
     _tavilyKeyController.text = await SearchTool.getStoredKey() ?? '';
+    _visionKeyController.text = await VisionService.getKey() ?? '';
     _wereadKeyController.text = await WereadService.getKey() ?? '';
     _userNameController.text = _settings.userName;
     _aiNameController.text = _settings.aiName;
@@ -363,6 +368,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: const Text('保存 API 配置'),
             ),
           ],
+
+          const SizedBox(height: 12),
+
+          // 视觉识图（可选）——默认收起，只有当前主模型不支持看图时才需要
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ListTile(
+                  leading: const Icon(PhosphorIconsRegular.eye),
+                  title: const Text('视觉识图（可选）'),
+                  subtitle: const Text(
+                    '如果你的对话模型本身就支持看图（比如 GPT-4o、Claude 等），不用配置这个',
+                  ),
+                  trailing: Icon(
+                    _visionSectionExpanded
+                        ? PhosphorIconsRegular.caretUp
+                        : PhosphorIconsRegular.caretDown,
+                  ),
+                  onTap: () {
+                    setState(
+                      () => _visionSectionExpanded = !_visionSectionExpanded,
+                    );
+                  },
+                ),
+                AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 200),
+                  crossFadeState:
+                      _visionSectionExpanded
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                  firstChild: const SizedBox.shrink(),
+                  secondChild: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '只有当前主模型不认识图片、需要单独一个能看图的模型来帮忙描述时，才需要填这里。',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _visionKeyController,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: '视觉模型 API Key',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            await VisionService.saveKey(
+                              _visionKeyController.text.trim(),
+                            );
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('已保存'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                          icon: const Icon(PhosphorIconsRegular.floppyDisk),
+                          label: const Text('保存视觉模型 Key'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
           const Divider(height: 40),
 
