@@ -51,7 +51,7 @@ Future<String?> generateTodayDiary({required AiClient aiClient}) async {
   String content = '';
   await for (final event in aiClient.chat(
     messages,
-    systemPrompt: '你是用户长期陪伴的AI伙伴，正在写一篇属于你自己的日记。',
+    systemPrompt: '你和用户长期相处，正在写一篇属于你自己的日记。不要给这段关系起名字。',
   )) {
     if (event.type == AiEventType.token) {
       content += event.text ?? '';

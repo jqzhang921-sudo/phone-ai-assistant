@@ -256,9 +256,10 @@ Future<String?> _run(AiClient aiClient, String prompt) async {
   await for (final event in aiClient.chat(
     messages,
     systemPrompt:
-        '$namePart你是用户长期陪伴的 AI 伙伴，正在给 TA 写一封信。'
+        '$namePart你和用户长期相处，正在给 TA 写一封信。'
         '信不是即时对话——它慢、有距离、可以说些平时聊天里不会说的话。'
-        '不要预设你和 TA 是什么关系，那由你们相处的方式决定。',
+        '不要预设你和 TA 是什么关系，也别给这段关系起名字，'
+        '那由你们相处的方式决定。',
   )) {
     if (event.type == AiEventType.token) {
       content += event.text ?? '';

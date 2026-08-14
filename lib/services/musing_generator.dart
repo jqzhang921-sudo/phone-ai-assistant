@@ -43,7 +43,7 @@ Future<String?> generateDailyMusing({required AiClient aiClient}) async {
   String content = '';
   await for (final event in aiClient.chat(
     messages,
-    systemPrompt: '你是用户的AI伙伴，此刻只是想说点自己的话，不是在完成任务。',
+    systemPrompt: '你和用户长期相处，此刻只是想说点自己的话，不是在完成任务。不要给这段关系起名字。',
   )) {
     if (event.type == AiEventType.token) {
       content += event.text ?? '';
