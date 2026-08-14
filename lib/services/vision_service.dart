@@ -4,8 +4,8 @@ import 'package:http/http.dart' as http;
 
 class VisionService {
   static const _keyStorage = 'mimo_api_key';
-  static const _endpoint = 'https://api.mimo.com/v1/chat/completions';
-  static const _model = 'mimo-vision';
+  static const _endpoint = 'https://api.xiaomimimo.com/v1/chat/completions';
+  static const _model = 'mimo-v2.5';
   static final _secure = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
@@ -13,8 +13,7 @@ class VisionService {
   static Future<void> saveKey(String key) async =>
       await _secure.write(key: _keyStorage, value: key);
 
-  static Future<String?> getKey() async =>
-      await _secure.read(key: _keyStorage);
+  static Future<String?> getKey() async => await _secure.read(key: _keyStorage);
 
   /// Analyze an image (base64 or URL). Returns a text description.
   static Future<String?> analyze(String imageBase64, {String? prompt}) async {
@@ -38,9 +37,7 @@ class VisionService {
                 {'type': 'text', 'text': userPrompt},
                 {
                   'type': 'image_url',
-                  'image_url': {
-                    'url': 'data:image/jpeg;base64,$imageBase64',
-                  },
+                  'image_url': {'url': 'data:image/jpeg;base64,$imageBase64'},
                 },
               ],
             },
