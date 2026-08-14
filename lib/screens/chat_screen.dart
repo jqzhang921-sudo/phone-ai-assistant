@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../config/app_tab.dart';
@@ -1799,99 +1800,134 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// 会话列表项：左滑出「置顶 / 重命名 / 删除」三个操作。
+  ///
+  /// 原来三个动作散在三处——左滑删除、右侧图钉按钮置顶、长按重命名，得记住
+  /// 哪个动作藏在哪个手势里。现在统一收进左滑面板，右侧只留一个图钉**状态**
+  /// 标记（不再可点），置顶与否主要靠整行底色区分。
   Widget _conversationTile(ThemeData theme, Conversation conv) {
     final scheme = theme.colorScheme;
+    final pinned = conv.isPinned;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Dismissible(
-        key: ValueKey('conv_${conv.id}'),
-        direction: DismissDirection.endToStart,
-        background: Container(
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 20),
-          decoration: BoxDecoration(
-            color: scheme.errorContainer,
-            borderRadius: BorderRadius.circular(AppRadius.md),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Slidable(
+          key: ValueKey('conv_${conv.id}'),
+          endActionPane: ActionPane(
+            motion: const DrawerMotion(),
+            // 三个按钮要放得下文字，比默认宽一些
+            extentRatio: 0.62,
+            children: [
+              SlidableAction(
+                onPressed: (_) async {
+                  HapticFeedback.selectionClick();
+                  await StorageService.setConversationPinned(conv.id, !pinned);
+                  _loadConversations();
+                },
+                backgroundColor: scheme.secondaryContainer,
+                foregroundColor: scheme.onSecondaryContainer,
+                icon:
+                    pinned
+                        ? PhosphorIconsFill.pushPin
+                        : PhosphorIconsRegular.pushPin,
+                label: pinned ? '取消置顶' : '置顶',
+              ),
+              SlidableAction(
+                onPressed: (_) {
+                  HapticFeedback.selectionClick();
+                  _showRenameConversationDialog(conv);
+                },
+                backgroundColor: scheme.surfaceContainerHighest,
+                foregroundColor: scheme.onSurface,
+                icon: PhosphorIconsRegular.pencilSimple,
+                label: '重命名',
+              ),
+              SlidableAction(
+                onPressed: (_) async {
+                  HapticFeedback.mediumImpact();
+                  await StorageService.deleteConversation(conv.id);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('已移到回收站'),
+                      behavior: SnackBarBehavior.floating,
+                      action: SnackBarAction(
+                        label: '撤销',
+                        onPressed: () async {
+                          await StorageService.restoreConversation(conv.id);
+                          _loadConversations();
+                        },
+                      ),
+                    ),
+                  );
+                  _loadConversations();
+                },
+                backgroundColor: scheme.errorContainer,
+                foregroundColor: scheme.onErrorContainer,
+                icon: PhosphorIconsRegular.trash,
+                label: '删除',
+              ),
+            ],
           ),
-          child: Icon(
-            PhosphorIconsRegular.trash,
-            color: scheme.onErrorContainer,
-          ),
-        ),
-        confirmDismiss: (_) async {
-          await StorageService.deleteConversation(conv.id);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('已移到回收站'),
-                behavior: SnackBarBehavior.floating,
-                action: SnackBarAction(
-                  label: '撤销',
-                  onPressed: () async {
-                    await StorageService.restoreConversation(conv.id);
-                    _loadConversations();
-                  },
+          child: Material(
+            // 置顶的压深一档并描一道边，在一列白卡片里一眼能挑出来
+            color:
+                pinned
+                    ? scheme.primaryContainer.withValues(alpha: 0.92)
+                    : Colors.white.withValues(alpha: 0.94),
+            elevation: 0,
+            shape:
+                pinned
+                    ? RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      side: BorderSide(
+                        color: scheme.primary.withValues(alpha: 0.35),
+                      ),
+                    )
+                    : null,
+            borderRadius: pinned ? null : BorderRadius.circular(AppRadius.md),
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              title: Text(
+                conv.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: pinned ? scheme.onPrimaryContainer : null,
                 ),
               ),
-            );
-          }
-          return true;
-        },
-        onDismissed: (_) => _loadConversations(),
-        child: Material(
-          color: Colors.white.withValues(alpha: 0.94),
-          elevation: 0,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          child: ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            title: Text(
-              conv.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-            ),
-            // 置顶：只保留一个状态入口，选中态用实心图标+背景色块，一眼能看出跟未置顶的区别
-            trailing: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () async {
-                await StorageService.setConversationPinned(
-                  conv.id,
-                  !conv.isPinned,
-                );
-                _loadConversations();
-              },
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration:
-                    conv.isPinned
-                        ? BoxDecoration(
-                          color: scheme.primaryContainer,
-                          shape: BoxShape.circle,
-                        )
-                        : null,
-                child: Icon(
-                  conv.isPinned
-                      ? PhosphorIconsFill.pushPin
-                      : PhosphorIconsRegular.pushPin,
-                  size: 18,
+              subtitle: Text(
+                '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
+                style: TextStyle(
+                  fontSize: 11,
                   color:
-                      conv.isPinned
-                          ? scheme.onPrimaryContainer
-                          : scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      pinned
+                          ? scheme.onPrimaryContainer.withValues(alpha: 0.75)
+                          : scheme.onSurfaceVariant,
                 ),
               ),
+              // 只做状态标记，操作都在左滑里，所以不再可点
+              trailing:
+                  pinned
+                      ? Icon(
+                        PhosphorIconsFill.pushPin,
+                        size: 16,
+                        color: scheme.onPrimaryContainer.withValues(
+                          alpha: 0.8,
+                        ),
+                      )
+                      : null,
+              onTap: () => _switchConversation(conv),
+              onLongPress: () {
+                HapticFeedback.mediumImpact();
+                _showRenameConversationDialog(conv);
+              },
             ),
-            onTap: () => _switchConversation(conv),
-            onLongPress: () {
-              HapticFeedback.mediumImpact();
-              _showRenameConversationDialog(conv);
-            },
           ),
         ),
       ),

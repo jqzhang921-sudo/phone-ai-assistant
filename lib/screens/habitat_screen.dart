@@ -32,6 +32,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
   int _letterCount = 0;
   int _unreadLetters = 0;
   bool _writingLetter = false;
+  String _letterStatus = '';
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final diaries = await StorageService.listDiaryEntries();
     final musings = await StorageService.listFavoritedMusings();
     final letters = await StorageService.listLetters();
+    final letterStatus = await letterTriggerStatus();
     final now = DateTime.now();
     var today = 0;
     var total = 0;
@@ -63,6 +65,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _musingCount = musings.length;
         _letterCount = letters.length;
         _unreadLetters = letters.where((l) => l.isFromAi && !l.read).length;
+        _letterStatus = letterStatus;
       });
     }
     if (!mounted) return;
@@ -178,8 +181,8 @@ class _HabitatScreenState extends State<HabitatScreen> {
                       '不着急，什么时候看都行。',
                     ]
                     : _letterCount > 0
-                    ? ['往来 $_letterCount 封。', '想说点什么的话，也可以写给它。']
-                    : ['还没有信。', '聊得多了、日记攒下了、书读完了，它会写一封过来。'],
+                    ? ['往来 $_letterCount 封。', _letterStatus]
+                    : ['还没有信。', _letterStatus],
             actionLabel: '去信箱',
             onAction: () async {
               await Navigator.of(context).push(

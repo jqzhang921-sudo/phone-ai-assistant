@@ -92,6 +92,27 @@ Future<bool> shouldWriteLetter() async {
   return material.reachesThreshold;
 }
 
+/// 现在卡在哪一步，用一句话说清楚，显示在栖息页的卡片上。
+///
+/// 触发条件全埋在代码里，用户等了几天没等到信，也不知道是素材不够还是在冷却，
+/// 只能猜「是不是坏了」。把状态摆出来，机制才是可理解的。
+Future<String> letterTriggerStatus() async {
+  final lastAttempt = await StorageService.getLastLetterAttempt();
+  if (lastAttempt != null) {
+    final left = _kCooldown - DateTime.now().difference(lastAttempt);
+    if (!left.isNegative) {
+      final days = left.inDays;
+      return days >= 1 ? '再过 $days 天它可能会写一封' : '它随时可能写一封';
+    }
+  }
+
+  final material = await collectMaterial(since: lastAttempt);
+  final need = material.sourceCount >= 2 ? _kThresholdMixed : _kThresholdSingle;
+  final gap = need - material.score;
+  if (gap <= 0) return '素材够了，它随时可能写一封';
+  return '再攒 $gap 点素材它可能会写（写日记、收藏「我想说」各算 1 点，读完一本书算 2 点）';
+}
+
 /// AI 主动写一封信。返回 null 表示它决定这次不写（素材太薄）。
 ///
 /// 调用方无论拿到什么都要记一次 [StorageService.setLastLetterAttempt]。
