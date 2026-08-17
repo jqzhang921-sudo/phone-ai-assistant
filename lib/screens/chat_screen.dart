@@ -24,6 +24,7 @@ import '../services/tts_service.dart';
 import '../services/memory_context.dart';
 import '../models/musing_entry.dart';
 import '../services/musing_generator.dart';
+import '../services/history_compactor.dart';
 import '../search/history_search_delegate.dart';
 import '../search/search_result_model.dart';
 import '../widgets/chat_message_item.dart';
@@ -527,6 +528,18 @@ class _ChatScreenState extends State<ChatScreen> {
     final memoryContext = await buildMemoryContext();
     final systemPrompt = _conversation.systemPrompt ?? basePersona;
 
+    // 聊得够久了就把早期消息折成摘要。
+    //
+    // 用不带工具的 aiClient：摘要任务不需要工具，带上只会多烧 token，还可能
+    // 让模型在整理记录时莫名其妙去调用工具。
+    if (needsCompaction(_conversation)) {
+      final compacted = await compactHistory(
+        conv: _conversation,
+        aiClient: aiClient,
+      );
+      if (compacted) _saveConversation();
+    }
+
     // Loop: keep calling AI and executing tools until AI responds with text
     int maxRounds = 5;
     while (maxRounds > 0) {
@@ -535,10 +548,13 @@ class _ChatScreenState extends State<ChatScreen> {
       String? fullResponse;
 
       try {
+        // 切片放在循环里算，不能提到外面：工具轮次会往 messages 末尾追加，
+        // 提到外面就是个过期快照，后面几轮发出去的历史会缺东西。
         await for (final event in clientWithTools.chat(
-          _conversation.messages,
+          _visibleHistory(),
           systemPrompt: systemPrompt,
           memoryContext: memoryContext,
+          historySummary: _conversation.summary,
         )) {
           switch (event.type) {
             case AiEventType.token:
@@ -630,6 +646,15 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _isLoading = false);
     _scrollToBottom();
     _saveConversation();
+  }
+
+  /// 去掉已被摘要覆盖的那段，只发剩下的原文。
+  List<ChatMessage> _visibleHistory() {
+    final n = _conversation.summarizedCount;
+    if (n <= 0 || n >= _conversation.messages.length) {
+      return _conversation.messages;
+    }
+    return _conversation.messages.sublist(n);
   }
 
   static const _toolTimeout = Duration(seconds: 60);

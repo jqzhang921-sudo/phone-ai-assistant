@@ -90,6 +90,7 @@ class AiClient {
     List<ChatMessage> messages, {
     String? systemPrompt,
     String? memoryContext,
+    String? historySummary,
   }) {
     final safeMessages = _sanitizeToolCallHistory(messages);
     switch (config.provider) {
@@ -98,20 +99,37 @@ class AiClient {
           safeMessages,
           systemPrompt: systemPrompt,
           memoryContext: memoryContext,
+          historySummary: historySummary,
         );
       case 'anthropic':
         return _anthropicChat(
           safeMessages,
           systemPrompt: systemPrompt,
           memoryContext: memoryContext,
+          historySummary: historySummary,
         );
       default:
         return _openaiChat(
           safeMessages,
           systemPrompt: systemPrompt,
           memoryContext: memoryContext,
+          historySummary: historySummary,
         );
     }
+  }
+
+  /// 摘要拼进 system 块，而不是像记忆那样挂到尾部。
+  ///
+  /// 两者的易变程度不同：记忆几乎天天变，所以必须躲开缓存前缀；摘要只在每次
+  /// 压缩时变一次（几十条消息才一次），放在前面反而更合理——它代表的就是被
+  /// 折叠掉的那段最早的历史，位置上本来就该在那儿。
+  static String _buildSystemContent(String? systemPrompt, String? summary) {
+    final buf = StringBuffer('$systemPrompt\n\n$_timeMetaInstruction');
+    if (summary != null && summary.trim().isNotEmpty) {
+      buf.write('\n\n## 更早对话的摘要\n（这段聊得比较久了，早期原文已折叠成下面这段。'
+          '需要时可以当作你记得的事，但别复述给用户听。）\n$summary');
+    }
+    return buf.toString();
   }
 
   /// 把记忆挂到**最后一条用户消息**上，而不是拼进 system。
@@ -156,6 +174,7 @@ class AiClient {
     List<ChatMessage> messages, {
     String? systemPrompt,
     String? memoryContext,
+    String? historySummary,
   }) async* {
     final endpoint = config.endpoint ?? 'https://api.openai.com/v1';
     final model = config.model ?? 'gpt-4o';
@@ -165,7 +184,7 @@ class AiClient {
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
       apiMessages.add({
         'role': 'system',
-        'content': '$systemPrompt\n\n$_timeMetaInstruction',
+        'content': _buildSystemContent(systemPrompt, historySummary),
       });
     }
 
@@ -470,6 +489,7 @@ class AiClient {
     List<ChatMessage> messages, {
     String? systemPrompt,
     String? memoryContext,
+    String? historySummary,
   }) async* {
     final endpoint = config.endpoint ?? 'https://api.anthropic.com/v1';
     final model = config.model ?? 'claude-sonnet-5';
@@ -539,7 +559,7 @@ class AiClient {
     };
 
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      body['system'] = '$systemPrompt\n\n$_timeMetaInstruction';
+      body['system'] = _buildSystemContent(systemPrompt, historySummary);
     }
 
     if (tools != null && tools!.isNotEmpty) {
