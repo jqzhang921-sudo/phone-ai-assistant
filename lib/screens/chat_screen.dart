@@ -1267,13 +1267,21 @@ class _ChatScreenState extends State<ChatScreen> {
                   _chatMode
                       ? (_conversation.messages.isEmpty
                           ? _buildEmptyChatHint(theme)
-                          : ListView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(12),
-                            itemCount: _conversation.messages.length,
-                            itemBuilder: (context, index) {
-                              final msg = _conversation.messages[index];
-                              return chatMessageItem(msg);
+                          : Builder(
+                            builder: (context) {
+                              // 连续的工具消息折成一组，不能在 itemBuilder 里
+                              // 逐条判断——单条消息看不出后面还有没有
+                              final items = groupChatItems(
+                                _conversation.messages,
+                              );
+                              return ListView.builder(
+                                controller: _scrollController,
+                                padding: const EdgeInsets.all(12),
+                                itemCount: items.length,
+                                itemBuilder:
+                                    (context, index) =>
+                                        chatDisplayItem(items[index]),
+                              );
                             },
                           ))
                       : _buildHome(theme),

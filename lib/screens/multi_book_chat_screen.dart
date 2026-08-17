@@ -478,13 +478,17 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
               child:
                   _conversation.messages.isEmpty
                       ? _buildEmptyState(theme)
-                      : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _conversation.messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = _conversation.messages[index];
-                          return chatMessageItem(msg);
+                      : Builder(
+                        builder: (context) {
+                          final items = groupChatItems(_conversation.messages);
+                          return ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: items.length,
+                            itemBuilder:
+                                (context, index) =>
+                                    chatDisplayItem(items[index]),
+                          );
                         },
                       ),
             ),
