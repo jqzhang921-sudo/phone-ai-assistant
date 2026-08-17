@@ -81,44 +81,73 @@ Future<LetterMaterial> collectMaterial({DateTime? since}) async {
   );
 }
 
+/// 素材从**上一封真正写出来的信**算起，不是从上次尝试算起。
+///
+/// 原来用的是 lastAttempt，有个隐蔽的后果：模型判断素材太薄、回了 SKIP 的那次
+/// 也会记时间戳，于是那批素材从此不再计入——攒够 → 尝试 → 跳过 → 素材清零 →
+/// 冷却 5 天 → 从头再攒。聊得少的人基本注定永远攒不够，而且完全看不出为什么。
+///
+/// 冷却仍然按 lastAttempt 算（不然跳过之后会立刻重试，白烧 token）。两件事
+/// 分开计时：素材看「写出来了没」，冷却看「试过了没」。
+Future<DateTime?> _materialSince() async {
+  final letters = await StorageService.listLetters();
+  // listLetters 已按时间倒序
+  for (final l in letters) {
+    if (l.isFromAi) return l.createdAt;
+  }
+  return null;
+}
+
+/// 还差多少分。<= 0 表示够了。
+Future<int> _materialGap() async {
+  final material = await collectMaterial(since: await _materialSince());
+  final need = material.sourceCount >= 2 ? _kThresholdMixed : _kThresholdSingle;
+  return need - material.score;
+}
+
+/// 冷却还剩多久。null 表示不在冷却中。
+Future<Duration?> _cooldownLeft() async {
+  final lastAttempt = await StorageService.getLastLetterAttempt();
+  if (lastAttempt == null) return null;
+  final left = _kCooldown - DateTime.now().difference(lastAttempt);
+  return left.isNegative ? null : left;
+}
+
 /// 现在该不该主动写一封？素材够 + 过了冷却期。
 Future<bool> shouldWriteLetter() async {
-  final lastAttempt = await StorageService.getLastLetterAttempt();
-  if (lastAttempt != null &&
-      DateTime.now().difference(lastAttempt) < _kCooldown) {
-    return false;
-  }
-  final material = await collectMaterial(since: lastAttempt);
-  return material.reachesThreshold;
+  if (await _cooldownLeft() != null) return false;
+  return await _materialGap() <= 0;
 }
 
 /// 现在卡在哪一步，用一句话说清楚，显示在栖息页的卡片上。
 ///
 /// 触发条件全埋在代码里，用户等了几天没等到信，也不知道是素材不够还是在冷却，
 /// 只能猜「是不是坏了」。把状态摆出来，机制才是可理解的。
+///
+/// 两个条件都要看。原来一进冷却分支就直接返回，剩不到一天时说「它随时可能写
+/// 一封」——素材够不够压根没查，这话经常是假的。
 Future<String> letterTriggerStatus() async {
-  final lastAttempt = await StorageService.getLastLetterAttempt();
-  if (lastAttempt != null) {
-    final left = _kCooldown - DateTime.now().difference(lastAttempt);
-    if (!left.isNegative) {
-      final days = left.inDays;
-      return days >= 1 ? '再过 $days 天它可能会写一封' : '它随时可能写一封';
-    }
-  }
+  final gap = await _materialGap();
+  final cooling = await _cooldownLeft();
 
-  final material = await collectMaterial(since: lastAttempt);
-  final need = material.sourceCount >= 2 ? _kThresholdMixed : _kThresholdSingle;
-  final gap = need - material.score;
-  if (gap <= 0) return '素材够了，它随时可能写一封';
-  return '再攒 $gap 点素材它可能会写（写日记、收藏「我想说」各算 1 点，读完一本书算 2 点）';
+  const howTo = '（写日记、收藏「我想说」各算 1 点，读完一本书算 2 点）';
+
+  if (gap > 0) {
+    final tail = cooling == null ? '' : '；另外还有 ${cooling.inDays + 1} 天冷却';
+    return '再攒 $gap 点素材它可能会写$howTo$tail';
+  }
+  if (cooling != null) {
+    final days = cooling.inDays;
+    return days >= 1 ? '素材够了，再过 $days 天它就可能写' : '素材够了，随时可能写一封';
+  }
+  return '素材够了，随时可能写一封';
 }
 
 /// AI 主动写一封信。返回 null 表示它决定这次不写（素材太薄）。
 ///
 /// 调用方无论拿到什么都要记一次 [StorageService.setLastLetterAttempt]。
 Future<String?> generateLetter({required AiClient aiClient}) async {
-  final lastAttempt = await StorageService.getLastLetterAttempt();
-  final material = await collectMaterial(since: lastAttempt);
+  final material = await collectMaterial(since: await _materialSince());
   if (material.isEmpty) return null;
 
   final history = await _recentExchange();

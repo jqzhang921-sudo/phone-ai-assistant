@@ -111,8 +111,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _snack(
           '导入完成：对话 ${summary.conversations}、'
           '讨论 ${summary.bookConversations}、'
-          '日记 ${summary.diaryEntries}、一隅 ${summary.musings}。'
-          '密钥需要重新填。',
+          '日记 ${summary.diaryEntries}、一隅 ${summary.musings}、'
+          '书 ${summary.books}、信 ${summary.letters}。'
+          '封面图和密钥需要重新加。',
         );
       }
     } on FormatException catch (e) {

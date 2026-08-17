@@ -12,6 +12,7 @@ class ImportSummary {
   int diaryEntries = 0;
   int musings = 0;
   int letters = 0;
+  int books = 0;
   int otherKeys = 0;
 
   int get total =>
@@ -20,7 +21,8 @@ class ImportSummary {
       bookConversations +
       diaryEntries +
       musings +
-      letters;
+      letters +
+      books;
 }
 
 /// 全 App 数据的导出 / 导入。
@@ -40,6 +42,12 @@ class BackupService {
     'today_musing',
     'letters',
     'last_letter_attempt_at',
+    // 书架的**书目**。只是 JSON（书名/作者/状态/日期/封面路径），39 本约 8KB。
+    // 封面图片本身仍然不导——那是 book_covers/ 下的二进制文件，转 base64 会让
+    // 备份膨胀好几倍，这个判断没变。这里补的是书目本身：之前每本书的讨论历史
+    // （discussions_ 前缀）都在备份里，书却不在，恢复出来是一堆无主的讨论。
+    'bookshelf_books',
+    'bookshelf_ignored_weread_ids',
     'chat_background_preset',
     'api_providers',
   ];
@@ -57,6 +65,7 @@ class BackupService {
     'diary_entries',
     'favorited_musings',
     'letters',
+    'bookshelf_books',
   ];
 
   static bool _isAllowed(String key) {
@@ -217,6 +226,8 @@ class BackupService {
             summary.diaryEntries += added;
           } else if (key == 'letters') {
             summary.letters += added;
+          } else if (key == 'bookshelf_books') {
+            summary.books += added;
           } else {
             summary.musings += added;
           }
