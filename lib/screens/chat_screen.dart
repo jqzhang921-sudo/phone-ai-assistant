@@ -519,10 +519,13 @@ class _ChatScreenState extends State<ChatScreen> {
         '你能用手机上的工具帮忙：拍照、查文件、定位、查天气、找新闻、'
         '翻 TA 在微信读书的划线等等。需要时直接用，别把对话变成任务交接。\n'
         '只有内容本身复杂、或者 TA 明确要你展开时才详细讲，默认从简。';
-    // memoryContext 现在一定非空（至少带着「你在哪儿」那段），不用再判空
+    // 人设和记忆分开传，别在这儿拼成一个字符串。
+    //
+    // 人设长期不变、记忆几乎天天变，拼在一起会让整个 system 块每天都变一次；
+    // 而它排在最前面，一变就把后面几千 token 的对话历史全部挤出 prompt 缓存。
+    // ai_client 会把记忆挂到最后一条用户消息上，详见 _attachMemory。
     final memoryContext = await buildMemoryContext();
-    final systemPrompt =
-        _conversation.systemPrompt ?? '$basePersona\n\n$memoryContext';
+    final systemPrompt = _conversation.systemPrompt ?? basePersona;
 
     // Loop: keep calling AI and executing tools until AI responds with text
     int maxRounds = 5;
@@ -535,6 +538,7 @@ class _ChatScreenState extends State<ChatScreen> {
         await for (final event in clientWithTools.chat(
           _conversation.messages,
           systemPrompt: systemPrompt,
+          memoryContext: memoryContext,
         )) {
           switch (event.type) {
             case AiEventType.token:

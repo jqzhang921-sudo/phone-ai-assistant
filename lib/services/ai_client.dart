@@ -84,24 +84,78 @@ class AiClient {
 
   AiClient({required this.config, this.tools});
 
+  /// [systemPrompt] 是**长期不变**的人设，[memoryContext] 是每天都在变的记忆。
+  /// 两者必须分开传，别在调用方就拼成一个字符串——原因见 [_attachMemory]。
   Stream<AiStreamEvent> chat(
     List<ChatMessage> messages, {
     String? systemPrompt,
+    String? memoryContext,
   }) {
     final safeMessages = _sanitizeToolCallHistory(messages);
     switch (config.provider) {
       case 'openai':
-        return _openaiChat(safeMessages, systemPrompt: systemPrompt);
+        return _openaiChat(
+          safeMessages,
+          systemPrompt: systemPrompt,
+          memoryContext: memoryContext,
+        );
       case 'anthropic':
-        return _anthropicChat(safeMessages, systemPrompt: systemPrompt);
+        return _anthropicChat(
+          safeMessages,
+          systemPrompt: systemPrompt,
+          memoryContext: memoryContext,
+        );
       default:
-        return _openaiChat(safeMessages, systemPrompt: systemPrompt);
+        return _openaiChat(
+          safeMessages,
+          systemPrompt: systemPrompt,
+          memoryContext: memoryContext,
+        );
+    }
+  }
+
+  /// 把记忆挂到**最后一条用户消息**上，而不是拼进 system。
+  ///
+  /// 为了 prompt caching。服务端缓存的是请求前缀，命中要求跟已存的缓存单元
+  /// 完整匹配；记忆放在最前面，它一变（写了篇日记、或者只是「最近一封信是 3
+  /// 天前」跨天变成 4 天前），后面几千 token 的对话历史就整段错位，全部落空。
+  ///
+  /// 挂到尾部之后，`[人设][对话历史]` 这一大段跨轮次逐字节不变，正好是
+  /// DeepSeek 文档里「第一轮 A+B，第二轮 A+B+C」那种能整段命中的形状。
+  ///
+  /// 不新增一条 system 消息、而是并进用户消息里，是为了避开兼容性风险——
+  /// 不是所有 OpenAI 兼容端点都接受 system 出现在消息列表中间或末尾。
+  static void _attachMemory(
+    List<Map<String, dynamic>> apiMessages,
+    String? memoryContext,
+  ) {
+    if (memoryContext == null || memoryContext.trim().isEmpty) return;
+    final idx = apiMessages.lastIndexWhere((m) => m['role'] == 'user');
+    if (idx < 0) return;
+
+    final block =
+        '（以下是你这边的背景记录，供你参考。不是用户说的话，'
+        '也不用主动提起。）\n$memoryContext\n\n---\n\n';
+
+    final content = apiMessages[idx]['content'];
+    if (content is String) {
+      apiMessages[idx] = {...apiMessages[idx], 'content': '$block$content'};
+    } else if (content is List) {
+      // 带图片的消息，content 是分块数组，插一个文本块在最前面
+      apiMessages[idx] = {
+        ...apiMessages[idx],
+        'content': [
+          {'type': 'text', 'text': block},
+          ...content,
+        ],
+      };
     }
   }
 
   Stream<AiStreamEvent> _openaiChat(
     List<ChatMessage> messages, {
     String? systemPrompt,
+    String? memoryContext,
   }) async* {
     final endpoint = config.endpoint ?? 'https://api.openai.com/v1';
     final model = config.model ?? 'gpt-4o';
@@ -186,6 +240,10 @@ class AiClient {
           break;
       }
     }
+
+    // 记忆挂在尾部，必须在 _repairToolMessages 之前——那一步会按 tool_call_id
+    // 重排消息，之后再挂就可能挂错位置。
+    _attachMemory(apiMessages, memoryContext);
 
     // 兜底：确保每个 assistant 的 tool_calls 都有对应的 tool 响应。
     // 若历史里存在"孤儿" tool_calls（工具执行中断/异常留下的），
@@ -300,6 +358,20 @@ class AiClient {
 
       try {
         final json = jsonDecode(data);
+
+        // 缓存命中情况：流式响应的最后一片会带 usage（部分服务端要显式开启才给）。
+        // 打出来才能验证「记忆挂尾部」到底有没有让前缀命中，否则全靠猜。
+        final usage = json['usage'];
+        if (usage is Map) {
+          final hit = usage['prompt_cache_hit_tokens'];
+          final miss = usage['prompt_cache_miss_tokens'];
+          if (hit != null || miss != null) {
+            debugPrint('[ai_client] prompt cache 命中 $hit / 未命中 $miss');
+          } else {
+            debugPrint('[ai_client] usage: $usage');
+          }
+        }
+
         final delta = json['choices']?[0]?['delta'];
 
         if (delta == null) continue;
@@ -397,6 +469,7 @@ class AiClient {
   Stream<AiStreamEvent> _anthropicChat(
     List<ChatMessage> messages, {
     String? systemPrompt,
+    String? memoryContext,
   }) async* {
     final endpoint = config.endpoint ?? 'https://api.anthropic.com/v1';
     final model = config.model ?? 'claude-sonnet-5';
@@ -455,6 +528,8 @@ class AiClient {
           break;
       }
     }
+
+    _attachMemory(apiMessages, memoryContext);
 
     final body = <String, dynamic>{
       'model': model,
