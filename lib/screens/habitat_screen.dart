@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
+import '../config/settings.dart';
 import '../models/letter.dart';
 import '../services/app_providers.dart';
 import '../services/letter_generator.dart';
@@ -34,6 +35,12 @@ class _HabitatScreenState extends State<HabitatScreen> {
   bool _writingLetter = false;
   String _letterStatus = '';
 
+  /// 设置里填的「TA 叫什么」。填了就用名字，不填就把句子改写成不需要代词的。
+  ///
+  /// 原来文案里到处是「它」——中文的「它」指向物件或动物，读起来像在说一个
+  /// 摆件，和这一页想要的陪伴感是打架的。
+  String _aiName = '';
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +53,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final musings = await StorageService.listFavoritedMusings();
     final letters = await StorageService.listLetters();
     final letterStatus = await letterTriggerStatus();
+    final settings = await AppSettings.load();
     final now = DateTime.now();
     var today = 0;
     var total = 0;
@@ -66,6 +74,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _letterCount = letters.length;
         _unreadLetters = letters.where((l) => l.isFromAi && !l.read).length;
         _letterStatus = letterStatus;
+        _aiName = settings.aiName;
       });
     }
     if (!mounted) return;
@@ -155,173 +164,301 @@ class _HabitatScreenState extends State<HabitatScreen> {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
         children: [
-          _card(
-            theme,
-            icon: PhosphorIconsRegular.heart,
-            title: '今日陪伴',
-            lines: [
-              '今天和 AI 聊了 $_todayMessages 轮，累计 $_totalMessages 轮。',
-              '随时回来，它都在。',
-            ],
-          ),
-          const SizedBox(height: 14),
-          _card(
-            theme,
-            icon: PhosphorIconsRegular.envelopeSimple,
-            title: '信',
-            highlight: _unreadLetters > 0,
-            lines:
-                _writingLetter
-                    ? ['它正在写一封信…']
-                    : _unreadLetters > 0
-                    ? [
-                      _unreadLetters == 1 ? '有一封信在等你。' : '有 $_unreadLetters 封信在等你。',
-                      '不着急，什么时候看都行。',
-                    ]
-                    : _letterCount > 0
-                    ? ['往来 $_letterCount 封。', _letterStatus]
-                    : ['还没有信。', _letterStatus],
-            actionLabel: '去信箱',
-            onAction: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LetterScreen()),
-              );
-              _load();
-            },
-          ),
-          const SizedBox(height: 14),
-          _card(
-            theme,
-            icon: PhosphorIconsRegular.bookOpen,
-            title: '阅读角落',
-            lines: ['书架上还有 $_readingCount 个对话和书在等你。', '去书架看看今天读点什么。'],
-            actionLabel: '去书架',
-            onAction: () => widget.onSwitchTab?.call(AppTab.bookshelf),
-          ),
-          const SizedBox(height: 14),
-          _card(
-            theme,
-            icon: PhosphorIconsRegular.square,
-            title: '一隅',
-            lines: [
-              _musingCount > 0 ? '收藏了 $_musingCount 条。' : '还没收藏过，去首页看看它想说什么。',
-              '它随口说的话，你觉得值得留下的，都在这。',
-            ],
-            actionLabel: '去看看',
-            onAction: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MusingCornerScreen()),
-              );
-              _load();
-            },
-          ),
-          const SizedBox(height: 14),
-          _card(
-            theme,
-            icon: PhosphorIconsRegular.pencilSimple,
-            title: '日记',
-            lines: [
-              _diaryCount > 0 ? '已经写了 $_diaryCount 篇。' : '还没写过，聊完天试试看。',
-              '每天的一两件小事，AI 用自己的口吻记下来。',
-            ],
-            actionLabel: '去看看',
-            onAction: () async {
-              await Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const DiaryScreen()));
-              _load();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _card(
-    ThemeData theme, {
-    required IconData icon,
-    required String title,
-    required List<String> lines,
-    String? actionLabel,
-    VoidCallback? onAction,
-    bool highlight = false,
-  }) {
-    final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        // 0.72 的白底压不住背景照片：照片一深，卡片就被拉成中灰，正文
-        // （onSurfaceVariant #57544F）落在上面只有 3.8:1，达不到 AA 的 4.5:1，
-        // 而且照片越花越糊。抬到 0.88 还能透出一点底色，对比度回到 7:1 上下。
-        //
-        // 同时把写死的 Colors.white 换成 scheme.surface：深色主题下白卡片配
-        // 近白的标题字（titleMedium 用 onSurface）本来是看不见的。
-        color: scheme.surface.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-          color:
-              highlight
-                  ? scheme.primary.withValues(alpha: 0.5)
-                  : scheme.outline.withValues(alpha: 0.15),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: highlight ? scheme.primary : scheme.onSurface,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: highlight ? scheme.primary : null,
-                ),
-              ),
-              if (highlight) ...[
-                const SizedBox(width: 6),
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: scheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-          for (final line in lines)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                line,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  // 正文不用 onSurfaceVariant：它是给纯色底设计的次级灰，
-                  // 叠在半透明卡片上会直接掉到 AA 线下。用 onSurface 压 78%，
-                  // 既保留「比标题淡一档」的层次，又不牺牲可读性。
-                  color: scheme.onSurface.withValues(alpha: 0.78),
-                  height: 1.5,
-                ),
-              ),
+          _statLine(theme),
+          const SizedBox(height: 20),
+          _letterEntry(theme),
+          const SizedBox(height: 16),
+          // 其余三项压成一组紧凑的行。
+          //
+          // 原来五张等高卡片竖着码，一屏只放得下两张半，而且每张的正文和右下角
+          // 按钮之间都有一大块空白——五张加起来就是半屏的浪费。这一页真正需要
+          // 被看见的只有「有没有未读的信」，其余都是入口，一行足够。
+          _rowGroup(theme, [
+            _RowSpec(
+              icon: PhosphorIconsRegular.bookOpen,
+              title: '阅读角落',
+              trailing: _readingCount > 0 ? '$_readingCount 个对话' : null,
+              onTap: () => widget.onSwitchTab?.call(AppTab.bookshelf),
             ),
-          if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(onPressed: onAction, child: Text(actionLabel)),
+            _RowSpec(
+              icon: PhosphorIconsRegular.quotes,
+              title: '一隅',
+              trailing: _musingCount > 0 ? '收藏 $_musingCount 条' : null,
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MusingCornerScreen()),
+                );
+                _load();
+              },
+            ),
+            _RowSpec(
+              icon: PhosphorIconsRegular.pencilSimple,
+              title: '日记',
+              trailing: _diaryCount > 0 ? '$_diaryCount 篇' : null,
+              onTap: () async {
+                await Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const DiaryScreen()));
+                _load();
+              },
+            ),
+          ]),
+          // 触发规则挪到这儿，一行淡字。原来整段塞在信的卡片正文里：
+          // 「再攒 1 点素材……各算 1 点……另外还有 5 天冷却」——那是规格说明，
+          // 不是给人看的。
+          if (_unreadLetters == 0 && _letterStatus.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            Text(
+              _letterStatus,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                height: 1.6,
+              ),
             ),
           ],
         ],
       ),
     );
   }
+
+  /// 顶部状态：数字是「状态」不是入口，一行就够，不该占一整张卡。
+  Widget _statLine(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final parts = <String>[
+      if (_diaryCount > 0) '$_diaryCount 篇日记',
+      if (_letterCount > 0) '往来 $_letterCount 封信',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              '$_totalMessages',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '轮对话',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+            if (parts.isNotEmpty)
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 10),
+                  child: Text(
+                    '· ${parts.join(' · ')}',
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _greeting(),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurface.withValues(alpha: 0.5),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 填了名字就用名字，没填就改写成不需要代词的句子。
+  ///
+  /// 原来这里是「随时回来，它都在」。中文的「它」指向物件或动物，读起来像在
+  /// 说一个摆件，和这一页想要的陪伴感是打架的。设置里已经有「TA 叫什么」，
+  /// 用得上。
+  String _greeting() {
+    if (_todayMessages > 0) return '今天聊了 $_todayMessages 轮。';
+    if (_aiName.isEmpty) return '今天还没聊过，随时回来。';
+    return '今天还没聊过。随时回来，$_aiName 在。';
+  }
+
+  /// 信是这一页唯一有时效性的东西，所以只有它保持卡片形态。
+  /// 有未读时用赤陶色升上来，没有未读就退回和其余三项一样的中性底。
+  Widget _letterEntry(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final unread = _unreadLetters > 0;
+
+    final String title;
+    final String? sub;
+    if (_writingLetter) {
+      title = '正在写一封信…';
+      sub = null;
+    } else if (unread) {
+      title = _unreadLetters == 1 ? '有一封信在等你' : '有 $_unreadLetters 封信在等你';
+      sub = '不着急，什么时候看都行';
+    } else if (_letterCount > 0) {
+      title = '信';
+      sub = '往来 $_letterCount 封';
+    } else {
+      title = '信';
+      sub = '还没有信';
+    }
+
+    final fg = unread ? scheme.onPrimaryContainer : scheme.onSurface;
+
+    return Material(
+      color:
+          unread
+              ? scheme.primaryContainer.withValues(alpha: 0.94)
+              : scheme.surface.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        onTap: () async {
+          await Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const LetterScreen()));
+          _load();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              if (_writingLetter)
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: fg.withValues(alpha: 0.6),
+                  ),
+                )
+              else
+                Icon(
+                  PhosphorIconsRegular.envelopeSimple,
+                  size: 19,
+                  color: unread ? fg : fg.withValues(alpha: 0.65),
+                ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: fg,
+                      ),
+                    ),
+                    if (sub != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        sub,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: fg.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                PhosphorIconsRegular.caretRight,
+                size: 16,
+                color: fg.withValues(alpha: 0.55),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rowGroup(ThemeData theme, List<_RowSpec> specs) {
+    final scheme = theme.colorScheme;
+    return Material(
+      color: scheme.surface.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var i = 0; i < specs.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 44),
+                child: Divider(
+                  height: 0.5,
+                  thickness: 0.5,
+                  color: scheme.onSurface.withValues(alpha: 0.08),
+                ),
+              ),
+            InkWell(
+              onTap: specs[i].onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      specs[i].icon,
+                      size: 19,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        specs[i].title,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    if (specs[i].trailing != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Text(
+                          specs[i].trailing!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurface.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ),
+                    Icon(
+                      PhosphorIconsRegular.caretRight,
+                      size: 15,
+                      color: scheme.onSurface.withValues(alpha: 0.35),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RowSpec {
+  final IconData icon;
+  final String title;
+  final String? trailing;
+  final VoidCallback onTap;
+
+  const _RowSpec({
+    required this.icon,
+    required this.title,
+    this.trailing,
+    required this.onTap,
+  });
 }

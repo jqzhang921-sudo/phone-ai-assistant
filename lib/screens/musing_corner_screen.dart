@@ -41,7 +41,31 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('一隅')),
+      appBar: AppBar(
+        title: const Text('一隅'),
+        // 说明性的那句话从栖息页的卡片挪到这儿。
+        //
+        // 它写得挺好，但每次进栖息页都读一遍就成了噪音——那一页是入口列表，
+        // 不是读文案的地方。放进目的地页面，第一次来的人看得到，之后自然
+        // 淡出注意力。
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(28),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '随口说的话，你觉得值得留下的，都在这。',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
       body:
           _loading
               ? const Center(child: CircularProgressIndicator())
