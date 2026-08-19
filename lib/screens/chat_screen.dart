@@ -1733,13 +1733,21 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         )
                       else
-                        InkWell(
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          onTap: _refreshMusing,
-                          child: Icon(
-                            PhosphorIconsRegular.arrowsClockwise,
-                            size: 18,
-                            color: scheme.onInverseSurface.withValues(alpha: 0.7),
+                        Tooltip(
+                          message: '戳戳ta',
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              _refreshMusing();
+                            },
+                            child: Icon(
+                              PhosphorIconsRegular.handTap,
+                              size: 18,
+                              color: scheme.onInverseSurface.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
                           ),
                         ),
                       const SizedBox(width: 10),
