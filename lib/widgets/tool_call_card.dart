@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
 import '../config/app_shape.dart';
+import '../services/phone_tools/tool_labels.dart';
 
 /// 一次工具调用连同它的结果。
 class _ToolEntry {
@@ -73,7 +74,9 @@ class _ToolRunCardState extends State<ToolRunCard> {
     final entries = _entries;
     if (entries.isEmpty) return const SizedBox.shrink();
 
-    final names = <String>{for (final e in entries) e.name}.join('、');
+    // 折叠行显示人话，展开后仍是原始名
+    final names =
+        <String>{for (final e in entries) toolDisplayName(e.name)}.join('、');
     final failed = entries.where((e) => !e.pending && !e.ok).length;
     final pending = entries.where((e) => e.pending).length;
 
@@ -167,13 +170,15 @@ class _ToolRunCardState extends State<ToolRunCard> {
   }
 
   /// 折叠时那一行文字。一次调用就直接写工具名，多次才带计数。
+  ///
+  /// 整行统一英文，不跟中文混排——一半一半反而比纯中文更碎。
   String _summary(String names, int total, int failed, int pending) {
     final buf = StringBuffer(names);
-    if (total > 1) buf.write(' · $total 次');
+    if (total > 1) buf.write(' · ${total}x');
     if (pending > 0) {
-      buf.write(' · 进行中');
+      buf.write(' · running');
     } else if (failed > 0) {
-      buf.write(' · $failed 个未成功');
+      buf.write(' · $failed failed');
     }
     return buf.toString();
   }
@@ -215,7 +220,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
             Padding(
               padding: const EdgeInsets.only(top: 2, left: 2),
               child: Text(
-                '等结果…',
+                'waiting…',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
