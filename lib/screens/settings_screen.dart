@@ -678,7 +678,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // 从抽屉挪过来的：这是诊断页，属于设置，不该和「设置」平级
           ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            leading: const Icon(PhosphorIconsRegular.wrench),
+            leading: const Icon(PhosphorIconsBold.butterfly),
             title: const Text('已注册的工具'),
             subtitle: const Text('查看 AI 能调用哪些手机能力，以及服务运行状态'),
             trailing: const Icon(PhosphorIconsRegular.caretRight, size: 16),

@@ -107,9 +107,17 @@ class _ToolRunCardState extends State<ToolRunCard> {
                       )
                     else
                       Icon(
-                        PhosphorIconsRegular.wrench,
+                        failed > 0
+                            ? PhosphorIconsFill.butterfly
+                            : PhosphorIconsBold.butterfly,
                         size: 15,
-                        // 成功是常态，不值得强调；只有失败才需要抢注意力
+                        // 成功是常态，不值得强调；只有失败才需要抢注意力。
+                        //
+                        // 用蝴蝶而不是扳手：这一行标的是「刚才动手做了点什么」，
+                        // 是过程不是结论，该轻该安静。蝴蝶停一下又飞走，和一次
+                        // 短暂的工具调用对得上；而且它是一个封闭轮廓，15px 下
+                        // 仍然读得成一个形状——试过猫爪，五个趾垫在小尺寸会散
+                        // 成几个点，空心实心也几乎分不出来。
                         color: failed > 0 ? scheme.error : scheme.onSurfaceVariant,
                       ),
                     const SizedBox(width: 6),
