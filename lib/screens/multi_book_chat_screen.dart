@@ -486,8 +486,11 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
                             padding: const EdgeInsets.all(12),
                             itemCount: items.length,
                             itemBuilder:
-                                (context, index) =>
-                                    chatDisplayItem(items[index]),
+                                (context, index) => chatDisplayItem(
+                                  items,
+                                  index,
+                                  conversationId: _conversation.id,
+                                ),
                           );
                         },
                       ),

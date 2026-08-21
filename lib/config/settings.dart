@@ -17,6 +17,7 @@ class AppSettings {
   static const _aiNameKey = 'ai_name';
   static const _ttsAutoPlayKey = 'tts_auto_play';
   static const _titleSerifKey = 'title_serif';
+  static const _aiSelfFavoriteKey = 'ai_self_favorite';
 
   // ElevenLabs — key stored in secure storage
   static const _elevenLabsKeyKey = 'elevenlabs_api_key';
@@ -42,6 +43,9 @@ class AppSettings {
   bool ttsAutoPlay;
   bool titleSerif; // true=衬线体(宋体)，false=黑体
 
+  /// 让沐自己也收藏。默认关——这是它替你做决定，得你先点头。
+  bool aiSelfFavorite;
+
   AppSettings({
     this.ttsEnabled = true,
     this.autoTts = false,
@@ -55,6 +59,7 @@ class AppSettings {
     this.aiName = '',
     this.ttsAutoPlay = false,
     this.titleSerif = true,
+    this.aiSelfFavorite = false,
   });
 
   static Future<AppSettings> load() async {
@@ -92,6 +97,7 @@ class AppSettings {
       aiName: prefs.getString(_aiNameKey) ?? '',
       ttsAutoPlay: prefs.getBool(_ttsAutoPlayKey) ?? false,
       titleSerif: prefs.getBool(_titleSerifKey) ?? true,
+      aiSelfFavorite: prefs.getBool(_aiSelfFavoriteKey) ?? false,
     );
   }
 
@@ -114,5 +120,6 @@ class AppSettings {
     await prefs.setString(_aiNameKey, aiName);
     await prefs.setBool(_ttsAutoPlayKey, ttsAutoPlay);
     await prefs.setBool(_titleSerifKey, titleSerif);
+    await prefs.setBool(_aiSelfFavoriteKey, aiSelfFavorite);
   }
 }

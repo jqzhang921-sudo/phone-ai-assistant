@@ -6,23 +6,22 @@ import '../../models/mcp_tool.dart';
 
 class FileTool {
   static McpTool get definition => McpTool(
-        name: 'pick_file',
-        description: '从手机存储中选择一个文件',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'type': {
-              'type': 'string',
-              'enum': ['any', 'image', 'video', 'audio', 'document'],
-              'description': '文件类型筛选',
-            }
-          },
+    name: 'pick_file',
+    description: '从手机存储中选择一个文件',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'type': {
+          'type': 'string',
+          'enum': ['any', 'image', 'video', 'audio', 'document'],
+          'description': '文件类型筛选',
         },
-        category: '手机工具',
-      );
+      },
+    },
+    category: '手机工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       final type = args['type'] as String? ?? 'any';
       FileType fileType;
@@ -84,33 +83,27 @@ class WriteFileTool {
   }
 
   static McpTool get definition => McpTool(
-        name: 'write_file',
-        description: '在手机的 App 私有文档目录下创建或写入文件。path 是文件名如 "test.txt" 或 "notes/config.json"。不需要提供完整路径，只需提供相对文件名。可以用来保存代码、配置文件等。'
-            '注意：这个工具写出来的文件存在 App 私有目录里，用户在 App 界面上看不到。'
-            '要写日记请用 write_diary_entry 工具，不要用这个。',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'path': {
-              'type': 'string',
-              'description': '文件名如 test.txt，或相对路径如 notes/config.json',
-            },
-            'content': {
-              'type': 'string',
-              'description': '要写入的文件内容（文本）',
-            },
-            'append': {
-              'type': 'boolean',
-              'description': '是否追加到文件末尾（false 则覆盖写入）',
-            },
-          },
-          'required': ['path', 'content'],
+    name: 'write_file',
+    description:
+        '在手机的 App 私有文档目录下创建或写入文件。path 是文件名如 "test.txt" 或 "notes/config.json"。不需要提供完整路径，只需提供相对文件名。可以用来保存代码、配置文件等。'
+        '注意：这个工具写出来的文件存在 App 私有目录里，用户在 App 界面上看不到。'
+        '要写日记请用 write_diary_entry 工具，不要用这个。',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'path': {
+          'type': 'string',
+          'description': '文件名如 test.txt，或相对路径如 notes/config.json',
         },
-        category: '文件管理',
-      );
+        'content': {'type': 'string', 'description': '要写入的文件内容（文本）'},
+        'append': {'type': 'boolean', 'description': '是否追加到文件末尾（false 则覆盖写入）'},
+      },
+      'required': ['path', 'content'],
+    },
+    category: '文件管理',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       await _ensureDir();
       final path = args['path'] as String?;
@@ -172,23 +165,19 @@ class ReadFileTool {
   }
 
   static McpTool get definition => McpTool(
-        name: 'read_file',
-        description: '读取 App 目录下的文件内容',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'path': {
-              'type': 'string',
-              'description': '文件路径（相对于 App 文档目录）',
-            },
-          },
-          'required': ['path'],
-        },
-        category: '文件管理',
-      );
+    name: 'read_file',
+    description: '读取 App 目录下的文件内容',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'path': {'type': 'string', 'description': '文件路径（相对于 App 文档目录）'},
+      },
+      'required': ['path'],
+    },
+    category: '文件管理',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       await _ensureDir();
       final path = args['path'] as String?;
@@ -224,22 +213,18 @@ class ListFilesTool {
   }
 
   static McpTool get definition => McpTool(
-        name: 'list_files',
-        description: '列出 App 目录下的文件和文件夹',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'path': {
-              'type': 'string',
-              'description': '子目录路径（留空列出根目录）',
-            },
-          },
-        },
-        category: '文件管理',
-      );
+    name: 'list_files',
+    description: '列出 App 目录下的文件和文件夹',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'path': {'type': 'string', 'description': '子目录路径（留空列出根目录）'},
+      },
+    },
+    category: '文件管理',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       await _ensureDir();
       final subPath = args['path'] as String? ?? '';
@@ -247,9 +232,9 @@ class ListFilesTool {
         return {'success': false, 'error': '路径不能包含 ..'};
       }
 
-      final dir = Directory(subPath.isEmpty
-          ? _docDir.path
-          : '${_docDir.path}/$subPath');
+      final dir = Directory(
+        subPath.isEmpty ? _docDir.path : '${_docDir.path}/$subPath',
+      );
 
       if (!await dir.exists()) {
         return {'success': false, 'error': '目录不存在: $subPath'};
@@ -292,20 +277,13 @@ class ListFilesTool {
 
 class ClipboardTool {
   static McpTool get definition => McpTool(
-        name: 'read_clipboard',
-        description: '读取手机剪贴板内容',
-        inputSchema: {
-          'type': 'object',
-          'properties': {},
-        },
-        category: '手机工具',
-      );
+    name: 'read_clipboard',
+    description: '读取手机剪贴板内容',
+    inputSchema: {'type': 'object', 'properties': {}},
+    category: '手机工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
-    return {
-      'success': false,
-      'error': '剪贴板读取需要通过 Flutter 原生通道实现（开发中）',
-    };
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
+    return {'success': false, 'error': '剪贴板读取需要通过 Flutter 原生通道实现（开发中）'};
   }
 }

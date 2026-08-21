@@ -283,6 +283,19 @@ class StorageService {
   // ---------------- 信 ----------------
   static const _kLettersKey = 'letters';
   static const _kLastLetterAttemptKey = 'last_letter_attempt_at';
+  static const _kLastFavoritePickKey = 'last_favorite_pick_at';
+
+  /// 沐上一次自己挑收藏是什么时候——用来算冷却
+  static Future<DateTime?> getLastFavoritePick() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kLastFavoritePickKey);
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  static Future<void> setLastFavoritePick(DateTime t) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kLastFavoritePickKey, t.toIso8601String());
+  }
 
   /// 按时间倒序（最新的在最前）。
   static Future<List<Letter>> listLetters() async {

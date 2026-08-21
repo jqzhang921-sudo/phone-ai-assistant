@@ -54,6 +54,15 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  assets:
+    # 品牌图标：纯白图形 + Alpha 通道，运行时用 Image.asset(color:) 着色。
+    # 只维护这一份，浅色/深色/选中/未选中全由主题决定。
+    # 入库时已裁掉透明边，所以 height 就是图形本身的高度，
+    # 可以直接照设计稿的数值设（cat 17 / books 16 / mountain 13）。
+    - assets/icons/
+    - assets/mark-full.png
+    - assets/mark-simple.png
+
   fonts:
     - family: NotoSerifSC
       fonts:

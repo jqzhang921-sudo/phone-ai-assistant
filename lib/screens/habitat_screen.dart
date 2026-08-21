@@ -102,18 +102,13 @@ class _HabitatScreenState extends State<HabitatScreen> {
       await StorageService.setLastLetterAttempt(DateTime.now());
       if (content != null) {
         await StorageService.addLetter(
-          Letter(
-            id: _uuid.v4(),
-            author: LetterAuthor.ai,
-            content: content,
-          ),
+          Letter(id: _uuid.v4(), author: LetterAuthor.ai, content: content),
         );
         final letters = await StorageService.listLetters();
         if (mounted) {
           setState(() {
             _letterCount = letters.length;
-            _unreadLetters =
-                letters.where((l) => l.isFromAi && !l.read).length;
+            _unreadLetters = letters.where((l) => l.isFromAi && !l.read).length;
           });
         }
       }
@@ -162,11 +157,24 @@ class _HabitatScreenState extends State<HabitatScreen> {
             ),
           ],
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 20),
+            child: Opacity(
+              opacity: 0.5,
+              child: Image.asset(
+                'assets/icons/mountain.png',
+                height: 16,
+                color: fgColor,
+              ),
+            ),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
         children: [
-          _statLine(theme),
+          _statCard(theme),
           const SizedBox(height: 20),
           _letterEntry(theme),
           const SizedBox(height: 16),
@@ -177,13 +185,13 @@ class _HabitatScreenState extends State<HabitatScreen> {
           // 被看见的只有「有没有未读的信」，其余都是入口，一行足够。
           _rowGroup(theme, [
             _RowSpec(
-              icon: PhosphorIconsRegular.bookOpen,
+              asset: 'books',
               title: '阅读角落',
               trailing: _readingCount > 0 ? '$_readingCount 个对话' : null,
               onTap: () => widget.onSwitchTab?.call(AppTab.bookshelf),
             ),
             _RowSpec(
-              icon: PhosphorIconsRegular.quotes,
+              asset: 'flower',
               title: '一隅',
               trailing: _musingCount > 0 ? '收藏 $_musingCount 条' : null,
               onTap: () async {
@@ -194,7 +202,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
               },
             ),
             _RowSpec(
-              icon: PhosphorIconsRegular.pencilSimple,
+              asset: 'waves',
               title: '日记',
               trailing: _diaryCount > 0 ? '$_diaryCount 篇' : null,
               onTap: () async {
@@ -205,76 +213,185 @@ class _HabitatScreenState extends State<HabitatScreen> {
               },
             ),
           ]),
-          // 触发规则挪到这儿，一行淡字。原来整段塞在信的卡片正文里：
-          // 「再攒 1 点素材……各算 1 点……另外还有 5 天冷却」——那是规格说明，
-          // 不是给人看的。
+          // 触发规则原来整段塞在信的卡片正文里：「再攒 1 点素材……各算 1 点……
+          // 另外还有 5 天冷却」——那是规格说明，不是给人看的。现在收成一张
+          // 状态卡：一眼看完，底部的空白也顺势填上。
           if (_unreadLetters == 0 && _letterStatus.isNotEmpty) ...[
-            const SizedBox(height: 22),
-            Text(
-              _letterStatus,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                height: 1.6,
-              ),
-            ),
+            const SizedBox(height: 20),
+            _nextLetterCard(theme),
           ],
         ],
       ),
     );
   }
 
-  /// 顶部状态：数字是「状态」不是入口，一行就够，不该占一整张卡。
-  Widget _statLine(ThemeData theme) {
+  /// 顶部状态卡。数字是「状态」不是入口，所以不做成可点的；
+  /// 但它是这一页唯一的总览，值得一张卡把它托住。
+  Widget _statCard(ThemeData theme) {
     final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
     final parts = <String>[
       if (_diaryCount > 0) '$_diaryCount 篇日记',
       if (_letterCount > 0) '往来 $_letterCount 封信',
+      if (_musingCount > 0) '收藏 $_musingCount 条',
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              '$_totalMessages',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: scheme.onSurface,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '轮对话',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-            if (parts.isNotEmpty)
-              Flexible(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: Text(
-                    '· ${parts.join(' · ')}',
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        boxShadow: AppShadow.soften(dark),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -10,
+            bottom: -14,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: dark ? 0.08 : 0.06,
+                child: Image.asset(
+                  'assets/mark-simple.png',
+                  width: 88,
+                  color: dark ? scheme.onSurface : scheme.primary,
                 ),
               ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _greeting(),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurface.withValues(alpha: 0.5),
+            ),
           ),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      '$_totalMessages',
+                      style: TextStyle(
+                        fontFamily: 'NotoSerifSC',
+                        fontSize: 34,
+                        fontWeight: FontWeight.w700,
+                        height: 1.1,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '轮对话',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                if (parts.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      for (var i = 0; i < parts.length; i++) ...[
+                        if (i > 0)
+                          Container(
+                            width: 1,
+                            height: 11,
+                            margin: const EdgeInsets.symmetric(horizontal: 10),
+                            color: scheme.onSurface.withValues(alpha: 0.12),
+                          ),
+                        Text(
+                          parts[i],
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Divider(height: 1, thickness: 1, color: scheme.outlineVariant),
+                const SizedBox(height: 12),
+                Text(
+                  _greeting(),
+                  style: TextStyle(
+                    fontFamily: 'NotoSerifSC',
+                    fontSize: 14,
+                    height: 1.7,
+                    color: scheme.onSurface.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 下一封信：素材攒够没、冷却还剩多久。
+  ///
+  /// ⚠️ 这里说的是**信**，不是日记。日记随时可以记，不需要攒；
+  /// 恰恰相反，写日记是攒素材的方式之一（算 1 点）。
+  /// 设计稿把这张卡写成「下一篇日记」，是把因果标反了。
+  ///
+  /// 只做只读展示——`letterTriggerStatus()` 只算得出一句话，算不出
+  /// 「素材 3 / 4」那种分子分母，所以不画进度条：画了就是编数字。
+  Widget _nextLetterCard(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: AppShadow.soften(dark),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Image.asset(
+              'assets/icons/star.png',
+              height: 15,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '下一封信',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _letterStatus,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.6,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -311,71 +428,91 @@ class _HabitatScreenState extends State<HabitatScreen> {
       sub = '还没有信';
     }
 
-    final fg = unread ? scheme.onPrimaryContainer : scheme.onSurface;
+    // 这一页唯一的实色卡。信是有来有往的东西，和下面那三条「归档」
+    // 不是一类，靠一整块主色把它单独拎出来。
+    //
+    // 未读不再靠底色区分（整张已经是实色了），改由标题直接说
+    // 「有 N 封信在等你」——一句话比一层色差好认。
+    final fg = scheme.onPrimary;
 
-    return Material(
-      color:
-          unread
-              ? scheme.primaryContainer.withValues(alpha: 0.94)
-              : scheme.surface.withValues(alpha: 0.88),
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      child: InkWell(
+    return DecoratedBox(
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        onTap: () async {
-          await Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const LetterScreen()));
-          _load();
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Row(
-            children: [
-              if (_writingLetter)
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: fg.withValues(alpha: 0.6),
+        boxShadow: AppShadow.soften(scheme.brightness == Brightness.dark),
+      ),
+      child: Material(
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: () async {
+            await Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const LetterScreen()));
+            _load();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                )
-              else
-                Icon(
-                  PhosphorIconsRegular.envelopeSimple,
-                  size: 19,
-                  color: unread ? fg : fg.withValues(alpha: 0.65),
+                  child:
+                      _writingLetter
+                          ? SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: fg,
+                            ),
+                          )
+                          : Icon(
+                            PhosphorIconsRegular.envelopeSimple,
+                            size: 19,
+                            color: fg,
+                          ),
                 ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: fg,
-                      ),
-                    ),
-                    if (sub != null) ...[
-                      const SizedBox(height: 2),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        sub,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: fg.withValues(alpha: 0.7),
+                        title,
+                        style: TextStyle(
+                          fontFamily: 'NotoSerifSC',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: fg,
                         ),
                       ),
+                      if (sub != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          sub,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: fg.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              Icon(
-                PhosphorIconsRegular.caretRight,
-                size: 16,
-                color: fg.withValues(alpha: 0.55),
-              ),
-            ],
+                Icon(
+                  PhosphorIconsRegular.caretRight,
+                  size: 16,
+                  color: fg.withValues(alpha: 0.6),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -384,81 +521,110 @@ class _HabitatScreenState extends State<HabitatScreen> {
 
   Widget _rowGroup(ThemeData theme, List<_RowSpec> specs) {
     final scheme = theme.colorScheme;
-    return Material(
-      color: scheme.surface.withValues(alpha: 0.88),
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < specs.length; i++) ...[
-            if (i > 0)
-              Padding(
-                padding: const EdgeInsets.only(left: 44),
-                child: Divider(
-                  height: 0.5,
-                  thickness: 0.5,
-                  color: scheme.onSurface.withValues(alpha: 0.08),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: AppShadow.soften(scheme.brightness == Brightness.dark),
+      ),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            for (var i = 0; i < specs.length; i++) ...[
+              if (i > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 44),
+                  child: Divider(
+                    height: 0.5,
+                    thickness: 0.5,
+                    color: scheme.onSurface.withValues(alpha: 0.08),
+                  ),
                 ),
-              ),
-            InkWell(
-              onTap: specs[i].onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 14,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      specs[i].icon,
-                      size: 19,
-                      color: scheme.onSurface.withValues(alpha: 0.65),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Text(
-                        specs[i].title,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurface,
+              InkWell(
+                onTap: specs[i].onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        child: Center(
+                          child:
+                              specs[i].asset != null
+                                  ? Image.asset(
+                                    'assets/icons/${specs[i].asset}.png',
+                                    height:
+                                        _rowAssetHeight[specs[i].asset] ?? 16,
+                                    color: scheme.onSurface.withValues(
+                                      alpha: 0.65,
+                                    ),
+                                  )
+                                  : Icon(
+                                    specs[i].icon,
+                                    size: 19,
+                                    color: scheme.onSurface.withValues(
+                                      alpha: 0.65,
+                                    ),
+                                  ),
                         ),
                       ),
-                    ),
-                    if (specs[i].trailing != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
+                      const SizedBox(width: 11),
+                      Expanded(
                         child: Text(
-                          specs[i].trailing!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurface.withValues(alpha: 0.5),
+                          specs[i].title,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurface,
                           ),
                         ),
                       ),
-                    Icon(
-                      PhosphorIconsRegular.caretRight,
-                      size: 15,
-                      color: scheme.onSurface.withValues(alpha: 0.35),
-                    ),
-                  ],
+                      if (specs[i].trailing != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Text(
+                            specs[i].trailing!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                      Icon(
+                        PhosphorIconsRegular.caretRight,
+                        size: 15,
+                        color: scheme.onSurface.withValues(alpha: 0.35),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
 class _RowSpec {
-  final IconData icon;
+  /// 二选一：品牌图标给 [asset]，功能图标给 [icon]
+  final IconData? icon;
+  final String? asset;
   final String title;
   final String? trailing;
   final VoidCallback onTap;
 
   const _RowSpec({
-    required this.icon,
+    this.icon,
+    this.asset,
     required this.title,
     this.trailing,
     required this.onTap,
-  });
+  }) : assert(icon != null || asset != null);
 }
+
+/// 品牌图标各自的视觉重量不同，高度不要统一
+const _rowAssetHeight = {'books': 15.0, 'flower': 17.0, 'waves': 13.0};

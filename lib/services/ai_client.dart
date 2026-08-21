@@ -126,8 +126,10 @@ class AiClient {
   static String _buildSystemContent(String? systemPrompt, String? summary) {
     final buf = StringBuffer('$systemPrompt\n\n$_timeMetaInstruction');
     if (summary != null && summary.trim().isNotEmpty) {
-      buf.write('\n\n## 更早对话的摘要\n（这段聊得比较久了，早期原文已折叠成下面这段。'
-          '需要时可以当作你记得的事，但别复述给用户听。）\n$summary');
+      buf.write(
+        '\n\n## 更早对话的摘要\n（这段聊得比较久了，早期原文已折叠成下面这段。'
+        '需要时可以当作你记得的事，但别复述给用户听。）\n$summary',
+      );
     }
     return buf.toString();
   }
@@ -326,8 +328,10 @@ class AiClient {
           // ⚠️ 这个兜底会让模型完全看不到工具结果——工具明明执行成功了，
           // 模型却回答「我这边是空的」。原来这里把服务端错误直接吞掉，
           // 于是两边都看不见问题。先打出来，好定位第一次请求为什么非法。
-          debugPrint('[ai_client] 工具历史被服务端拒绝，将丢弃全部工具消息重试。'
-              '原始错误：$error');
+          debugPrint(
+            '[ai_client] 工具历史被服务端拒绝，将丢弃全部工具消息重试。'
+            '原始错误：$error',
+          );
           // 手机上看不到日志，所以直接显示在对话里——否则这个降级完全无声，
           // 用户只会看到模型说「我没收到结果」，看不出是 App 丢掉的。
           // 定位完根因后应当移除。

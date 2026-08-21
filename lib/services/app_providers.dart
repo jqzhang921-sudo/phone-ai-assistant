@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../config/settings.dart';
+import '../models/musing_entry.dart';
+import 'storage_service.dart';
 import '../models/mcp_tool.dart';
 import 'ai_client.dart';
 import 'external_mcp_client.dart';
@@ -22,6 +24,16 @@ class SettingsProvider extends ChangeNotifier {
     final s = _settings;
     if (s == null) return;
     s.titleSerif = v;
+    await s.save();
+    notifyListeners();
+  }
+
+  /// 深浅色。themeMode 一直存在 settings 里、main.dart 也读了，
+  /// 但之前设置页没有任何入口能改它——整套深色主题只有系统切深色才看得到。
+  Future<void> setThemeMode(ThemeMode m) async {
+    final s = _settings;
+    if (s == null) return;
+    s.themeMode = m;
     await s.save();
     notifyListeners();
   }
@@ -180,5 +192,45 @@ class BackgroundProvider extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+}
+
+/// 收藏的话。
+///
+/// 收藏状态要在每条气泡上显示，逐条去 SharedPreferences 查一遍太浪费；
+/// 这里一次读全，之后只在内存里判断，改动时才落盘。
+class FavoritesProvider extends ChangeNotifier {
+  List<MusingEntry> _entries = [];
+  Set<String> _messageIds = {};
+
+  List<MusingEntry> get entries => _entries;
+
+  bool isFavorited(String messageId) => _messageIds.contains(messageId);
+
+  Future<void> load() async {
+    _entries = await StorageService.listFavoritedMusings();
+    _messageIds = {
+      for (final e in _entries)
+        if (e.messageId != null) e.messageId!,
+    };
+    notifyListeners();
+  }
+
+  Future<void> add(MusingEntry entry) async {
+    await StorageService.addFavoritedMusing(entry);
+    await load();
+  }
+
+  Future<void> remove(String id) async {
+    await StorageService.removeFavoritedMusing(id);
+    await load();
+  }
+
+  /// 按消息 id 取消收藏。返回被删掉的那条，方便调用方给「撤销」。
+  Future<MusingEntry?> removeByMessageId(String messageId) async {
+    final match = _entries.where((e) => e.messageId == messageId).firstOrNull;
+    if (match == null) return null;
+    await remove(match.id);
+    return match;
   }
 }

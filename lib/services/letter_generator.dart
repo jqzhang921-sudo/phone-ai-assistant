@@ -2,6 +2,7 @@ import '../config/settings.dart';
 import '../models/book.dart';
 import '../models/chat_message.dart';
 import '../models/letter.dart';
+import '../models/musing_entry.dart';
 import 'ai_client.dart';
 import 'storage_service.dart';
 
@@ -38,8 +39,7 @@ class LetterMaterial {
   });
 
   /// 日记 1 分、收藏的话 1 分、读完一本书 2 分。
-  int get score =>
-      diaries.length + musings.length + finishedBooks.length * 2;
+  int get score => diaries.length + musings.length + finishedBooks.length * 2;
 
   int get sourceCount =>
       (diaries.isEmpty ? 0 : 1) +
@@ -67,8 +67,14 @@ Future<LetterMaterial> collectMaterial({DateTime? since}) async {
   return LetterMaterial(
     diaries:
         diaries.where((d) => after(d.createdAt)).map((d) => d.content).toList(),
+    // 排除沐自己收的：收藏是写信的素材来源之一，它收自己挑的话再拿去写信，
+    // 信就从「回应你的生活」变成「回应它自己挑的东西」，越转越自我循环。
+    // `both` 保留——那是你也收了的。
     musings:
-        musings.where((m) => after(m.createdAt)).map((m) => m.content).toList(),
+        musings
+            .where((m) => after(m.createdAt) && m.savedBy != MusingSavedBy.ai)
+            .map((m) => m.content)
+            .toList(),
     finishedBooks:
         books
             .where(
@@ -189,8 +195,7 @@ Future<String?> _generateReply({
 }) async {
   // 回信的素材从上一封 AI 的信之后算起，这样它知道这中间发生了什么。
   final letters = await StorageService.listLetters();
-  final lastAiLetter =
-      letters.where((l) => l.isFromAi).firstOrNull; // 已按时间倒序
+  final lastAiLetter = letters.where((l) => l.isFromAi).firstOrNull; // 已按时间倒序
   final material = await collectMaterial(since: lastAiLetter?.createdAt);
 
   final history = await _recentExchange();
@@ -278,8 +283,7 @@ Future<String?> _run(AiClient aiClient, String prompt) async {
   ];
 
   final settings = await AppSettings.load();
-  final namePart =
-      settings.aiName.isEmpty ? '' : '你叫${settings.aiName}。';
+  final namePart = settings.aiName.isEmpty ? '' : '你叫${settings.aiName}。';
 
   String content = '';
   await for (final event in aiClient.chat(

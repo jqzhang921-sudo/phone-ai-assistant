@@ -4,6 +4,7 @@ import 'dart:io';
 import '../models/mcp_tool.dart';
 import 'phone_tools/camera_tool.dart';
 import 'phone_tools/diary_tool.dart';
+import 'phone_tools/recall_tool.dart';
 import 'phone_tools/file_tool.dart';
 import 'phone_tools/location_tool.dart';
 import 'phone_tools/sensors_tool.dart';
@@ -12,8 +13,8 @@ import 'phone_tools/time_tool.dart';
 import 'phone_tools/weather_tool.dart';
 import 'phone_tools/weread_tool.dart';
 
-typedef ToolExecutor = Future<Map<String, dynamic>> Function(
-    Map<String, dynamic> args);
+typedef ToolExecutor =
+    Future<Map<String, dynamic>> Function(Map<String, dynamic> args);
 
 class McpServer {
   HttpServer? _server;
@@ -50,6 +51,8 @@ class McpServer {
     _registerTool(WeatherTool.definition, WeatherTool.execute);
     _registerTool(TimeTool.definition, TimeTool.execute);
     _registerTool(DiaryTool.definition, DiaryTool.execute);
+    _registerTool(RecallTool.definition, RecallTool.execute);
+    _registerTool(SaveToCornerTool.definition, SaveToCornerTool.execute);
     _registerTool(
       ListHighlightedBooksTool.definition,
       ListHighlightedBooksTool.execute,
@@ -85,9 +88,8 @@ class McpServer {
           // HTTP endpoint for tool listing
           if (request.method == 'GET' && request.uri.path == '/tools') {
             request.response.headers.contentType = ContentType.json;
-            final toolsJson = _toolRegistrations
-                .map((r) => r.tool.toJson())
-                .toList();
+            final toolsJson =
+                _toolRegistrations.map((r) => r.tool.toJson()).toList();
             request.response.write(jsonEncode(toolsJson));
             request.response.close();
           } else {
@@ -100,17 +102,18 @@ class McpServer {
 
       return true;
     } catch (e) {
-      _eventController
-          .add(McpServerEvent('error', {'message': '启动 MCP Server 失败: $e'}));
+      _eventController.add(
+        McpServerEvent('error', {'message': '启动 MCP Server 失败: $e'}),
+      );
       return false;
     }
   }
 
   void _handleClient(WebSocket ws) {
     _clients.add(ws);
-    _eventController.add(McpServerEvent('client_connected', {
-      'total': _clients.length,
-    }));
+    _eventController.add(
+      McpServerEvent('client_connected', {'total': _clients.length}),
+    );
 
     ws.listen(
       (data) {
@@ -118,9 +121,9 @@ class McpServer {
       },
       onDone: () {
         _clients.remove(ws);
-        _eventController.add(McpServerEvent('client_disconnected', {
-          'total': _clients.length,
-        }));
+        _eventController.add(
+          McpServerEvent('client_disconnected', {'total': _clients.length}),
+        );
       },
       onError: (e) {
         _clients.remove(ws);
@@ -142,13 +145,8 @@ class McpServer {
       case 'initialize':
         _sendResult(ws, request.id, {
           'protocolVersion': '2024-11-05',
-          'capabilities': {
-            'tools': {},
-          },
-          'serverInfo': {
-            'name': 'phone-mcp-server',
-            'version': '1.0.0',
-          },
+          'capabilities': {'tools': {}},
+          'serverInfo': {'name': 'phone-mcp-server', 'version': '1.0.0'},
         });
         break;
 
@@ -168,7 +166,11 @@ class McpServer {
 
       default:
         _sendError(
-            ws, request.id, -32601, 'Method not found: ${request.method}');
+          ws,
+          request.id,
+          -32601,
+          'Method not found: ${request.method}',
+        );
     }
   }
 
@@ -188,26 +190,27 @@ class McpServer {
       return;
     }
 
-    _eventController
-        .add(McpServerEvent('tool_call', {'name': name, 'args': args}));
+    _eventController.add(
+      McpServerEvent('tool_call', {'name': name, 'args': args}),
+    );
 
-    executor(args).then((result) {
-      _sendResult(ws, request.id, result);
-      _eventController.add(McpServerEvent('tool_result', {
-        'name': name,
-        'success': result['success'],
-      }));
-    }).catchError((e) {
-      _sendError(ws, request.id, -32603, 'Tool execution error: $e');
-    });
+    executor(args)
+        .then((result) {
+          _sendResult(ws, request.id, result);
+          _eventController.add(
+            McpServerEvent('tool_result', {
+              'name': name,
+              'success': result['success'],
+            }),
+          );
+        })
+        .catchError((e) {
+          _sendError(ws, request.id, -32603, 'Tool execution error: $e');
+        });
   }
 
   void _sendResult(WebSocket ws, String? id, dynamic result) {
-    final response = {
-      'jsonrpc': '2.0',
-      'result': result,
-      'id': id,
-    };
+    final response = {'jsonrpc': '2.0', 'result': result, 'id': id};
     ws.add(jsonEncode(response));
   }
 

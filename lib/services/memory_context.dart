@@ -1,4 +1,5 @@
 import '../models/book.dart';
+import '../models/musing_entry.dart';
 import 'storage_service.dart';
 
 /// 拼给聊天 system prompt 的上下文块。
@@ -56,25 +57,50 @@ Future<void> _appendDiaries(StringBuffer buf, int max) async {
   buf.writeln();
 }
 
+/// 一隅里的收藏。**每条必须标清楚是谁说的、谁收的。**
+///
+/// 这里原来是一句写死的标题「你说过、被用户收藏的话」。收藏只有「我想说」
+/// 一个来源时它是对的；等聊天里的收藏和自主收藏做出来之后，同一个列表里
+/// 混进了「用户说的」和「你自己收的」，这个标题对其中一部分条目就成了假话。
+///
+/// 后果不是模型胡说，是它照着错标签复述——用户问「你收藏我说的话了吗」，
+/// 它会把你在「我想说」写的句子说成是用户说的。喂进去的标签错了，
+/// 输出不可能对。
 Future<void> _appendMusings(StringBuffer buf, int max) async {
   final musings = await StorageService.listFavoritedMusings();
   if (musings.isEmpty) return;
-  buf.writeln('## 你说过、被用户收藏的话');
+  buf.writeln('## 一隅里收藏的话');
   buf.writeln(
-    '（用户主动留下来的，说明这些话对 TA 有分量。'
+    '（每条都标了是谁说的、谁收的，照标签说，别弄反。'
     '下面这几条你是看得到的，用户问起就直接聊，不要说自己看不到）',
   );
   for (final m in musings.take(max)) {
-    buf.writeln('- ${m.dateKey}：${_clip(m.content, 80)}');
+    buf.writeln(
+      '- ${m.dateKey}｜${_saidBy(m)}｜${_savedBy(m)}：'
+      '${_clip(m.content, 80)}',
+    );
   }
   buf.writeln();
 }
+
+String _saidBy(MusingEntry m) => switch (m.source) {
+  MusingSource.musing => '你在「我想说」写的',
+  MusingSource.ai => '你在聊天里说的',
+  MusingSource.user => '用户说的',
+};
+
+String _savedBy(MusingEntry m) => switch (m.savedBy) {
+  MusingSavedBy.user => '用户收的',
+  MusingSavedBy.ai => '你自己收的',
+  MusingSavedBy.both => '你们各自都收了',
+};
 
 Future<void> _appendBooks(StringBuffer buf, int max) async {
   final books = await StorageService.listBooks();
   if (books.isEmpty) return;
 
-  final reading = books.where((b) => b.status == ReadingStatus.reading).toList();
+  final reading =
+      books.where((b) => b.status == ReadingStatus.reading).toList();
   final finished =
       books.where((b) => b.status == ReadingStatus.done).toList()..sort((a, b) {
         final at = a.finishedAt ?? a.createdAt;

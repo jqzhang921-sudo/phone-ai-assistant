@@ -57,7 +57,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
       } else if (m.role == MessageRole.toolResult) {
         final e = byId[m.toolCallId ?? ''];
         // 配不上 id 就挂到最近一个还没结果的调用上，别把结果丢了
-        final target = e ?? entries.reversed.where((x) => x.pending).firstOrNull;
+        final target =
+            e ?? entries.reversed.where((x) => x.pending).firstOrNull;
         if (target != null) {
           target.rawResult = m.content;
           target.result = _tryParseMap(m.content);
@@ -75,8 +76,9 @@ class _ToolRunCardState extends State<ToolRunCard> {
     if (entries.isEmpty) return const SizedBox.shrink();
 
     // 折叠行显示人话，展开后仍是原始名
-    final names =
-        <String>{for (final e in entries) toolDisplayName(e.name)}.join('、');
+    final names = <String>{
+      for (final e in entries) toolDisplayName(e.name),
+    }.join('、');
     final failed = entries.where((e) => !e.pending && !e.ok).length;
     final pending = entries.where((e) => e.pending).length;
 
@@ -121,7 +123,8 @@ class _ToolRunCardState extends State<ToolRunCard> {
                         // 短暂的工具调用对得上；而且它是一个封闭轮廓，15px 下
                         // 仍然读得成一个形状——试过猫爪，五个趾垫在小尺寸会散
                         // 成几个点，空心实心也几乎分不出来。
-                        color: failed > 0 ? scheme.error : scheme.onSurfaceVariant,
+                        color:
+                            failed > 0 ? scheme.error : scheme.onSurfaceVariant,
                       ),
                     const SizedBox(width: 6),
                     Flexible(
@@ -130,9 +133,10 @@ class _ToolRunCardState extends State<ToolRunCard> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: failed > 0
-                              ? scheme.error
-                              : scheme.onSurfaceVariant,
+                          color:
+                              failed > 0
+                                  ? scheme.error
+                                  : scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -157,9 +161,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
                   padding: const EdgeInsets.fromLTRB(10, 2, 10, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final e in entries) _entryView(theme, e),
-                    ],
+                    children: [for (final e in entries) _entryView(theme, e)],
                   ),
                 ),
               ),

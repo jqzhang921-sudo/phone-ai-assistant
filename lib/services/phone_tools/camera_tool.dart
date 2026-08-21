@@ -6,17 +6,13 @@ class CameraTool {
   static final _picker = ImagePicker();
 
   static McpTool get definition => McpTool(
-        name: 'take_photo',
-        description: '使用相机拍照，返回图片数据',
-        inputSchema: {
-          'type': 'object',
-          'properties': {},
-        },
-        category: '手机工具',
-      );
+    name: 'take_photo',
+    description: '使用相机拍照，返回图片数据',
+    inputSchema: {'type': 'object', 'properties': {}},
+    category: '手机工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera,
@@ -45,17 +41,13 @@ class GalleryTool {
   static final _picker = ImagePicker();
 
   static McpTool get definition => McpTool(
-        name: 'pick_image',
-        description: '从相册选择一张图片',
-        inputSchema: {
-          'type': 'object',
-          'properties': {},
-        },
-        category: '手机工具',
-      );
+    name: 'pick_image',
+    description: '从相册选择一张图片',
+    inputSchema: {'type': 'object', 'properties': {}},
+    category: '手机工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,

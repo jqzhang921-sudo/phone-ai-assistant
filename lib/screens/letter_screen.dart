@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_shape.dart';
+import '../widgets/mark_backdrop.dart';
 import '../config/settings.dart';
 import '../models/letter.dart';
 import '../services/app_providers.dart';
@@ -61,10 +62,7 @@ class _LetterScreenState extends State<LetterScreen> {
 
     setState(() => _replying = true);
     try {
-      final reply = await generateReply(
-        aiClient: aiClient,
-        userLetter: newest,
-      );
+      final reply = await generateReply(aiClient: aiClient, userLetter: newest);
       if (reply != null) {
         await StorageService.addLetter(
           Letter(
@@ -112,9 +110,27 @@ class _LetterScreenState extends State<LetterScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('信'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('信'),
+            if (_letters.isNotEmpty)
+              Text(
+                '往来 ${_letters.length} 封 · 最近 '
+                '${_letters.first.createdAt.toLocal().month} 月 '
+                '${_letters.first.createdAt.toLocal().day} 日',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w400,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(2),
           child:
@@ -123,10 +139,36 @@ class _LetterScreenState extends State<LetterScreen> {
                   : const SizedBox.shrink(),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _compose(),
-        icon: const Icon(PhosphorIconsRegular.pencilSimple),
-        label: const Text('写一封'),
+      // 整宽按钮，不用悬浮 FAB——FAB 会压在列表中间的条目上。
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: () => _compose(),
+              // 深色下不用实底：主色在深色里本来就是浅棕，实底一压
+              // 就成了整屏最亮的东西，比内容还抢。改成淡底 + 浅棕字。
+              style: FilledButton.styleFrom(
+                shape: const StadiumBorder(),
+                backgroundColor:
+                    dark
+                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                        : null,
+                foregroundColor: dark ? theme.colorScheme.primary : null,
+              ),
+              icon: Icon(
+                PhosphorIconsRegular.pencilSimple,
+                size: 18,
+                // 跟着文字走，别让它落回默认的近黑色
+                color: dark ? theme.colorScheme.primary : null,
+              ),
+              label: Text(
+                _aiName.trim().isEmpty ? '写一封' : '写一封给${_aiName.trim()}',
+              ),
+            ),
+          ),
+        ),
       ),
       body:
           _loading
@@ -147,42 +189,46 @@ class _LetterScreenState extends State<LetterScreen> {
                   ),
                 ),
               )
-              : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                // 多出来的第一项是「它在写回信…」，写完就消失
-                itemCount: _letters.length + (_replying ? 1 : 0),
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  if (_replying && index == 0) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.primary,
+              : MarkBackdrop(
+                width: 190,
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                  // 多出来的第一项是「它在写回信…」，写完就消失
+                  itemCount: _letters.length + (_replying ? 1 : 0),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    if (_replying && index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: theme.colorScheme.primary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '它在写回信…',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                            const SizedBox(width: 10),
+                            Text(
+                              '它在写回信…',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      );
+                    }
+                    final letter = _letters[index - (_replying ? 1 : 0)];
+                    return _LetterCard(
+                      letter: letter,
+                      aiName: _aiName.trim().isEmpty ? 'TA' : _aiName.trim(),
+                      onTap: () => _openLetter(letter),
                     );
-                  }
-                  final letter = _letters[index - (_replying ? 1 : 0)];
-                  return _LetterCard(
-                    letter: letter,
-                    onTap: () => _openLetter(letter),
-                  );
-                },
+                  },
+                ),
               ),
     );
   }
@@ -190,9 +236,16 @@ class _LetterScreenState extends State<LetterScreen> {
 
 class _LetterCard extends StatelessWidget {
   final Letter letter;
+
+  /// 作者行要写「沐 写给你」，名字来自设置；没填就退回中性说法
+  final String aiName;
   final VoidCallback onTap;
 
-  const _LetterCard({required this.letter, required this.onTap});
+  const _LetterCard({
+    required this.letter,
+    required this.aiName,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -200,73 +253,124 @@ class _LetterCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final unread = letter.isFromAi && !letter.read;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-            color:
-                unread
-                    ? scheme.primary.withValues(alpha: 0.45)
-                    : scheme.outlineVariant,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  letter.isFromAi
-                      ? PhosphorIconsRegular.envelopeSimple
-                      : PhosphorIconsRegular.paperPlaneTilt,
-                  size: 16,
-                  color: unread ? scheme.primary : scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  letter.isFromAi ? '它写给你' : '你写的',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: unread ? scheme.primary : scheme.onSurfaceVariant,
-                    fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-                if (unread) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: scheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                Text(
-                  _formatDate(letter.createdAt),
-                  style: theme.textTheme.labelSmall?.copyWith(
+    final dark = theme.brightness == Brightness.dark;
+    final mine = !letter.isFromAi;
+
+    // 谁写的，一眼能看出来。原来两个作者长得一样重，一列翻下来像
+    // 一堆匿名段落。
+    //
+    // 它写的：白卡 + 左侧一道主色竖条 + 宋体。竖条是关键——滚动时它
+    // 形成一条连续的视觉轴，不读字也知道这段是谁的。
+    // 你写的：浅灰底、无阴影、右缩进、黑体、爪印。
+    final card = Container(
+      padding: EdgeInsets.fromLTRB(mine ? 14 : 16, 14, 14, 14),
+      decoration: BoxDecoration(
+        color:
+            mine
+                // 深色底上 3.5% 几乎和背景一样，右缩进就白缩了；提到 8%
+                ? scheme.onSurface.withValues(alpha: dark ? 0.08 : 0.035)
+                : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: mine ? null : AppShadow.soften(dark),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (mine)
+                Opacity(
+                  opacity: 0.75,
+                  child: Image.asset(
+                    'assets/icons/paw.png',
+                    height: 13,
                     color: scheme.onSurfaceVariant,
                   ),
+                )
+              else
+                Image.asset(
+                  'assets/icons/cat.png',
+                  height: 15,
+                  color: scheme.primary,
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              letter.summary,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurface.withValues(alpha: 0.8),
-                height: 1.5,
+              const SizedBox(width: 7),
+              Text(
+                mine ? '你写的' : '$aiName 写给你',
+                style: TextStyle(
+                  fontSize: mine ? 11.5 : 12,
+                  fontWeight: FontWeight.w600,
+                  color: mine ? scheme.onSurfaceVariant : scheme.primary,
+                ),
               ),
+              const Spacer(),
+              if (unread) ...[
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                _formatDate(letter.createdAt),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            letter.summary,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: mine ? null : 'NotoSerifSC',
+              fontSize: mine ? 13.5 : 14.5,
+              height: mine ? 1.75 : 1.85,
+              color:
+                  dark
+                      ? scheme.onSurface.withValues(alpha: mine ? 0.75 : 0.9)
+                      : (mine
+                          ? const Color(0xFF4A423A)
+                          : const Color(0xFF2C251F)),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      onTap: onTap,
+      child: Padding(
+        // 你写的往右缩进，和它写的错开一档
+        padding: EdgeInsets.only(left: mine ? 34 : 0),
+        child:
+            mine
+                ? card
+                : Stack(
+                  children: [
+                    card,
+                    // 竖条：上下各内缩 20，不通到头
+                    Positioned(
+                      left: 0,
+                      top: 20,
+                      bottom: 20,
+                      child: Container(
+                        width: 3,
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          borderRadius: const BorderRadius.only(
+                            topRight: Radius.circular(3),
+                            bottomRight: Radius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
       ),
     );
   }

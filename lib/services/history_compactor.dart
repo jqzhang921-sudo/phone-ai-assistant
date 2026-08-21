@@ -63,9 +63,10 @@ Future<bool> compactHistory({
     final text = await _run(aiClient, prompt.toString());
     if (text == null || text.isEmpty) return false;
 
-    conv.summary = text.length > _kSummaryMaxChars * 2
-        ? text.substring(0, _kSummaryMaxChars * 2)
-        : text;
+    conv.summary =
+        text.length > _kSummaryMaxChars * 2
+            ? text.substring(0, _kSummaryMaxChars * 2)
+            : text;
     conv.summarizedCount = cutoff;
     debugPrint(
       '[compactor] 已压缩前 $cutoff 条，剩 ${conv.messages.length - cutoff} 条原文',

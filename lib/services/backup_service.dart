@@ -105,9 +105,7 @@ class BackupService {
       'conversationsTrash': await _readJsonDir(
         '${dir.path}/conversations_trash',
       ),
-      'bookConversations': await _readJsonDir(
-        '${dir.path}/book_conversations',
-      ),
+      'bookConversations': await _readJsonDir('${dir.path}/book_conversations'),
       'prefs': prefsMap,
     };
   }

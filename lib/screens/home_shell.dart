@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
 import '../services/app_providers.dart';
 import '../services/storage_service.dart';
@@ -23,7 +22,6 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   bool _hideNav = false;
   String? _backgroundImagePath;
-  String _backgroundPreset = 'none';
 
   @override
   void initState() {
@@ -38,7 +36,6 @@ class _HomeShellState extends State<HomeShell> {
     if (mounted) {
       setState(() {
         _backgroundImagePath = path;
-        _backgroundPreset = preset;
       });
       await bgProvider.update(path, preset);
     }
@@ -98,7 +95,7 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  BoxDecoration? _buildBackgroundDecoration(ColorScheme scheme) {
+  BoxDecoration _buildBackgroundDecoration(ColorScheme scheme) {
     if (_backgroundImagePath != null) {
       return BoxDecoration(
         image: DecorationImage(
@@ -107,16 +104,22 @@ class _HomeShellState extends State<HomeShell> {
         ),
       );
     }
-    switch (_backgroundPreset) {
-      case 'dark':
-        return const BoxDecoration(color: Color(0xFF121212));
-      case 'light':
-        // 原来是 #F6F3EA：蓝通道比红低 12，满屏铺开明显发黄。
-        // 红蓝差收到 7 去掉黄气，亮度取在两者之间——比 #EFEDE7 亮一档。
-        return const BoxDecoration(color: Color(0xFFF3F1EC));
-      default:
-        return null;
-    }
+    // 这两档是「不管主题是深是浅，我就要这个底色」的显式选择，
+    // 所以直接取设计 token，不跟 scheme 翻转。
+    //
+    // ⚠️ 别在这里写死颜色：这层是整屏铺在主题上面的，
+    // 写死等于把 ColorScheme.surface 盖掉（之前的 #F3F1EC 就是这么
+    // 让奶白底一直没显示出来的）。
+    // 没设自定义图片就用主题底色。
+    //
+    // ⚠️ 这里必须真的画出来：外层 Scaffold 是 backgroundColor: transparent
+    // （为了让自定义背景图铺满），返回 null 等于没人上色，露出来的是
+    // MaterialApp 底下的纯黑——深色模式的暖黑 #171310 就白设了。
+    //
+    // 原来还有 dark / light 两档写死的底色，和「深色模式」开关打架：
+    // 它只铺在这一层，信 / 日记 / 一隅是独立路由铺不到，选了深色背景
+    // 就变成「主页是黑的、内页是白的」。明暗现在统一归主题管。
+    return BoxDecoration(color: scheme.surface);
   }
 
   Widget _buildFloatingNav(ColorScheme scheme) {
@@ -124,52 +127,20 @@ class _HomeShellState extends State<HomeShell> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         child: Container(
-          height: 58,
+          height: 50,
           decoration: BoxDecoration(
-            color:
-                isDark
-                    ? Colors.black.withValues(alpha: 0.72)
-                    : Colors.white.withValues(alpha: 0.86),
+            color: scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(
-              color:
-                  isDark
-                      ? Colors.white.withValues(alpha: 0.10)
-                      : Colors.black.withValues(alpha: 0.08),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                blurRadius: 18,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: AppShadow.softenFloating(isDark),
           ),
           child: Row(
             children: [
-              _navItem(
-                0,
-                PhosphorIconsRegular.house,
-                PhosphorIconsRegular.house,
-                '主页',
-                scheme,
-              ),
-              _navItem(
-                1,
-                PhosphorIconsRegular.bookOpen,
-                PhosphorIconsRegular.bookOpen,
-                '书架',
-                scheme,
-              ),
-              _navItem(
-                2,
-                PhosphorIconsRegular.tree,
-                PhosphorIconsRegular.tree,
-                '栖息',
-                scheme,
-              ),
+              // 三个元素长宽比不同，高度按视觉重量对齐，不要都设成同一个数。
+              _navItem(0, 'cat', 17, '主页', scheme),
+              _navItem(1, 'books', 16, '书架', scheme),
+              _navItem(2, 'mountain', 13, '栖息', scheme),
             ],
           ),
         ),
@@ -179,8 +150,8 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _navItem(
     int index,
-    IconData icon,
-    IconData selectedIcon,
+    String asset,
+    double iconHeight,
     String label,
     ColorScheme scheme,
   ) {
@@ -194,21 +165,21 @@ class _HomeShellState extends State<HomeShell> {
           curve: Curves.easeOut,
           margin: const EdgeInsets.all(5),
           decoration: BoxDecoration(
-            color: selected ? scheme.inverseSurface : Colors.transparent,
+            // 选中底用 primaryContainer 淡棕，不用实色主色——
+            // 实色太重，会跟页面顶部的棕色元素抢。
+            color: selected ? scheme.primaryContainer : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                selected ? selectedIcon : icon,
-                size: 20,
-                color:
-                    selected
-                        ? scheme.onInverseSurface
-                        : scheme.onSurfaceVariant,
+              Image.asset(
+                'assets/icons/$asset.png',
+                height: iconHeight,
+                // 白色母版按 alpha 整张染色，深浅/选中全交给主题
+                color: selected ? scheme.primary : scheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 label,
                 style: TextStyle(
@@ -216,7 +187,7 @@ class _HomeShellState extends State<HomeShell> {
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                   color:
                       selected
-                          ? scheme.onInverseSurface
+                          ? scheme.onPrimaryContainer
                           : scheme.onSurfaceVariant,
                 ),
               ),

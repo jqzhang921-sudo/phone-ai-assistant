@@ -82,14 +82,18 @@ class TtsService extends ChangeNotifier {
   }
 
   Future<void> _speakElevenLabs(
-      String messageId, String text, AppSettings settings) async {
+    String messageId,
+    String text,
+    AppSettings settings,
+  ) async {
     final apiKey = settings.elevenLabsApiKey.trim();
     if (apiKey.isEmpty) {
       throw TtsException('还没填 ElevenLabs API Key（设置 → 语音来源）');
     }
-    final voiceId = settings.elevenLabsVoiceId.trim().isEmpty
-        ? AppSettings.defaultElevenLabsVoice
-        : settings.elevenLabsVoiceId.trim();
+    final voiceId =
+        settings.elevenLabsVoiceId.trim().isEmpty
+            ? AppSettings.defaultElevenLabsVoice
+            : settings.elevenLabsVoiceId.trim();
     // 缓存键含音色：换了音色，同一条消息会重新合成（用新音色）
     final cacheKey = '$messageId|$voiceId';
 
@@ -120,7 +124,8 @@ class TtsService extends ChangeNotifier {
       );
       if (resp.statusCode != 200) {
         throw TtsException(
-            'ElevenLabs 失败 ${resp.statusCode}：${_shortBody(resp.body)}');
+          'ElevenLabs 失败 ${resp.statusCode}：${_shortBody(resp.body)}',
+        );
       }
       final bytes = resp.bodyBytes;
       _audioCache[cacheKey] = bytes;
@@ -142,8 +147,8 @@ class TtsService extends ChangeNotifier {
   /// 朗读前清洗：只去掉圆括号（及其内容），如 （旁白）（动作）。
   /// 其他括号（【】[]「」《》等）照常朗读。循环直到干净以处理嵌套。
   static final List<RegExp> _bracketPatterns = [
-    RegExp(r'（[^（）]*）'),   // 中文圆括号
-    RegExp(r'\([^()]*\)'),      // 英文圆括号
+    RegExp(r'（[^（）]*）'), // 中文圆括号
+    RegExp(r'\([^()]*\)'), // 英文圆括号
   ];
 
   String _cleanForTts(String text) {

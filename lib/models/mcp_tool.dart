@@ -12,18 +12,18 @@ class McpTool {
   });
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'description': description,
-        'inputSchema': inputSchema,
-        'category': category,
-      };
+    'name': name,
+    'description': description,
+    'inputSchema': inputSchema,
+    'category': category,
+  };
 
   factory McpTool.fromJson(Map<String, dynamic> json) => McpTool(
-        name: json['name'],
-        description: json['description'],
-        inputSchema: Map<String, dynamic>.from(json['inputSchema']),
-        category: json['category'] ?? 'general',
-      );
+    name: json['name'],
+    description: json['description'],
+    inputSchema: Map<String, dynamic>.from(json['inputSchema']),
+    category: json['category'] ?? 'general',
+  );
 }
 
 class McpRequest {
@@ -34,17 +34,17 @@ class McpRequest {
   const McpRequest({required this.method, this.params, this.id});
 
   Map<String, dynamic> toJson() => {
-        'jsonrpc': '2.0',
-        'method': method,
-        if (params != null) 'params': params,
-        if (id != null) 'id': id,
-      };
+    'jsonrpc': '2.0',
+    'method': method,
+    if (params != null) 'params': params,
+    if (id != null) 'id': id,
+  };
 
   factory McpRequest.fromJson(Map<String, dynamic> json) => McpRequest(
-        method: json['method'],
-        params: json['params'] as Map<String, dynamic>?,
-        id: json['id'] as String?,
-      );
+    method: json['method'],
+    params: json['params'] as Map<String, dynamic>?,
+    id: json['id'] as String?,
+  );
 }
 
 class McpResponse {
@@ -55,18 +55,17 @@ class McpResponse {
   const McpResponse({this.result, this.error, this.id});
 
   Map<String, dynamic> toJson() => {
-        'jsonrpc': '2.0',
-        if (result != null) 'result': result,
-        if (error != null) 'error': error!.toJson(),
-        if (id != null) 'id': id,
-      };
+    'jsonrpc': '2.0',
+    if (result != null) 'result': result,
+    if (error != null) 'error': error!.toJson(),
+    if (id != null) 'id': id,
+  };
 
   factory McpResponse.fromJson(Map<String, dynamic> json) => McpResponse(
-        result: json['result'],
-        error:
-            json['error'] != null ? McpError.fromJson(json['error']) : null,
-        id: json['id'] as String?,
-      );
+    result: json['result'],
+    error: json['error'] != null ? McpError.fromJson(json['error']) : null,
+    id: json['id'] as String?,
+  );
 }
 
 class McpError {
@@ -77,8 +76,6 @@ class McpError {
 
   Map<String, dynamic> toJson() => {'code': code, 'message': message};
 
-  factory McpError.fromJson(Map<String, dynamic> json) => McpError(
-        code: json['code'],
-        message: json['message'],
-      );
+  factory McpError.fromJson(Map<String, dynamic> json) =>
+      McpError(code: json['code'], message: json['message']);
 }

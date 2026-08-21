@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
+import '../config/app_shape.dart';
 import 'message_bubble.dart';
 import 'tool_call_card.dart';
 
@@ -12,7 +13,8 @@ class ChatDisplayItem {
   final List<ChatMessage>? toolRun;
 
   const ChatDisplayItem.message(ChatMessage this.message) : toolRun = null;
-  const ChatDisplayItem.toolRun(List<ChatMessage> this.toolRun) : message = null;
+  const ChatDisplayItem.toolRun(List<ChatMessage> this.toolRun)
+    : message = null;
 
   /// ListView 的 key 用它，避免重建时状态错位
   String get key =>
@@ -65,8 +67,97 @@ List<ChatDisplayItem> groupChatItems(List<ChatMessage> messages) {
   return items;
 }
 
+/// 跨过这么久才再说话，就重新报一次时间。
+const _timestampGap = Duration(minutes: 5);
+
+/// 这条要不要挂时间戳：只在整段的最后一条、或者距上一条超过 5 分钟时挂。
+///
+/// 原来每条气泡下面都跟一行完整的 `time: 2026-08-18 21:40:02`，
+/// 一屏十几条就是十几行灰字——聊天页「显碎」主要就是它。
+/// 和分组一样，单条消息自己看不出前后关系，只能在这一层判断。
+bool _shouldShowTimestamp(List<ChatDisplayItem> items, int index) {
+  final m = items[index].message;
+  if (m == null) return false;
+  if (index == items.length - 1) return true;
+  for (var i = index - 1; i >= 0; i--) {
+    final prev = items[i].message;
+    if (prev == null) continue;
+    return m.timestamp.difference(prev.timestamp).abs() >= _timestampGap;
+  }
+  return true; // 前面没有普通消息，这是开头第一条
+}
+
+DateTime? _itemTime(ChatDisplayItem item) =>
+    item.message?.timestamp ?? item.toolRun?.first.timestamp;
+
+/// 这一项是不是新的一天的头一条。
+bool _startsNewDay(List<ChatDisplayItem> items, int index) {
+  final t = _itemTime(items[index]);
+  if (t == null) return false;
+  if (index == 0) return true;
+  final prev = _itemTime(items[index - 1]);
+  if (prev == null) return false;
+  return t.year != prev.year || t.month != prev.month || t.day != prev.day;
+}
+
 /// 渲染一个显示项。
-Widget chatDisplayItem(ChatDisplayItem item) {
-  if (item.toolRun != null) return ToolRunCard(messages: item.toolRun!);
-  return MessageBubble(message: item.message!);
+Widget chatDisplayItem(
+  List<ChatDisplayItem> items,
+  int index, {
+  String? conversationId,
+}) {
+  final item = items[index];
+  final body =
+      item.toolRun != null
+          ? ToolRunCard(messages: item.toolRun!)
+          : MessageBubble(
+            message: item.message!,
+            showTimestamp: _shouldShowTimestamp(items, index),
+            conversationId: conversationId,
+          );
+  if (!_startsNewDay(items, index)) return body;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [_DateDivider(_itemTime(item)!), body],
+  );
+}
+
+/// 跨天时插在中间的那条小胶囊。
+///
+/// 每条气泡的时间戳收敛掉之后，「这是哪一天」就没地方落了——
+/// 由它接住。日期归它，时刻归气泡下面那行，两边不重复。
+class _DateDivider extends StatelessWidget {
+  final DateTime day;
+
+  const _DateDivider(this.day);
+
+  String get _label {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(day.year, day.month, day.day);
+    final diff = today.difference(d).inDays;
+    if (diff == 0) return '今天';
+    if (diff == 1) return '昨天';
+    if (d.year == today.year) return '${d.month} 月 ${d.day} 日';
+    return '${d.year} 年 ${d.month} 月 ${d.day} 日';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 6, bottom: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: scheme.onSurface.withValues(alpha: 0.045),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        child: Text(
+          _label,
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+        ),
+      ),
+    );
+  }
 }

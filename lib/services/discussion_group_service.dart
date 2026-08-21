@@ -27,7 +27,9 @@ class DiscussionGroupService {
   static Future<void> _saveAll(List<DiscussionGroup> groups) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _storageKey, jsonEncode(groups.map((g) => g.toJson()).toList()));
+      _storageKey,
+      jsonEncode(groups.map((g) => g.toJson()).toList()),
+    );
   }
 
   // ── Public API ───────────────────────────────────────────
@@ -41,20 +43,19 @@ class DiscussionGroupService {
 
   /// Groups that share at least one book with [bookIds]
   static Future<List<DiscussionGroup>> findGroupsContaining(
-      List<String> bookIds) async {
+    List<String> bookIds,
+  ) async {
     final all = await _loadAll();
-    return all.where((g) => g.overlapsWith(bookIds)).toList()
-      ..sort((a, b) {
-        // More overlap = higher (more relevant)
-        final aOverlap = a.bookIds.where((id) => bookIds.contains(id)).length;
-        final bOverlap = b.bookIds.where((id) => bookIds.contains(id)).length;
-        return bOverlap.compareTo(aOverlap);
-      });
+    return all.where((g) => g.overlapsWith(bookIds)).toList()..sort((a, b) {
+      // More overlap = higher (more relevant)
+      final aOverlap = a.bookIds.where((id) => bookIds.contains(id)).length;
+      final bOverlap = b.bookIds.where((id) => bookIds.contains(id)).length;
+      return bOverlap.compareTo(aOverlap);
+    });
   }
 
   /// Find a group that covers exactly these books
-  static Future<DiscussionGroup?> findExactMatch(
-      List<String> bookIds) async {
+  static Future<DiscussionGroup?> findExactMatch(List<String> bookIds) async {
     final all = await _loadAll();
     for (final g in all) {
       if (g.coversExactly(bookIds)) return g;
@@ -100,7 +101,9 @@ class DiscussionGroupService {
   static Future<String?> lastMessagePreview(String groupId) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      final file = File('${appDir.path}/book_conversations/group_$groupId.json');
+      final file = File(
+        '${appDir.path}/book_conversations/group_$groupId.json',
+      );
       if (!await file.exists()) return null;
       final data = jsonDecode(await file.readAsString());
       final messages = data['messages'] as List? ?? [];

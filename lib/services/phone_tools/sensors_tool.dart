@@ -4,17 +4,13 @@ import '../../models/mcp_tool.dart';
 
 class SensorTool {
   static McpTool get definition => McpTool(
-        name: 'get_sensors',
-        description: '读取手机传感器数据（加速度计、陀螺仪等）',
-        inputSchema: {
-          'type': 'object',
-          'properties': {},
-        },
-        category: '手机工具',
-      );
+    name: 'get_sensors',
+    description: '读取手机传感器数据（加速度计、陀螺仪等）',
+    inputSchema: {'type': 'object', 'properties': {}},
+    category: '手机工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       // Get accelerometer data (latest reading)
       final accelStream = accelerometerEventStream();
@@ -25,8 +21,9 @@ class SensorTool {
       final gyro = await gyroStream.first;
 
       // Calculate a simple step count estimation based on acceleration magnitude
-      final accelMagnitude =
-          sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
+      final accelMagnitude = sqrt(
+        accel.x * accel.x + accel.y * accel.y + accel.z * accel.z,
+      );
 
       return {
         'success': true,
@@ -36,11 +33,7 @@ class SensorTool {
           'z': accel.z,
           'magnitude': accelMagnitude,
         },
-        'gyroscope': {
-          'x': gyro.x,
-          'y': gyro.y,
-          'z': gyro.z,
-        },
+        'gyroscope': {'x': gyro.x, 'y': gyro.y, 'z': gyro.z},
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       };
     } catch (e) {

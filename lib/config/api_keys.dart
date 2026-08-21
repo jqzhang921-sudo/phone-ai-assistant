@@ -22,31 +22,31 @@ class ApiKeyConfig {
   });
 
   static List<ApiKeyConfig> get defaults => [
-        ApiKeyConfig(
-          provider: 'openai',
-          name: 'OpenAI',
-          endpoint: 'https://api.openai.com/v1',
-          model: 'gpt-4o',
-        ),
-        ApiKeyConfig(
-          provider: 'anthropic',
-          name: 'Claude',
-          endpoint: 'https://api.anthropic.com/v1',
-          model: 'claude-sonnet-5',
-        ),
-        ApiKeyConfig(
-          provider: 'mimo',
-          name: 'MIMO Vision',
-          endpoint: 'https://api.mimo.com/v1',
-          model: 'mimo-vision',
-        ),
-        ApiKeyConfig(
-          provider: 'custom',
-          name: '自定义',
-          endpoint: '',
-          model: 'deepseek-chat',
-        ),
-      ];
+    ApiKeyConfig(
+      provider: 'openai',
+      name: 'OpenAI',
+      endpoint: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+    ),
+    ApiKeyConfig(
+      provider: 'anthropic',
+      name: 'Claude',
+      endpoint: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-5',
+    ),
+    ApiKeyConfig(
+      provider: 'mimo',
+      name: 'MIMO Vision',
+      endpoint: 'https://api.mimo.com/v1',
+      model: 'mimo-vision',
+    ),
+    ApiKeyConfig(
+      provider: 'custom',
+      name: '自定义',
+      endpoint: '',
+      model: 'deepseek-chat',
+    ),
+  ];
 }
 
 class ApiKeyService {
@@ -85,8 +85,9 @@ class ApiKeyService {
     final result = <ApiKeyConfig>[];
     for (final p in providers) {
       // 1) Try secure storage
-      String? key =
-          await _secureStorage.read(key: '${ApiKeyConfig._keyPrefix}$p');
+      String? key = await _secureStorage.read(
+        key: '${ApiKeyConfig._keyPrefix}$p',
+      );
 
       // 2) If not found, try migration from old SharedPreferences
       if (key == null || key.isEmpty) {
@@ -96,19 +97,22 @@ class ApiKeyService {
       final endpoint =
           prefs.getString('${ApiKeyConfig._endpointPrefix}$p') ?? '';
       final model = prefs.getString('${ApiKeyConfig._modelPrefix}$p') ?? '';
-      final name = prefs.getString('api_name_$p') ??
+      final name =
+          prefs.getString('api_name_$p') ??
           ApiKeyConfig.defaults
               .where((d) => d.provider == p)
               .firstOrNull
               ?.name ??
           p;
-      result.add(ApiKeyConfig(
-        provider: p,
-        name: name,
-        apiKey: (key.isNotEmpty) ? key : null,
-        endpoint: endpoint.isEmpty ? null : endpoint,
-        model: model.isEmpty ? null : model,
-      ));
+      result.add(
+        ApiKeyConfig(
+          provider: p,
+          name: name,
+          apiKey: (key.isNotEmpty) ? key : null,
+          endpoint: endpoint.isEmpty ? null : endpoint,
+          model: model.isEmpty ? null : model,
+        ),
+      );
     }
     return result;
   }
@@ -129,11 +133,13 @@ class ApiKeyService {
 
     // Non-sensitive metadata stays in SharedPreferences
     await prefs.setString(
-        '${ApiKeyConfig._endpointPrefix}${config.provider}',
-        config.endpoint ?? '');
+      '${ApiKeyConfig._endpointPrefix}${config.provider}',
+      config.endpoint ?? '',
+    );
     await prefs.setString(
-        '${ApiKeyConfig._modelPrefix}${config.provider}',
-        config.model ?? '');
+      '${ApiKeyConfig._modelPrefix}${config.provider}',
+      config.model ?? '',
+    );
     await prefs.setString('api_name_${config.provider}', config.name);
 
     // Clean up any lingering plain-text copy
@@ -146,8 +152,7 @@ class ApiKeyService {
     providers.remove(provider);
     await prefs.setStringList('api_providers', providers);
 
-    await _secureStorage.delete(
-        key: '${ApiKeyConfig._keyPrefix}$provider');
+    await _secureStorage.delete(key: '${ApiKeyConfig._keyPrefix}$provider');
     await prefs.remove('${ApiKeyConfig._endpointPrefix}$provider');
     await prefs.remove('${ApiKeyConfig._modelPrefix}$provider');
     await prefs.remove('api_name_$provider');

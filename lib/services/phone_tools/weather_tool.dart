@@ -13,45 +13,41 @@ class WeatherTool {
   static const _timeout = Duration(seconds: 20);
 
   static McpTool get definition => McpTool(
-        name: 'get_weather',
-        description: '查天气（当前实况 + 未来几天预报）。'
-            '问到天气、要不要带伞、明天冷不冷、适不适合出门这类事情时用这个，'
-            '**不要用 web_search 查天气**——搜索引擎抓回来的是城市百科，查不到天气。'
-            '\n'
-            '两种用法，优先用坐标：\n'
-            '1. 用户问「我这儿」「附近」「今天要不要带伞」这类跟自身位置有关的，'
-            '**先调 get_location 拿到经纬度，再把 latitude / longitude 传进来**。'
-            '这样最准，也绕开了地名查不到的问题。\n'
-            '2. 用户明确说了地方，就传 location 地名。',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'location': {
-              'type': 'string',
-              'description': '地名。中文，例如「郑州」「玉溪」。只写地名，'
-                  '不要带「明天」「天气」这类词。'
-                  '县和区经常查不到，查不到时改用它所在的市。',
-            },
-            'latitude': {
-              'type': 'number',
-              'description': '纬度。和 longitude 成对给，给了就直接用坐标查，'
-                  '不再查地名——从 get_location 拿到的坐标走这里。',
-            },
-            'longitude': {
-              'type': 'number',
-              'description': '经度，和 latitude 成对给。',
-            },
-            'days': {
-              'type': 'integer',
-              'description': '要几天的预报，含今天。默认 3，最多 7。',
-            },
-          },
+    name: 'get_weather',
+    description:
+        '查天气（当前实况 + 未来几天预报）。'
+        '问到天气、要不要带伞、明天冷不冷、适不适合出门这类事情时用这个，'
+        '**不要用 web_search 查天气**——搜索引擎抓回来的是城市百科，查不到天气。'
+        '\n'
+        '两种用法，优先用坐标：\n'
+        '1. 用户问「我这儿」「附近」「今天要不要带伞」这类跟自身位置有关的，'
+        '**先调 get_location 拿到经纬度，再把 latitude / longitude 传进来**。'
+        '这样最准，也绕开了地名查不到的问题。\n'
+        '2. 用户明确说了地方，就传 location 地名。',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'location': {
+          'type': 'string',
+          'description':
+              '地名。中文，例如「郑州」「玉溪」。只写地名，'
+              '不要带「明天」「天气」这类词。'
+              '县和区经常查不到，查不到时改用它所在的市。',
         },
-        category: '网络工具',
-      );
+        'latitude': {
+          'type': 'number',
+          'description':
+              '纬度。和 longitude 成对给，给了就直接用坐标查，'
+              '不再查地名——从 get_location 拿到的坐标走这里。',
+        },
+        'longitude': {'type': 'number', 'description': '经度，和 latitude 成对给。'},
+        'days': {'type': 'integer', 'description': '要几天的预报，含今天。默认 3，最多 7。'},
+      },
+    },
+    category: '网络工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     // 不用 as String?：模型偶尔会塞别的类型，硬转会抛。
     final location = (args['location']?.toString() ?? '').trim();
     final lat = double.tryParse(args['latitude']?.toString() ?? '');
@@ -61,7 +57,8 @@ class WeatherTool {
     if (!hasCoords && location.isEmpty) {
       return {
         'success': false,
-        'error': '要么给 location（地名），要么给 latitude + longitude（坐标）。'
+        'error':
+            '要么给 location（地名），要么给 latitude + longitude（坐标）。'
             '要查用户当前所在位置的天气，先调 get_location 拿坐标，再传进来。',
       };
     }
@@ -75,38 +72,43 @@ class WeatherTool {
       // 这条路是最准的：地名库里县、区大面积缺失，而手机上的 GPS 本来就直接
       // 给经纬度，open-meteo 的预报接口本来就按坐标查——中间那次「名字→坐标」
       // 纯属自找麻烦。
-      final place = hasCoords
-          ? {
-              'latitude': lat,
-              'longitude': lon,
-              'timezone': null,
-              'label': '坐标 ${lat.toStringAsFixed(3)}, ${lon.toStringAsFixed(3)}',
-              'weak': false,
-            }
-          : await _resolvePlace(location);
+      final place =
+          hasCoords
+              ? {
+                'latitude': lat,
+                'longitude': lon,
+                'timezone': null,
+                'label':
+                    '坐标 ${lat.toStringAsFixed(3)}, ${lon.toStringAsFixed(3)}',
+                'weak': false,
+              }
+              : await _resolvePlace(location);
 
       if (place == null) {
         return {
           'success': false,
-          'error': '没找到「$location」这个地方。'
+          'error':
+              '没找到「$location」这个地方。'
               '如果是县或区，改用它所在的市试试；'
               '如果问的是用户当前位置，先调 get_location 拿坐标再传 '
               'latitude / longitude 过来，那条路不受地名库限制。',
         };
       }
 
-      final uri = Uri.parse(_forecastUrl).replace(queryParameters: {
-        'latitude': '${place['latitude']}',
-        'longitude': '${place['longitude']}',
-        'current':
-            'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m',
-        'daily':
-            'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-        // 没有时区就交给接口按坐标自己判断，别写死 Asia/Shanghai——
-        // 那样查国外的地方时间会全错。
-        'timezone': place['timezone']?.toString() ?? 'auto',
-        'forecast_days': '$days',
-      });
+      final uri = Uri.parse(_forecastUrl).replace(
+        queryParameters: {
+          'latitude': '${place['latitude']}',
+          'longitude': '${place['longitude']}',
+          'current':
+              'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m',
+          'daily':
+              'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+          // 没有时区就交给接口按坐标自己判断，别写死 Asia/Shanghai——
+          // 那样查国外的地方时间会全错。
+          'timezone': place['timezone']?.toString() ?? 'auto',
+          'forecast_days': '$days',
+        },
+      );
 
       final resp = await http.get(uri).timeout(_timeout);
       if (resp.statusCode != 200) {
@@ -123,7 +125,8 @@ class WeatherTool {
         // 只匹配到人口为 0 的小地名时说一声。地名库里同名的村镇一大堆，
         // 静默返回一个村子的天气是最坏的情况——错了也没人看得出来。
         if (place['weak'] == true)
-          'match_warning': '只匹配到「${place['label']}」这个小地名，'
+          'match_warning':
+              '只匹配到「${place['label']}」这个小地名，'
               '可能不是用户说的那个地方。回答时提一句你查的是哪儿，'
               '让 TA 确认，或者请 TA 补上省市。',
         if (current != null)
@@ -206,18 +209,27 @@ class WeatherTool {
   static Future<Map<String, dynamic>?> _geocodeOsm(String name) async {
     if (name.isEmpty) return null;
     try {
-      final uri = Uri.parse('https://nominatim.openstreetmap.org/search')
-          .replace(queryParameters: {
-        'q': name,
-        'format': 'json',
-        'limit': '1',
-        'accept-language': 'zh',
-      });
-      final resp = await http.get(uri, headers: {
-        'User-Agent': 'phone-ai-assistant/1.0 '
-            '(https://github.com/jqzhang921-sudo/phone-ai-assistant)',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-      }).timeout(_osmTimeout);
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search',
+      ).replace(
+        queryParameters: {
+          'q': name,
+          'format': 'json',
+          'limit': '1',
+          'accept-language': 'zh',
+        },
+      );
+      final resp = await http
+          .get(
+            uri,
+            headers: {
+              'User-Agent':
+                  'phone-ai-assistant/1.0 '
+                  '(https://github.com/jqzhang921-sudo/phone-ai-assistant)',
+              'Accept-Language': 'zh-CN,zh;q=0.9',
+            },
+          )
+          .timeout(_osmTimeout);
       if (resp.statusCode != 200) return null;
 
       final list = jsonDecode(resp.body) as List?;
@@ -290,23 +302,28 @@ class WeatherTool {
   }
 
   /// 剥掉时间词和「天气/气温/预报」这类赘词，只留地名。
-  static String _stripNoise(String s) => s
-      .replaceAll(
-        RegExp(r'(今天|明天|后天|昨天|前天|今日|明日|未来几天|这几天|周末|'
-            r'天气|气温|温度|预报|情况|怎么样|如何|查一下|查询|的)'),
-        '',
-      )
-      .trim();
+  static String _stripNoise(String s) =>
+      s
+          .replaceAll(
+            RegExp(
+              r'(今天|明天|后天|昨天|前天|今日|明日|未来几天|这几天|周末|'
+              r'天气|气温|温度|预报|情况|怎么样|如何|查一下|查询|的)',
+            ),
+            '',
+          )
+          .trim();
 
   /// 拿一批候选回来，挑哪个交给上面的排序。
   static Future<List<Map<String, dynamic>>> _geocodeAll(String name) async {
     try {
-      final uri = Uri.parse(_geoUrl).replace(queryParameters: {
-        'name': name,
-        'count': '6',
-        'language': 'zh',
-        'format': 'json',
-      });
+      final uri = Uri.parse(_geoUrl).replace(
+        queryParameters: {
+          'name': name,
+          'count': '6',
+          'language': 'zh',
+          'format': 'json',
+        },
+      );
       final resp = await http.get(uri).timeout(_timeout);
       if (resp.statusCode != 200) return [];
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -356,8 +373,7 @@ class WeatherTool {
         'condition': _wmo(i < codes.length ? codes[i] : null),
         'high': i < highs.length ? '${highs[i]}°C' : null,
         'low': i < lows.length ? '${lows[i]}°C' : null,
-        if (i < rain.length && rain[i] != null)
-          'rain_chance': '${rain[i]}%',
+        if (i < rain.length && rain[i] != null) 'rain_chance': '${rain[i]}%',
       });
     }
     return out;

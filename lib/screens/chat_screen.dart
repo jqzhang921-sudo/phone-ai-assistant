@@ -28,7 +28,10 @@ import '../services/history_compactor.dart';
 import '../search/history_search_delegate.dart';
 import '../search/search_result_model.dart';
 import '../widgets/chat_message_item.dart';
+import '../widgets/background_sheet.dart';
+import '../widgets/mark_backdrop.dart';
 import 'settings_screen.dart';
+import 'musing_corner_screen.dart';
 import 'pc_chat_screen.dart';
 import '../config/app_shape.dart';
 
@@ -62,11 +65,15 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = false;
   bool _chatMode = false;
   List<Conversation> _savedConversations = [];
-  String? _backgroundImagePath;
   String? _musingContent;
   bool _musingFavorited = false;
   bool _musingLoading = false;
   String _userName = '';
+  String _aiName = '';
+
+  /// 抽屉右侧那几个数字。开抽屉时刷新一次，不常驻订阅。
+  int _favoriteCount = 0;
+  int _trashCount = 0;
 
   late Conversation _conversation;
 
@@ -75,15 +82,32 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _conversation = Conversation(id: _uuid.v4());
     _loadConversations();
-    _loadBackground();
     _loadMusing();
     _loadUserName();
   }
 
   Future<void> _loadUserName() async {
     final settings = await AppSettings.load();
-    if (mounted) setState(() => _userName = settings.userName);
+    if (!mounted) return;
+    setState(() {
+      _userName = settings.userName;
+      _aiName = settings.aiName;
+    });
   }
+
+  Future<void> _loadDrawerCounts() async {
+    final favorites = await StorageService.listFavoritedMusings();
+    final trashed = await StorageService.listTrashedConversations();
+    if (!mounted) return;
+    setState(() {
+      _favoriteCount = favorites.length;
+      _trashCount = trashed.length;
+    });
+  }
+
+  /// 抽屉顶部那句「和沐一起，N 轮对话」
+  int get _totalRounds =>
+      _savedConversations.fold(0, (sum, c) => sum + c.messages.length);
 
   @override
   void dispose() {
@@ -95,11 +119,6 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadConversations() async {
     final convs = await StorageService.listConversations();
     if (mounted) setState(() => _savedConversations = convs);
-  }
-
-  Future<void> _loadBackground() async {
-    final path = await StorageService.getBackgroundImagePath();
-    if (mounted) setState(() => _backgroundImagePath = path);
   }
 
   Future<void> _loadMusing() async {
@@ -160,14 +179,6 @@ class _ChatScreenState extends State<ChatScreen> {
         await StorageService.removeFavoritedMusing(match.id);
       }
     }
-  }
-
-  Future<void> _pickBackground() async {
-    final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-    await StorageService.setBackgroundImagePath(image.path);
-    if (mounted) setState(() => _backgroundImagePath = image.path);
-    widget.onBackgroundChanged?.call();
   }
 
   void _switchConversation(Conversation conv) {
@@ -712,10 +723,7 @@ class _ChatScreenState extends State<ChatScreen> {
             }),
       );
     } catch (e) {
-      return jsonEncode({
-        'success': false,
-        'error': '工具 $toolName 执行失败: $e',
-      });
+      return jsonEncode({'success': false, 'error': '工具 $toolName 执行失败: $e'});
     }
   }
 
@@ -948,52 +956,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _showSystemPromptDialog() {
-    final controller = TextEditingController(
-      text: _conversation.systemPrompt ?? '',
-    );
-    showDialog(
-      context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('系统提示词'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: '设定 AI 的角色、人设、行为规则...',
-                ),
-                maxLines: 6,
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('取消'),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() => _conversation.systemPrompt = null);
-                  Navigator.of(ctx).pop();
-                },
-                child: const Text('重置默认'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  setState(() {
-                    _conversation.systemPrompt = controller.text.trim();
-                  });
-                  Navigator.of(ctx).pop();
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          ),
-    );
-  }
-
   Future<void> _exportConversation() async {
     if (_conversation.messages.isEmpty) {
       ScaffoldMessenger.of(
@@ -1071,8 +1033,8 @@ class _ChatScreenState extends State<ChatScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            boxShadow: AppShadow.soften(theme.brightness == Brightness.dark),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1082,7 +1044,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   Icon(
                     PhosphorIconsRegular.chartBar,
                     size: 18,
-                    color: scheme.secondary,
+                    color: scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -1132,35 +1094,73 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// 三宫格。图标二选一：品牌图标给 [asset]，功能图标给 [icon]——
+  /// 星=新对话、书=书架属于「地方和内容」，显示器属于「机器」，各归各的。
   Widget _quickActionCard(
-    ThemeData theme,
-    IconData icon,
-    String label,
-    VoidCallback onTap,
-  ) {
+    ThemeData theme, {
+    IconData? icon,
+    String? asset,
+    required String label,
+    bool primary = false,
+    required VoidCallback onTap,
+  }) {
     final scheme = theme.colorScheme;
     return Expanded(
-      child: Material(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        child: InkWell(
+      // 阴影画在 Material 外面：Material 的 elevation 出来偏灰，
+      // 用 DecoratedBox 兜住 AppShadow，水波纹还归 Material 管。
+      child: DecoratedBox(
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              children: [
-                Icon(icon, color: scheme.secondary, size: 24),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+          boxShadow: AppShadow.soften(theme.brightness == Brightness.dark),
+        ),
+        child: Material(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color:
+                          primary
+                              ? scheme.primary.withValues(alpha: 0.11)
+                              : scheme.onSurface.withValues(alpha: 0.055),
+                      shape: BoxShape.circle,
+                    ),
+                    child:
+                        asset != null
+                            ? Image.asset(
+                              'assets/icons/$asset.png',
+                              height: asset == 'books' ? 15 : 16,
+                              color:
+                                  primary
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                            )
+                            : Icon(
+                              icon,
+                              size: 18,
+                              color: scheme.onSurfaceVariant,
+                            ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1183,6 +1183,9 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         drawer: _buildDrawer(theme),
+        onDrawerChanged: (open) {
+          if (open) _loadDrawerCounts();
+        },
         drawerEnableOpenDragGesture: !_chatMode,
         drawerEdgeDragWidth: 48,
         appBar: AppBar(
@@ -1237,11 +1240,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                   )
                   : (_conversation.messages.isNotEmpty
-                      ? Text(
-                        _conversation.title,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: fgColor),
-                      )
+                      ? _chatTitle(theme, fgColor)
                       : null),
           actions: [
             _topBarIcon(
@@ -1250,6 +1249,22 @@ class _ChatScreenState extends State<ChatScreen> {
               tooltip: '搜索',
               color: fgColor,
             ),
+            // 对话模式下汉堡被返回键顶掉了，抽屉只能靠边缘滑——
+            // 「重命名 / 导出」这两个动作等于藏起来了。给它们一个明面入口。
+            if (_chatMode)
+              PopupMenuButton<String>(
+                icon: Icon(PhosphorIconsRegular.dotsThree, color: fgColor),
+                tooltip: '更多',
+                onSelected: (v) {
+                  if (v == 'rename') _showRenameDialog();
+                  if (v == 'export') _exportConversation();
+                },
+                itemBuilder:
+                    (_) => const [
+                      PopupMenuItem(value: 'rename', child: Text('重命名')),
+                      PopupMenuItem(value: 'export', child: Text('导出聊天')),
+                    ],
+              ),
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(2),
@@ -1274,24 +1289,92 @@ class _ChatScreenState extends State<ChatScreen> {
                               final items = groupChatItems(
                                 _conversation.messages,
                               );
-                              return ListView.builder(
-                                controller: _scrollController,
-                                padding: const EdgeInsets.all(12),
-                                itemCount: items.length,
-                                itemBuilder:
-                                    (context, index) =>
-                                        chatDisplayItem(items[index]),
+                              return MarkBackdrop(
+                                child: ListView.builder(
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: items.length,
+                                  itemBuilder:
+                                      (context, index) => chatDisplayItem(
+                                        items,
+                                        index,
+                                        conversationId: _conversation.id,
+                                      ),
+                                ),
                               );
                             },
                           ))
                       : _buildHome(theme),
             ),
 
-            // Input area
-            _buildInputArea(theme),
+            // 输入区只在对话模式出现。
+            //
+            // 主页原来底部同时挂着输入框和悬浮导航胶囊，两个白色悬浮元素上下
+            // 叠着互相抢，底部没有唯一焦点。发消息的入口收到「新对话」和
+            // 具体某段对话里去。
+            if (_chatMode) _buildInputArea(theme),
           ],
         ),
       ),
+    );
+  }
+
+  /// 对话页顶栏：猫底座 + 标题 + 一行状态。
+  ///
+  /// 「在线」不是写死的装饰——它读 `AiClientProvider.currentClient`：
+  /// 为 null 就是模型没配好，这一屏根本发不出去。密钥过期时
+  /// 这里会先变成「未配置模型」，比发出去之后报错早一步。
+  Widget _chatTitle(ThemeData theme, Color fgColor) {
+    final scheme = theme.colorScheme;
+    final online = context.watch<AiClientProvider>().currentClient != null;
+    final count = _conversation.messages.length;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.11),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Image.asset(
+            'assets/icons/cat.png',
+            height: 17,
+            color: scheme.primary,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _conversation.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: fgColor,
+                ),
+              ),
+              Text(
+                online ? '在线 · $count 条' : '未配置模型 · $count 条',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  color: online ? fgColor.withValues(alpha: 0.6) : scheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1343,87 +1426,256 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildDrawer(ThemeData theme) {
     final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final who = _userName.trim().isEmpty ? 'Cleo' : _userName.trim();
+    final ta = _aiName.trim().isEmpty ? 'TA' : _aiName.trim();
+
     return Drawer(
+      width: 296,
       // 实底：半透明会让背后花花绿绿的内容透上来，压低菜单文字的可读性
       backgroundColor: scheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(26),
+          bottomRight: Radius.circular(26),
+        ),
+      ),
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          // 默认是 center：底部寄语那块比较窄，不拉满就会被居中，
+          // 和上面所有左对齐的东西错开
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 身份区：打开抽屉第一眼应该知道这是谁的地方
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-              child: Text(
-                '菜单',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+              child: Row(
+                children: [
+                  Image.asset(
+                    'assets/mark-simple.png',
+                    width: 46,
+                    color: dark ? scheme.onSurface : scheme.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          who,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'NotoSerifSC',
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '和$ta一起，$_totalRounds 轮对话',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (_chatMode) ...[
-              _drawerItem(theme, PhosphorIconsRegular.pencilSimple, '重命名', () {
-                Navigator.of(context).pop();
-                _showRenameDialog();
-              }),
-              _drawerItem(theme, PhosphorIconsRegular.brain, '系统提示词', () {
-                Navigator.of(context).pop();
-                _showSystemPromptDialog();
-              }),
-              _drawerItem(theme, PhosphorIconsRegular.shareNetwork, '导出聊天', () {
-                Navigator.of(context).pop();
-                _exportConversation();
-              }),
-              const Divider(),
-            ],
-            _drawerItem(theme, PhosphorIconsRegular.plus, '新对话', () {
-              Navigator.of(context).pop();
-              _newConversation();
-            }),
-            _drawerItem(
-              theme,
-              PhosphorIconsRegular.clockCounterClockwise,
-              '对话历史',
-              () {
-                Navigator.of(context).pop();
-                _showConversationList();
-              },
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                children: [
+                  _drawerGroup(theme, [
+                    _drawerItem(
+                      theme,
+                      asset: 'star',
+                      label: '新对话',
+                      primary: true,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _newConversation();
+                      },
+                    ),
+                    _drawerItem(
+                      theme,
+                      icon: PhosphorIconsRegular.clockCounterClockwise,
+                      label: '对话历史',
+                      trailing: '${_savedConversations.length}',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _showConversationList();
+                      },
+                    ),
+                    _drawerItem(
+                      theme,
+                      asset: 'flower',
+                      label: '收藏的话',
+                      trailing: '$_favoriteCount',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const MusingCornerScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ]),
+                  // 「书架」不放这里：底部导航已经有了，同一个目的地两个入口
+                  // 只会让人多想一秒。「工具」是诊断页，收在设置里。
+                  _drawerGroup(theme, [
+                    _drawerItem(
+                      theme,
+                      asset: 'waves',
+                      label: '聊天背景',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _openBackgroundSheet();
+                      },
+                    ),
+                    _drawerItem(
+                      theme,
+                      icon: PhosphorIconsRegular.gear,
+                      label: '设置',
+                      onTap: () async {
+                        Navigator.of(context).pop();
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SettingsScreen(),
+                          ),
+                        );
+                        _loadUserName();
+                      },
+                    ),
+                  ]),
+                  _drawerGroup(theme, [
+                    _drawerItem(
+                      theme,
+                      icon: PhosphorIconsRegular.trashSimple,
+                      label: '回收站',
+                      trailing: _trashCount == 0 ? null : '$_trashCount',
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _showTrashSheet();
+                      },
+                    ),
+                  ]),
+                ],
+              ),
             ),
-            // 「书架」不放这里：底部导航已经有了，同一个目的地两个入口只会
-            // 让人多想一秒。「工具」是诊断页，收进设置里，不与设置平级。
-            const Divider(),
-            _drawerItem(theme, PhosphorIconsRegular.gear, '设置', () async {
-              Navigator.of(context).pop();
-              await Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
-              _loadUserName();
-            }),
-            _drawerItem(theme, PhosphorIconsRegular.imageSquare, '聊天背景', () {
-              Navigator.of(context).pop();
-              _showBackgroundSheet();
-            }),
-            const Divider(),
-            _drawerItem(theme, PhosphorIconsRegular.trashSimple, '回收站', () {
-              Navigator.of(context).pop();
-              _showTrashSheet();
-            }),
+            // 下半部分本来是大片空白。空白不是靠加功能填，是靠给它一个收尾。
+            Padding(
+              // 左边距 24 = 分组卡外边距 14 + 条目内边距 10，
+              // 和上面那排图标底座对齐
+              padding: const EdgeInsets.fromLTRB(24, 8, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Opacity(
+                    opacity: 0.3,
+                    child: Image.asset(
+                      'assets/icons/paw.png',
+                      height: 16,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '愿你在所有的奔波里，\n都有一个可以回来的小角落。',
+                    style: TextStyle(
+                      fontFamily: 'NotoSerifSC',
+                      fontSize: 13,
+                      height: 1.95,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _drawerItem(
-    ThemeData theme,
-    IconData icon,
-    String label,
-    VoidCallback onTap,
-  ) {
+  Widget _drawerGroup(ThemeData theme, List<Widget> items) {
     final scheme = theme.colorScheme;
-    return ListTile(
-      leading: Icon(icon, color: scheme.onSurfaceVariant),
-      title: Text(label, style: const TextStyle(fontSize: 15)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+    final dark = theme.brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: AppShadow.soften(dark),
+      ),
+      child: Column(children: items),
+    );
+  }
+
+  Widget _drawerItem(
+    ThemeData theme, {
+    IconData? icon,
+    String? asset,
+    required String label,
+    String? trailing,
+    bool primary = false,
+    required VoidCallback onTap,
+  }) {
+    final scheme = theme.colorScheme;
+    final fg = primary ? scheme.primary : scheme.onSurfaceVariant;
+    return InkWell(
       onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 9, 14, 9),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color:
+                    primary
+                        ? scheme.primary.withValues(alpha: 0.11)
+                        : scheme.onSurface.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child:
+                  asset != null
+                      ? Image.asset(
+                        'assets/icons/$asset.png',
+                        height: asset == 'waves' ? 13 : 16,
+                        color: fg,
+                      )
+                      : Icon(icon, size: 16, color: fg),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w500,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ),
+            if (trailing != null)
+              Text(
+                trailing,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1538,124 +1790,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _showBackgroundSheet() async {
-    final preset = await StorageService.getBackgroundPreset();
-    final hasImage = _backgroundImagePath != null;
-    if (!mounted) return;
-    final scheme = Theme.of(context).colorScheme;
-    showModalBottomSheet(
-      context: context,
-      builder:
-          (ctx) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 8),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    '聊天背景',
-                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const Divider(height: 1),
-                _backgroundOption(
-                  ctx,
-                  scheme,
-                  icon: PhosphorIconsRegular.sparkle,
-                  label: '跟随主题',
-                  desc: '浅色模式用浅色背景，深色模式用深色背景',
-                  selected: !hasImage && preset == 'none',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _setBackgroundPreset('none');
-                  },
-                ),
-                _backgroundOption(
-                  ctx,
-                  scheme,
-                  icon: PhosphorIconsRegular.sun,
-                  label: '浅色背景',
-                  desc: '固定的浅色底色',
-                  selected: !hasImage && preset == 'light',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _setBackgroundPreset('light');
-                  },
-                ),
-                _backgroundOption(
-                  ctx,
-                  scheme,
-                  icon: PhosphorIconsRegular.moon,
-                  label: '深色背景',
-                  desc: '固定的深色底色',
-                  selected: !hasImage && preset == 'dark',
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _setBackgroundPreset('dark');
-                  },
-                ),
-                _backgroundOption(
-                  ctx,
-                  scheme,
-                  icon: PhosphorIconsRegular.imageSquare,
-                  label: '自定义图片',
-                  desc: hasImage ? '当前已设置图片' : '从相册选择一张背景图',
-                  selected: hasImage,
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _pickBackground();
-                  },
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-    );
-  }
-
-  Widget _backgroundOption(
-    BuildContext ctx,
-    ColorScheme scheme, {
-    required IconData icon,
-    required String label,
-    required String desc,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: selected ? scheme.primary : scheme.onSurfaceVariant,
-      ),
-      title: Text(
-        label,
-        style: TextStyle(
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-        ),
-      ),
-      subtitle: Text(desc, style: const TextStyle(fontSize: 12)),
-      trailing:
-          selected ? const Icon(PhosphorIconsRegular.check, size: 20) : null,
-      onTap: onTap,
-    );
-  }
-
-  Future<void> _setBackgroundPreset(String preset) async {
-    await StorageService.setBackgroundImagePath(null);
-    await StorageService.setBackgroundPreset(preset);
-    if (mounted) setState(() => _backgroundImagePath = null);
-    widget.onBackgroundChanged?.call();
+  /// 选完背景通知外层重画。真正拿路径画底的是 home_shell，
+  /// 这一屏自己不持有背景状态。
+  Future<void> _openBackgroundSheet() async {
+    final changed = await showBackgroundSheet(context);
+    if (changed && mounted) widget.onBackgroundChanged?.call();
   }
 
   Widget _buildEmptyChatHint(ThemeData theme) {
@@ -1683,9 +1822,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildHome(ThemeData theme) {
     final scheme = theme.colorScheme;
-    final bg = context.watch<BackgroundProvider>();
-    final darkFg = bg.darkForeground ?? (theme.brightness == Brightness.light);
-    final fgColor = darkFg ? const Color(0xFF171717) : Colors.white;
+    final dark = theme.brightness == Brightness.dark;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -1693,102 +1830,119 @@ class _ChatScreenState extends State<ChatScreen> {
         // 我想说
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(18),
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: scheme.inverseSurface,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            boxShadow: [
-              BoxShadow(
-                color: scheme.inverseSurface.withValues(alpha: 0.25),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            boxShadow: AppShadow.soften(dark),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '我想说',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1,
-                      color: scheme.onInverseSurface.withValues(alpha: 0.7),
+              // 右上角压一枚徽标淡印。全 App 就这里和聊天页底层两处有材质，
+              // 「缺质感」补的就是这个——注意别让它吃掉点击。
+              Positioned(
+                top: -8,
+                right: -6,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: dark ? 0.09 : 0.07,
+                    child: Transform.rotate(
+                      angle: -0.10472, // -6°
+                      child: Image.asset(
+                        'assets/mark-simple.png',
+                        width: 92,
+                        color:
+                            dark
+                                ? const Color(0xFFF2EAE0)
+                                : const Color(0xFF8B5E34),
+                      ),
                     ),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_musingLoading)
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: scheme.onInverseSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '我想说',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1,
+                            color: scheme.onSurfaceVariant,
                           ),
-                        )
-                      else
-                        Tooltip(
-                          message: '戳戳ta',
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              _refreshMusing();
-                            },
-                            child: Icon(
-                              PhosphorIconsRegular.handTap,
-                              size: 18,
-                              color: scheme.onInverseSurface.withValues(
-                                alpha: 0.7,
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_musingLoading)
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: scheme.primary,
+                                ),
+                              )
+                            else
+                              Tooltip(
+                                message: '戳戳ta',
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.md,
+                                  ),
+                                  onTap: () {
+                                    HapticFeedback.lightImpact();
+                                    _refreshMusing();
+                                  },
+                                  child: Icon(
+                                    PhosphorIconsRegular.handTap,
+                                    size: 18,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 10),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                              onTap:
+                                  _musingContent == null
+                                      ? null
+                                      : _toggleFavoriteMusing,
+                              // 收藏是花，不是星——星归「新对话 / 进度」，
+                              // 品牌图标里一个元素只认一件事。
+                              //
+                              // 收了是主色，没收是次级灰；两种状态必须一眼分得出，
+                              // 原来两个分支是同一个 star 图标，点了看不出有没有收上。
+                              child: Image.asset(
+                                'assets/icons/flower.png',
+                                height: 18,
+                                color:
+                                    _musingFavorited
+                                        ? scheme.primary
+                                        : scheme.onSurfaceVariant,
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      const SizedBox(width: 10),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        onTap:
-                            _musingContent == null
-                                ? null
-                                : _toggleFavoriteMusing,
-                        // 收藏了就换成实心 + 满亮度，没收藏是描边 + 压暗。
-                        //
-                        // 原来三元的两个分支是同一个 PhosphorIconsRegular.star，
-                        // 两种状态长得一模一样，点了根本看不出有没有收上。
-                        //
-                        // 不给它上第二种彩色：这张卡是 inverseSurface 深底，
-                        // 白色实心已经够跳，而全 App 只留赤陶一个强调色。
-                        child: Icon(
-                          _musingFavorited
-                              ? PhosphorIconsFill.star
-                              : PhosphorIconsRegular.star,
-                          size: 20,
-                          color:
-                              _musingFavorited
-                                  ? scheme.onInverseSurface
-                                  : scheme.onInverseSurface.withValues(
-                                    alpha: 0.55,
-                                  ),
-                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _musingContent ??
+                          (_musingLoading
+                              ? '在想点什么…'
+                              : '开始新对话吧，我可以帮你拍照、查位置、聊书、找文件。'),
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: scheme.onSurface,
                       ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _musingContent ??
-                    (_musingLoading ? '在想点什么…' : '开始新对话吧，我可以帮你拍照、查位置、聊书、找文件。'),
-                style: TextStyle(
-                  fontSize: 14.5,
-                  height: 1.6,
-                  color: scheme.onInverseSurface,
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1805,25 +1959,27 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             _quickActionCard(
               theme,
-              PhosphorIconsRegular.plus,
-              '新对话',
-              _newConversation,
+              asset: 'star',
+              label: '新对话',
+              primary: true,
+              onTap: _newConversation,
             ),
             const SizedBox(width: 10),
             _quickActionCard(
               theme,
-              PhosphorIconsRegular.bookOpen,
-              '书架',
-              () => widget.onSwitchTab?.call(AppTab.bookshelf),
+              asset: 'books',
+              label: '书架',
+              onTap: () => widget.onSwitchTab?.call(AppTab.bookshelf),
             ),
             const SizedBox(width: 10),
             _quickActionCard(
               theme,
-              PhosphorIconsRegular.desktop,
-              '电脑',
-              () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const PcChatScreen())),
+              icon: PhosphorIconsRegular.desktop,
+              label: '电脑',
+              onTap:
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PcChatScreen()),
+                  ),
             ),
           ],
         ),
@@ -1851,15 +2007,6 @@ class _ChatScreenState extends State<ChatScreen> {
               .take(20)
               .map((conv) => _conversationTile(theme, conv)),
         ],
-        const SizedBox(height: 24),
-        Center(
-          child: Text(
-            '也可以直接在下方输入框开始聊天',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: fgColor.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1936,22 +2083,17 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
           child: Material(
-            // 置顶的压深一档并描一道边，在一列白卡片里一眼能挑出来
+            // 置顶用主题自己的淡底，未置顶用卡片底色。
+            //
+            // 原来这里写死了 Colors.white，深色模式下白卡配近白的
+            // onSurface 文字，几乎读不出来；置顶那档又用
+            // `primaryContainer.withValues(alpha: 0.92)` —— withValues 是
+            // **替换** alpha 不是叠加，深色下 18% 的浅棕被拉到 92% 不透明，
+            // 就成了一块很响的实色。两处都交回给 scheme。
             color:
-                pinned
-                    ? scheme.primaryContainer.withValues(alpha: 0.92)
-                    : Colors.white.withValues(alpha: 0.94),
+                pinned ? scheme.primaryContainer : scheme.surfaceContainerLow,
             elevation: 0,
-            shape:
-                pinned
-                    ? RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      side: BorderSide(
-                        color: scheme.primary.withValues(alpha: 0.35),
-                      ),
-                    )
-                    : null,
-            borderRadius: pinned ? null : BorderRadius.circular(AppRadius.md),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             child: ListTile(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
@@ -1962,7 +2104,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: pinned ? scheme.onPrimaryContainer : null,
+                  color: pinned ? scheme.onPrimaryContainer : scheme.onSurface,
                 ),
               ),
               subtitle: Text(
@@ -1981,9 +2123,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       ? Icon(
                         PhosphorIconsFill.pushPin,
                         size: 16,
-                        color: scheme.onPrimaryContainer.withValues(
-                          alpha: 0.8,
-                        ),
+                        color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
                       )
                       : null,
               onTap: () => _switchConversation(conv),
@@ -2062,8 +2202,11 @@ class _ChatScreenState extends State<ChatScreen> {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            // 发送键是这一行唯一的主操作，用强调色；「+」保持中性
-            color: active ? scheme.primary : Colors.white.withValues(alpha: 0.85),
+            // 发送键是这一行唯一的主操作，用强调色；「+」保持中性。
+            //
+            // 「+」原来写死 Colors.white，深色模式下就是一颗白球——
+            // 整屏最亮的东西是个次要按钮。交回给 scheme。
+            color: active ? scheme.primary : scheme.surfaceContainerLow,
             shape: BoxShape.circle,
             border:
                 active
@@ -2081,6 +2224,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildTextField(ThemeData theme) {
+    final scheme = theme.colorScheme;
     return TextField(
       controller: _textController,
       focusNode: _focusNode,
@@ -2106,7 +2250,8 @@ class _ChatScreenState extends State<ChatScreen> {
           borderSide: BorderSide.none,
         ),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.75),
+        // 同上：写死的白色在深色模式下是一条亮条。
+        fillColor: scheme.surfaceContainerLow,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 10,

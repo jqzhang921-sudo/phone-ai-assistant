@@ -480,6 +480,16 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                     textAlign: TextAlign.center,
                   ),
                 ),
+                const SizedBox(height: 4),
+                // 加入书架的日期。书卡上不再铺它了——一屏十几个日期是噪音，
+                // 但真要看的时候得找得到，所以落在这儿。
+                Text(
+                  '加入于 ${_displayDate(book.createdAt)}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 const SizedBox(height: 16),
                 ListTile(
                   leading: const Icon(PhosphorIconsRegular.chatCircle),
@@ -809,7 +819,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                                 ),
                                 tooltip: '移除封面',
                                 visualDensity: VisualDensity.compact,
-                                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                                color:
+                                    Theme.of(ctx).colorScheme.onSurfaceVariant,
                                 onPressed: () async {
                                   // 立刻落盘，不等外面点「保存」。
                                   //
@@ -919,11 +930,8 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   String _displayDate(DateTime d) =>
       '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
 
-  Color _statusColor(ReadingStatus s, ThemeData theme) => switch (s) {
-    ReadingStatus.wantToRead => theme.colorScheme.tertiary,
-    ReadingStatus.reading => theme.colorScheme.primary,
-    ReadingStatus.done => theme.colorScheme.secondary,
-  };
+  // 在读用主色，其余一律走唯一那档次级灰。
+  // 别用 secondary —— 那是装饰用的浅棕，当文字色在奶白底上只有 1.5:1。
 
   // ── Build ────────────────────────────────────────────
   @override
@@ -939,18 +947,17 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
+        // 不加副标题：下面那条分段控件已经把「全部 39 / 在读 5」写清楚了
         title: Text('我的书架', style: TextStyle(color: fgColor)),
         actions: [
           Container(
             height: 36,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outline.withValues(alpha: 0.2),
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              boxShadow: AppShadow.softenFloating(
+                theme.brightness == Brightness.dark,
               ),
             ),
             child: Row(
@@ -1007,8 +1014,11 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                   Expanded(child: _bookGrid(theme)),
                 ],
               ),
+      // 不用为导航胶囊留位置：home_shell 里胶囊是 Column 的一员，
+      // 这个 Scaffold 本来就止于它上方。
       floatingActionButton: FloatingActionButton(
         onPressed: _addBook,
+        shape: const CircleBorder(),
         child: const Icon(PhosphorIconsRegular.plus),
       ),
     );
@@ -1060,31 +1070,69 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     final wantCount =
         _books.where((b) => b.status == ReadingStatus.wantToRead).length;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          _filterChip(theme, '全部 ($allCount)', null),
-          const SizedBox(width: 8),
-          _filterChip(theme, '在读 ($readingCount)', ReadingStatus.reading),
-          const SizedBox(width: 8),
-          _filterChip(theme, '已读 ($doneCount)', ReadingStatus.done),
-          const SizedBox(width: 8),
-          _filterChip(theme, '想读 ($wantCount)', ReadingStatus.wantToRead),
-        ],
+    final scheme = theme.colorScheme;
+    const items = [
+      (null, '全部'),
+      (ReadingStatus.reading, '在读'),
+      (ReadingStatus.done, '已读'),
+      (ReadingStatus.wantToRead, '想读'),
+    ];
+    final counts = {
+      null: allCount,
+      ReadingStatus.reading: readingCount,
+      ReadingStatus.done: doneCount,
+      ReadingStatus.wantToRead: wantCount,
+    };
+    // 四格等宽的一条，不是四个各自带边框的独立 chip——
+    // 独立 chip 是四个碎块，分段控件是一个整体。
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
+      child: Container(
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          boxShadow: AppShadow.soften(theme.brightness == Brightness.dark),
+        ),
+        child: Row(
+          children: [
+            for (final (status, label) in items)
+              Expanded(
+                child: _segment(theme, '$label ${counts[status]}', status),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _filterChip(ThemeData theme, String label, ReadingStatus? status) {
+  Widget _segment(ThemeData theme, String label, ReadingStatus? status) {
+    final scheme = theme.colorScheme;
     final active = _filterStatus == status;
-    return FilterChip(
-      label: Text(label),
-      selected: active,
-      onSelected: (_) => setState(() => _filterStatus = active ? null : status),
-      selectedColor: theme.colorScheme.primaryContainer,
-      checkmarkColor: theme.colorScheme.primary,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _filterStatus = status),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          // 选中用淡底，不用实色主色——实色太重
+          color: active ? scheme.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+            color: active ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
     );
   }
 
@@ -1136,23 +1184,30 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         ),
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.48,
-      ),
-      itemCount: filtered.length,
-      itemBuilder: (ctx, i) => _bookCard(theme, filtered[i]),
+    // 用 mainAxisExtent 把每格高度算死：封面固定 2:3，下面文字块定高。
+    // childAspectRatio 是宽高比，换个屏宽就要重新试数，不如直接算。
+    return LayoutBuilder(
+      builder: (ctx, c) {
+        const pad = 20.0, gap = 20.0;
+        final itemW = (c.maxWidth - pad * 2 - gap) / 2;
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(pad, 2, pad, 96),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 18,
+            crossAxisSpacing: gap,
+            mainAxisExtent: itemW * 1.5 + 104,
+          ),
+          itemCount: filtered.length,
+          itemBuilder: (ctx, i) => _bookCard(theme, filtered[i]),
+        );
+      },
     );
   }
 
   Widget _bookCard(ThemeData theme, Book book) {
     final hasCover =
         book.coverPath != null && File(book.coverPath!).existsSync();
-    final dateStr = _displayDate(book.createdAt);
 
     return GestureDetector(
       onTap: () => _showBookMenu(book),
@@ -1165,23 +1220,43 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // cover image (2:3 portrait)
-          Expanded(
-            flex: 5,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              child:
-                  hasCover
-                      ? Image.file(File(book.coverPath!), fit: BoxFit.cover)
-                      : _placeholderCover(theme, book),
+          // 封面直接落在页面底色上，不再套白卡——白卡把每本书框成一个小盒子，
+          // 一屏十几个盒子就是十几条边。层次交给封面自己的投影。
+          AspectRatio(
+            aspectRatio: 2 / 3,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: AppShadow.softenCover(
+                  theme.brightness == Brightness.dark,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child:
+                    hasCover
+                        ? Image.file(File(book.coverPath!), fit: BoxFit.cover)
+                        : _placeholderCover(theme, book),
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          // info block
+          const SizedBox(height: 10),
+          // 一根右端渐隐的发丝线，把书名和封面绑在一起。
+          // 实线会变成新的碎线；渐变线读起来是一道光，不是边框。
+          Container(
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primary.withValues(alpha: 0.30),
+                  theme.colorScheme.primary.withValues(alpha: 0.03),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 9),
           Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: ClipRect(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1189,38 +1264,28 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                     '《${book.title}》',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
+                    style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.25,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  if (book.author != null)
+                  if (book.author != null) ...[
+                    const SizedBox(height: 2),
                     Text(
                       book.author!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      style: TextStyle(
+                        fontSize: 11.5,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _statusPill(theme, book),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          dateStr,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            fontSize: 10,
-                            color: theme.colorScheme.outline,
-                          ),
-                        ),
-                      ),
-                    ],
+                  ],
+                  const SizedBox(height: 7),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _statusPill(theme, book),
                   ),
                 ],
               ),
@@ -1232,19 +1297,24 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   }
 
   Widget _statusPill(ThemeData theme, Book book) {
-    final color = _statusColor(book.status, theme);
+    final scheme = theme.colorScheme;
+    // 只有「在读」值得上主色，另外两档是背景信息
+    final reading = book.status == ReadingStatus.reading;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        color:
+            reading
+                ? scheme.primary.withValues(alpha: 0.11)
+                : scheme.onSurface.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
         book.status.label,
         style: TextStyle(
-          fontSize: 10,
+          fontSize: 10.5,
           fontWeight: FontWeight.w600,
-          color: color,
+          color: reading ? scheme.primary : scheme.onSurfaceVariant,
         ),
       ),
     );
@@ -1253,22 +1323,19 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
   Widget _placeholderCover(ThemeData theme, Book book) {
     final scheme = theme.colorScheme;
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primaryContainer, scheme.secondaryContainer],
-        ),
-      ),
+      decoration: BoxDecoration(color: scheme.primaryContainer),
       child: Padding(
         padding: const EdgeInsets.all(10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              PhosphorIconsRegular.bookOpen,
-              size: 30,
-              color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
+            Opacity(
+              opacity: 0.75,
+              child: Image.asset(
+                'assets/icons/books.png',
+                height: 26,
+                color: scheme.onPrimaryContainer,
+              ),
             ),
             const SizedBox(height: 8),
             Text(

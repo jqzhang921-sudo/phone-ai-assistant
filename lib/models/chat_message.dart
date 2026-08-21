@@ -1,10 +1,4 @@
-enum MessageRole {
-  user,
-  assistant,
-  system,
-  toolCall,
-  toolResult,
-}
+enum MessageRole { user, assistant, system, toolCall, toolResult }
 
 class ChatMessage {
   final String id;
@@ -28,39 +22,42 @@ class ChatMessage {
   }) : timestamp = timestamp ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'role': role.name,
-        'content': content,
-        'timestamp': timestamp.toIso8601String(),
-        'toolCalls': toolCalls?.map((t) => t.toJson()).toList(),
-        'toolCallId': toolCallId,
-        if (imageData != null) 'imageData': imageData,
-      };
+    'id': id,
+    'role': role.name,
+    'content': content,
+    'timestamp': timestamp.toIso8601String(),
+    'toolCalls': toolCalls?.map((t) => t.toJson()).toList(),
+    'toolCallId': toolCallId,
+    if (imageData != null) 'imageData': imageData,
+  };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        id: json['id'],
-        role: MessageRole.values.firstWhere((r) => r.name == json['role']),
-        content: json['content'],
-        timestamp: DateTime.parse(json['timestamp']),
-        toolCalls: (json['toolCalls'] as List?)
+    id: json['id'],
+    role: MessageRole.values.firstWhere((r) => r.name == json['role']),
+    content: json['content'],
+    timestamp: DateTime.parse(json['timestamp']),
+    toolCalls:
+        (json['toolCalls'] as List?)
             ?.map((t) => ToolCallInfo.fromJson(t))
             .toList(),
-        toolCallId: json['toolCallId'],
-        imageData: json['imageData'] as String?,
-      );
+    toolCallId: json['toolCallId'],
+    imageData: json['imageData'] as String?,
+  );
 
-  ChatMessage copyWith(
-          {String? content, List<ToolCallInfo>? toolCalls, String? imageData}) =>
-      ChatMessage(
-        id: id,
-        role: role,
-        content: content ?? this.content,
-        timestamp: timestamp,
-        toolCalls: toolCalls ?? this.toolCalls,
-        toolCallId: toolCallId,
-        metadata: metadata,
-        imageData: imageData ?? this.imageData,
-      );
+  ChatMessage copyWith({
+    String? content,
+    List<ToolCallInfo>? toolCalls,
+    String? imageData,
+  }) => ChatMessage(
+    id: id,
+    role: role,
+    content: content ?? this.content,
+    timestamp: timestamp,
+    toolCalls: toolCalls ?? this.toolCalls,
+    toolCallId: toolCallId,
+    metadata: metadata,
+    imageData: imageData ?? this.imageData,
+  );
 }
 
 class ToolCallInfo {
@@ -77,16 +74,16 @@ class ToolCallInfo {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'arguments': arguments,
-        'result': result,
-      };
+    'id': id,
+    'name': name,
+    'arguments': arguments,
+    'result': result,
+  };
 
   factory ToolCallInfo.fromJson(Map<String, dynamic> json) => ToolCallInfo(
-        id: json['id'],
-        name: json['name'],
-        arguments: Map<String, dynamic>.from(json['arguments']),
-        result: json['result'],
-      );
+    id: json['id'],
+    name: json['name'],
+    arguments: Map<String, dynamic>.from(json['arguments']),
+    result: json['result'],
+  );
 }

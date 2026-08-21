@@ -34,16 +34,14 @@ Future<String?> generateDiscussionForBook({
         '对话记录：\n$conversationText';
 
     final chatMessages = [
-      ChatMessage(
-        id: 'gen',
-        role: MessageRole.user,
-        content: prompt,
-      )
+      ChatMessage(id: 'gen', role: MessageRole.user, content: prompt),
     ];
 
     String content = '';
-    await for (final event
-        in aiClient.chat(chatMessages, systemPrompt: '你是一个有深度思考能力的读书伙伴。')) {
+    await for (final event in aiClient.chat(
+      chatMessages,
+      systemPrompt: '你是一个有深度思考能力的读书伙伴。',
+    )) {
       if (event.type == AiEventType.token) {
         content += event.text ?? '';
       } else if (event.type == AiEventType.done) {

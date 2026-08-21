@@ -14,11 +14,11 @@ class ExternalMcpServer {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'url': url,
-        'enabled': enabled,
-      };
+    'id': id,
+    'name': name,
+    'url': url,
+    'enabled': enabled,
+  };
 
   factory ExternalMcpServer.fromJson(Map<String, dynamic> json) =>
       ExternalMcpServer(
@@ -37,19 +37,24 @@ class ExternalMcpServerService {
     final data = prefs.getString(_key);
     if (data == null) return [];
     try {
-      final list = (data.split('||').map((s) {
-            try {
-              final parts = s.split('|');
-              return ExternalMcpServer(
-                id: parts[0],
-                name: parts[1],
-                url: parts[2],
-                enabled: parts.length > 3 ? parts[3] == '1' : true,
-              );
-            } catch (_) {
-              return null;
-            }
-          }).whereType<ExternalMcpServer>().toList());
+      final list =
+          (data
+              .split('||')
+              .map((s) {
+                try {
+                  final parts = s.split('|');
+                  return ExternalMcpServer(
+                    id: parts[0],
+                    name: parts[1],
+                    url: parts[2],
+                    enabled: parts.length > 3 ? parts[3] == '1' : true,
+                  );
+                } catch (_) {
+                  return null;
+                }
+              })
+              .whereType<ExternalMcpServer>()
+              .toList());
       return list;
     } catch (_) {
       return [];
@@ -59,8 +64,7 @@ class ExternalMcpServerService {
   static Future<void> save(List<ExternalMcpServer> servers) async {
     final prefs = await SharedPreferences.getInstance();
     final data = servers
-        .map((s) =>
-            '${s.id}|${s.name}|${s.url}|${s.enabled ? '1' : '0'}')
+        .map((s) => '${s.id}|${s.name}|${s.url}|${s.enabled ? '1' : '0'}')
         .join('||');
     await prefs.setString(_key, data);
   }

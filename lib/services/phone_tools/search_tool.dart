@@ -10,7 +10,8 @@ import '../../models/mcp_tool.dart';
 const _kBingHosts = ['www.bing.com', 'cn.bing.com'];
 
 const _kBrowserHeaders = {
-  'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+  'User-Agent':
+      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
   'Accept-Language': 'zh-CN,zh;q=0.9',
 };
@@ -57,27 +58,29 @@ class SearchTool {
   /// 再自己重试成功——白白多一轮往返。光把 query 放进 `required` 数组不够，
   /// 模型更吃描述里的自然语言约束，所以描述、参数说明、minLength 三处都写死。
   static McpTool get definition => McpTool(
-        name: 'web_search',
-        description: '搜索互联网获取最新信息，当需要实时数据、新闻、价格等信息时使用。'
-            '**查天气请用 get_weather，不要用这个**——搜索引擎抓回来的是城市百科，'
-            '没有天气数据。'
-            '调用时必须带上非空的 query 参数，例如 {"query": "iPhone 17 售价"}。'
-            '禁止发出 {} 或 query 为空字符串的调用——那样只会拿到报错。'
-            '如果还没想清楚要搜什么，就先别调用这个工具，或者先把用户的问题原样填进 query。',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'query': {
-              'type': 'string',
-              'description': '搜索关键词，必填，不能为空字符串。'
-                  '写成具体的自然语言短句，例如「iPhone 17 售价」「上海地铁 14 号线 首末班车」。',
-              'minLength': 1,
-            },
-          },
-          'required': ['query'],
+    name: 'web_search',
+    description:
+        '搜索互联网获取最新信息，当需要实时数据、新闻、价格等信息时使用。'
+        '**查天气请用 get_weather，不要用这个**——搜索引擎抓回来的是城市百科，'
+        '没有天气数据。'
+        '调用时必须带上非空的 query 参数，例如 {"query": "iPhone 17 售价"}。'
+        '禁止发出 {} 或 query 为空字符串的调用——那样只会拿到报错。'
+        '如果还没想清楚要搜什么，就先别调用这个工具，或者先把用户的问题原样填进 query。',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'query': {
+          'type': 'string',
+          'description':
+              '搜索关键词，必填，不能为空字符串。'
+              '写成具体的自然语言短句，例如「iPhone 17 售价」「上海地铁 14 号线 首末班车」。',
+          'minLength': 1,
         },
-        category: '网络工具',
-      );
+      },
+      'required': ['query'],
+    },
+    category: '网络工具',
+  );
 
   /// Bing 兜底搜索（无需 key）：抓搜索结果页解析标题/链接/摘要。
   ///
@@ -90,7 +93,8 @@ class SearchTool {
     for (final host in _kBingHosts) {
       try {
         final url = Uri.parse(
-            'https://$host/search?q=${Uri.encodeQueryComponent(query)}&setlang=zh-CN');
+          'https://$host/search?q=${Uri.encodeQueryComponent(query)}&setlang=zh-CN',
+        );
         final resp = await http.get(url, headers: _kBrowserHeaders);
         if (resp.statusCode != 200) {
           failures.add('$host 返回 ${resp.statusCode}');
@@ -200,21 +204,24 @@ class SearchTool {
   ];
 
   static final _snippetPatterns = [
-    RegExp(r'<p class="[^"]*b_lineclamp[^"]*"[^>]*>([\s\S]*?)</p>',
-        caseSensitive: false),
     RegExp(
-        r'<div class="[^"]*b_caption[^"]*"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)</p>',
-        caseSensitive: false),
+      r'<p class="[^"]*b_lineclamp[^"]*"[^>]*>([\s\S]*?)</p>',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'<div class="[^"]*b_caption[^"]*"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)</p>',
+      caseSensitive: false,
+    ),
     RegExp(r'<p[^>]*>([\s\S]*?)</p>', caseSensitive: false),
   ];
 
-  static String _stripTags(String s) => s
-      .replaceAll(RegExp(r'<[^>]+>'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+  static String _stripTags(String s) =>
+      s
+          .replaceAll(RegExp(r'<[^>]+>'), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     // 不要 `as String?`：模型偶尔会把 query 塞成数字或数组，硬转会抛类型异常。
     // 顺手 trim，纯空格的 query 等同于没填。
     final query = (args['query']?.toString() ?? '').trim();
@@ -223,7 +230,8 @@ class SearchTool {
       // 少绕一轮。
       return {
         'success': false,
-        'error': 'query 参数为空。请重新调用 web_search，'
+        'error':
+            'query 参数为空。请重新调用 web_search，'
             '并在 arguments 里给出非空的 query，例如 {"query": "iPhone 17 售价"}。',
       };
     }
@@ -283,14 +291,24 @@ class SearchTool {
       if (bing['success'] == true) return bing;
       // Bing 也失败 → 报 Tavily 的原始错误（更可能定位问题）
       if (response.statusCode != 200) {
-        return {'success': false, 'error': 'Tavily 失败(${response.statusCode})，Bing 兜底也失败: ${bing['error']}'};
+        return {
+          'success': false,
+          'error':
+              'Tavily 失败(${response.statusCode})，Bing 兜底也失败: ${bing['error']}',
+        };
       }
-      return {'success': false, 'error': 'Tavily 无结果，Bing 兜底也失败: ${bing['error']}'};
+      return {
+        'success': false,
+        'error': 'Tavily 无结果，Bing 兜底也失败: ${bing['error']}',
+      };
     } catch (e) {
       // 2) Tavily 网络异常 → 直接降级 Bing
       final bing = await _searchBing(query);
       if (bing['success'] == true) return bing;
-      return {'success': false, 'error': '搜索网络错误: $e；Bing 兜底也失败: ${bing['error']}'};
+      return {
+        'success': false,
+        'error': '搜索网络错误: $e；Bing 兜底也失败: ${bing['error']}',
+      };
     }
   }
 }
@@ -306,35 +324,37 @@ class SearchTool {
 /// 比解析正文稳得多。
 class NewsTool {
   static McpTool get definition => McpTool(
-        name: 'search_news',
-        description: '搜最新新闻，按发布时间倒序，每条带来源和「几分钟前 / 几小时前」。'
-            '用户问「最近有什么消息」「今天出了什么事」「XX 的新闻」，'
-            '或者话题明显是刚发生的事情时，用这个。'
-            '**web_search 抓的是常青网页、按权重排序，搜不到今天的新闻**——'
-            '只要问的是时效性的事，一律用 search_news，别用 web_search 硬试。',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'query': {
-              'type': 'string',
-              'description': '要搜的关键词，必填。写主体就行，'
-                  '例如「DeepSeek Harness」「杭州 台风」；'
-                  '不用加「新闻」「最新」这类词，这个工具本来就按时间排。',
-              'minLength': 1,
-            },
-          },
-          'required': ['query'],
+    name: 'search_news',
+    description:
+        '搜最新新闻，按发布时间倒序，每条带来源和「几分钟前 / 几小时前」。'
+        '用户问「最近有什么消息」「今天出了什么事」「XX 的新闻」，'
+        '或者话题明显是刚发生的事情时，用这个。'
+        '**web_search 抓的是常青网页、按权重排序，搜不到今天的新闻**——'
+        '只要问的是时效性的事，一律用 search_news，别用 web_search 硬试。',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'query': {
+          'type': 'string',
+          'description':
+              '要搜的关键词，必填。写主体就行，'
+              '例如「DeepSeek Harness」「杭州 台风」；'
+              '不用加「新闻」「最新」这类词，这个工具本来就按时间排。',
+          'minLength': 1,
         },
-        category: '网络工具',
-      );
+      },
+      'required': ['query'],
+    },
+    category: '网络工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     final query = (args['query']?.toString() ?? '').trim();
     if (query.isEmpty) {
       return {
         'success': false,
-        'error': 'query 参数为空。请重新调用 search_news 并给出关键词，'
+        'error':
+            'query 参数为空。请重新调用 search_news 并给出关键词，'
             '例如 {"query": "DeepSeek Harness"}。',
       };
     }
@@ -343,9 +363,11 @@ class NewsTool {
     for (final host in _kBingHosts) {
       try {
         // qft=sortbydate="1" 让 Bing 按时间倒序，而不是按权重
-        final url = Uri.parse('https://$host/news/search'
-            '?q=${Uri.encodeQueryComponent(query)}'
-            '&qft=sortbydate%3d%221%22&setlang=zh-CN');
+        final url = Uri.parse(
+          'https://$host/news/search'
+          '?q=${Uri.encodeQueryComponent(query)}'
+          '&qft=sortbydate%3d%221%22&setlang=zh-CN',
+        );
         final resp = await http.get(url, headers: _kBrowserHeaders);
         if (resp.statusCode != 200) {
           failures.add('$host 返回 ${resp.statusCode}');
@@ -397,8 +419,10 @@ class NewsTool {
   static String? _attr(String tag, String name) =>
       RegExp('$name="([^"]*)"', caseSensitive: false).firstMatch(tag)?.group(1);
 
-  static final _cardRe =
-      RegExp(r'<div class="newscard[^"]*"[^>]*>', caseSensitive: false);
+  static final _cardRe = RegExp(
+    r'<div class="newscard[^"]*"[^>]*>',
+    caseSensitive: false,
+  );
 
   static final _tsRe = RegExp(
     r'<span class="timestamp"[^>]*>([^<]*)</span>',

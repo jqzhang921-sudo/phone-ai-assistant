@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/diary_entry.dart';
 import '../services/app_providers.dart';
 import '../services/diary_generator.dart';
+import '../config/settings.dart';
 import '../services/storage_service.dart';
 import '../config/app_shape.dart';
 
@@ -48,6 +49,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   bool _generating = false;
   bool _searching = false;
   String _query = '';
+  String _aiName = '';
 
   @override
   void initState() {
@@ -63,9 +65,11 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   Future<void> _load() async {
     final entries = await StorageService.listDiaryEntries();
+    final settings = await AppSettings.load();
     if (mounted) {
       setState(() {
         _groups = _groupByDay(entries);
+        _aiName = settings.aiName.trim();
         _loading = false;
       });
     }
@@ -164,7 +168,24 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   ),
                   onChanged: (v) => setState(() => _query = v.trim()),
                 )
-                : const Text('日记'),
+                : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('日记'),
+                    // 日记只属于它，用户不写——这句话是这一页的前提，
+                    // 不写出来就会被当成「我的日记本」
+                    Text(
+                      '${_aiName.isEmpty ? "TA" : _aiName} 自己记的，'
+                      '写给你看 · ${_groups.fold(0, (n, g) => n + g.entries.length)} 篇',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w400,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
         actions: [
           IconButton(
             tooltip: _searching ? '退出搜索' : '搜索',
@@ -179,17 +200,51 @@ class _DiaryScreenState extends State<DiaryScreen> {
       ),
       // AI 记的是"某一刻"，这个按钮写的是"这一天"，两者不冲突，
       // 所以不因为今天已有日记就禁用。
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _generating ? null : _generateToday,
-        icon:
-            _generating
-                ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-                : const Icon(PhosphorIconsRegular.pencilSimple),
-        label: Text(_generating ? '写作中…' : '记一篇今天的日记'),
+      //
+      // 整宽按钮，不用悬浮 FAB——FAB 会压在列表中间的条目上。
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: _generating ? null : _generateToday,
+              // 深色下不用实底：主色在深色里本来就是浅棕，实底一压
+              // 就成了整屏最亮的东西，比内容还抢。改成淡底 + 浅棕字。
+              style: FilledButton.styleFrom(
+                shape: const StadiumBorder(),
+                backgroundColor:
+                    theme.brightness == Brightness.dark
+                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                        : null,
+                foregroundColor:
+                    theme.brightness == Brightness.dark
+                        ? theme.colorScheme.primary
+                        : null,
+              ),
+              icon:
+                  _generating
+                      ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : Image.asset(
+                        'assets/icons/cat.png',
+                        height: 16,
+                        color:
+                            theme.brightness == Brightness.dark
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onPrimary,
+                      ),
+              label: Text(
+                _generating
+                    ? '写作中…'
+                    : '让${_aiName.isEmpty ? "TA" : _aiName}写一篇',
+              ),
+            ),
+          ),
+        ),
       ),
       body:
           _loading
@@ -197,29 +252,101 @@ class _DiaryScreenState extends State<DiaryScreen> {
               : hits.isEmpty
               ? Center(
                 child: Text(
-                  _query.isEmpty
-                      ? '还没有日记\n聊完天后点右下角写一篇吧'
-                      : '没有包含「$_query」的日记',
+                  _query.isEmpty ? '还没有日记\n聊完天后点右下角写一篇吧' : '没有包含「$_query」的日记',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               )
-              : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+              : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
                 itemCount: hits.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
-                  return _DayCard(
-                    hit: hits[index],
-                    query: _query,
-                    onChanged: _load,
+                  final hit = hits[index];
+                  final month = hit.preview.date.month;
+                  final prevMonth =
+                      index == 0 ? null : hits[index - 1].preview.date.month;
+                  final newMonth = month != prevMonth;
+                  return Column(
+                    children: [
+                      if (newMonth)
+                        _monthHeader(
+                          theme,
+                          hit.preview.date,
+                          hits
+                              .where(
+                                (h) =>
+                                    h.preview.date.month == month &&
+                                    h.preview.date.year ==
+                                        hit.preview.date.year,
+                              )
+                              .fold(0, (n, h) => n + h.matched.length),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _DayCard(
+                          hit: hit,
+                          query: _query,
+                          onChanged: _load,
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
     );
   }
+}
+
+/// 月份分组头：宋体月名 + 一道横线 + 右侧篇数。
+///
+/// 十三篇日记一路平铺下来分不出时间段，一条月线就够了——
+/// 不需要再给每张卡加边框去分隔。
+Widget _monthHeader(ThemeData theme, DateTime d, int count) {
+  const names = [
+    '一月',
+    '二月',
+    '三月',
+    '四月',
+    '五月',
+    '六月',
+    '七月',
+    '八月',
+    '九月',
+    '十月',
+    '十一月',
+    '十二月',
+  ];
+  final scheme = theme.colorScheme;
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(2, 18, 2, 12),
+    child: Row(
+      children: [
+        Text(
+          names[d.month - 1],
+          style: TextStyle(
+            fontFamily: 'NotoSerifSC',
+            fontSize: 13,
+            letterSpacing: 2,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: scheme.onSurface.withValues(alpha: 0.08),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          '$count 篇',
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DayCard extends StatelessWidget {
@@ -252,7 +379,9 @@ class _DayCard extends StatelessWidget {
   }
 
   String _countLabel() {
-    if (hit.isPartial) return '${hit.matched.length}/${hit.day.entries.length} 则';
+    if (hit.isPartial) {
+      return '${hit.matched.length}/${hit.day.entries.length} 则';
+    }
     return '${hit.matched.length} 则';
   }
 
@@ -261,58 +390,92 @@ class _DayCard extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final showCount = hit.isPartial || hit.matched.length > 1;
+    final dark = theme.brightness == Brightness.dark;
+    // 日记只属于它，列表不混作者——所以每张都是「它说的」那一套：
+    // 白卡 + 左侧主色竖条 + 宋体正文。
     return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       onTap: () => _openDay(context),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              boxShadow: AppShadow.soften(dark),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  hit.day.dateKey,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                if (showCount)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                    ),
-                    child: Text(
-                      _countLabel(),
-                      style: theme.textTheme.labelSmall?.copyWith(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      hit.day.dateKey,
+                      style: TextStyle(
+                        fontFamily: 'NotoSerifSC',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                         color: scheme.primary,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _weekday(hit.preview.date),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (showCount)
+                      Text(
+                        _countLabel(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _previewText(),
+                  style: TextStyle(
+                    fontFamily: 'NotoSerifSC',
+                    fontSize: 14.5,
+                    height: 1.85,
+                    color: dark ? scheme.onSurface : const Color(0xFF2C251F),
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              _previewText(),
-              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+          ),
+          Positioned(
+            left: 0,
+            top: 20,
+            bottom: 20,
+            child: Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(3),
+                  bottomRight: Radius.circular(3),
+                ),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  static const _weekNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+  static String _weekday(DateTime d) => _weekNames[d.weekday - 1];
 
   /// 点开始终展示这一天的全部，搜索命中只影响列表上的预览。
   Future<void> _openDay(BuildContext context) async {

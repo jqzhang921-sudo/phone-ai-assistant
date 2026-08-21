@@ -40,6 +40,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => TtsService()),
         ChangeNotifierProvider(create: (_) => BackgroundProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(create: (_) => FavoritesProvider()..load()),
       ],
       child: const PhoneAiApp(),
     ),

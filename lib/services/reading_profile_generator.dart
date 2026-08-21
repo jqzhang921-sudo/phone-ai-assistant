@@ -31,8 +31,9 @@ Future<ReadingProfile?> generateReadingProfile({
     }
 
     // 2) Single-book conversation
-    final singleFile =
-        File('${appDir.path}/book_conversations/book_$bookId.json');
+    final singleFile = File(
+      '${appDir.path}/book_conversations/book_$bookId.json',
+    );
     if (await singleFile.exists()) {
       buf.writeln('## 单独讨论');
       buf.writeln(_formatConversation(singleFile));
@@ -45,7 +46,8 @@ Future<ReadingProfile?> generateReadingProfile({
     // Build prompt — reading profile is different from discussion notes:
     // Discussion notes = what we talked about (事件记录)
     // Reading profile  = what I think (观点提炼)
-    final prompt = '请根据以下关于《$bookTitle》的读者讨论记录，生成一份结构化的阅读档案。\n\n'
+    final prompt =
+        '请根据以下关于《$bookTitle》的读者讨论记录，生成一份结构化的阅读档案。\n\n'
         '阅读档案是读者对这本书的综合理解，侧重观点提炼，不是讨论笔记的简单汇总。\n\n'
         '请从讨论中提取以下三个部分：\n'
         '1. 核心观点：读者对这本书的核心看法、观点和感受（列出3-5条）\n'
@@ -57,11 +59,7 @@ Future<ReadingProfile?> generateReadingProfile({
         '$material';
 
     final chatMessages = [
-      ChatMessage(
-        id: 'gen',
-        role: MessageRole.user,
-        content: prompt,
-      )
+      ChatMessage(id: 'gen', role: MessageRole.user, content: prompt),
     ];
 
     String content = '';

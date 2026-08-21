@@ -30,24 +30,24 @@ class WereadService {
   static Future<void> saveKey(String key) async =>
       await _secure.write(key: _keyStorage, value: key);
 
-  static Future<String?> getKey() async =>
-      await _secure.read(key: _keyStorage);
+  static Future<String?> getKey() async => await _secure.read(key: _keyStorage);
 
   static Future<List<Map<String, dynamic>>> _call(
-      String api, [Map<String, dynamic>? params]) async {
+    String api, [
+    Map<String, dynamic>? params,
+  ]) async {
     final key = await getKey();
     if (key == null) throw Exception('未设置微信读书 API Key');
-    final body = <String, dynamic>{
-      'api_name': api,
-      'skill_version': '1.0.4',
-    };
+    final body = <String, dynamic>{'api_name': api, 'skill_version': '1.0.4'};
     if (params != null) body.addAll(params);
-    final resp = await http.post(Uri.parse(_apiUrl),
-        headers: {
-          'Authorization': 'Bearer $key',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(body));
+    final resp = await http.post(
+      Uri.parse(_apiUrl),
+      headers: {
+        'Authorization': 'Bearer $key',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
     final data = jsonDecode(resp.body);
     if (data['errcode'] != null && data['errcode'] != 0) {
       final msg = data['errmsg'] ?? 'unknown';
@@ -95,14 +95,17 @@ class WereadService {
       final finishReading = b['finishReading'] as int? ?? 0;
       final readUpdate = b['readUpdateTime'] as int? ?? 0;
       if (finishReading == 0 && readUpdate == 0) continue;
-      imported.add(Book(
-        id: _uuid.v4(),
-        title: b['title'] ?? '',
-        author: b['author'],
-        coverPath: null,
-        status: finishReading == 1 ? ReadingStatus.done : ReadingStatus.reading,
-        wereadBookId: b['bookId'] as String?,
-      ));
+      imported.add(
+        Book(
+          id: _uuid.v4(),
+          title: b['title'] ?? '',
+          author: b['author'],
+          coverPath: null,
+          status:
+              finishReading == 1 ? ReadingStatus.done : ReadingStatus.reading,
+          wereadBookId: b['bookId'] as String?,
+        ),
+      );
     }
     return imported;
   }
@@ -133,8 +136,7 @@ class WereadService {
   /// Fetch the user's own thoughts / reviews for a book.
   static Future<String?> fetchThoughts(String wereadBookId) async {
     try {
-      final data =
-          await _call('/review/list/mine', {'bookid': wereadBookId});
+      final data = await _call('/review/list/mine', {'bookid': wereadBookId});
       if (data.isEmpty) return null;
       final reviews = (data.first['reviews'] as List?) ?? [];
       if (reviews.isEmpty) return null;

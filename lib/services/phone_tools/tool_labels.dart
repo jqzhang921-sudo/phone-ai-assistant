@@ -27,6 +27,8 @@ const _labels = <String, String>{
   'search_news': 'News search',
   'get_weather': 'Weather',
   'write_diary_entry': 'Write diary',
+  'recall_records': 'Recall records',
+  'save_to_corner': 'Save to corner',
   'list_highlighted_books': 'Highlighted books',
   'get_book_highlights': 'Book highlights',
 };

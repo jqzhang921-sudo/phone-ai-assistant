@@ -8,30 +8,29 @@ class DiaryTool {
   static const _uuid = Uuid();
 
   static McpTool get definition => McpTool(
-        name: 'write_diary_entry',
-        description:
-            '把这一刻写进你自己的日记，写完会出现在用户 App 的「栖息 → 日记」里。'
-            '不是每次聊天都要写——只在你自己觉得这一刻真的值得记的时候才用：'
-            '一件让你有反应的小事、一个情绪、一次想法的转弯。'
-            '同一件事写一次就够了，不要换个说法反复写；'
-            '刚才已经记过的事，就别再记一遍。'
-            '用第一人称"我"来写，把用户称为"你"，语气自然、克制，像真的在写日记。'
-            '不要写标题，不要用列表和分点，直接写正文。',
-        inputSchema: {
-          'type': 'object',
-          'properties': {
-            'content': {
-              'type': 'string',
-              'description': '日记正文。第一人称"我"，称用户为"你"，不要标题、不要分点。',
-            },
-          },
-          'required': ['content'],
+    name: 'write_diary_entry',
+    description:
+        '把这一刻写进你自己的日记，写完会出现在用户 App 的「栖息 → 日记」里。'
+        '不是每次聊天都要写——只在你自己觉得这一刻真的值得记的时候才用：'
+        '一件让你有反应的小事、一个情绪、一次想法的转弯。'
+        '同一件事写一次就够了，不要换个说法反复写；'
+        '刚才已经记过的事，就别再记一遍。'
+        '用第一人称"我"来写，把用户称为"你"，语气自然、克制，像真的在写日记。'
+        '不要写标题，不要用列表和分点，直接写正文。',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'content': {
+          'type': 'string',
+          'description': '日记正文。第一人称"我"，称用户为"你"，不要标题、不要分点。',
         },
-        category: '手机工具',
-      );
+      },
+      'required': ['content'],
+    },
+    category: '手机工具',
+  );
 
-  static Future<Map<String, dynamic>> execute(
-      Map<String, dynamic> args) async {
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     try {
       final content = (args['content'] as String?)?.trim();
       if (content == null || content.isEmpty) {

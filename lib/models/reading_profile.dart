@@ -19,27 +19,25 @@ class ReadingProfile {
       discussionSummary.isEmpty;
 
   factory ReadingProfile.empty(String bookId) => ReadingProfile(
-        bookId: bookId,
-        coreOpinions: [],
-        unresolvedQuestions: [],
-        discussionSummary: '',
-      );
+    bookId: bookId,
+    coreOpinions: [],
+    unresolvedQuestions: [],
+    discussionSummary: '',
+  );
 
   Map<String, dynamic> toJson() => {
-        'bookId': bookId,
-        'generatedAt': generatedAt.toIso8601String(),
-        'coreOpinions': coreOpinions,
-        'unresolvedQuestions': unresolvedQuestions,
-        'discussionSummary': discussionSummary,
-      };
+    'bookId': bookId,
+    'generatedAt': generatedAt.toIso8601String(),
+    'coreOpinions': coreOpinions,
+    'unresolvedQuestions': unresolvedQuestions,
+    'discussionSummary': discussionSummary,
+  };
 
-  factory ReadingProfile.fromJson(Map<String, dynamic> json) =>
-      ReadingProfile(
-        bookId: json['bookId'],
-        generatedAt: DateTime.parse(json['generatedAt']),
-        coreOpinions: List<String>.from(json['coreOpinions'] ?? []),
-        unresolvedQuestions:
-            List<String>.from(json['unresolvedQuestions'] ?? []),
-        discussionSummary: json['discussionSummary'] ?? '',
-      );
+  factory ReadingProfile.fromJson(Map<String, dynamic> json) => ReadingProfile(
+    bookId: json['bookId'],
+    generatedAt: DateTime.parse(json['generatedAt']),
+    coreOpinions: List<String>.from(json['coreOpinions'] ?? []),
+    unresolvedQuestions: List<String>.from(json['unresolvedQuestions'] ?? []),
+    discussionSummary: json['discussionSummary'] ?? '',
+  );
 }
