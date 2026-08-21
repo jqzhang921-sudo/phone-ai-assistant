@@ -372,7 +372,7 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  /// 品牌图标管「谁」：猫是沐，爪印是你。机器小人和通用 user 图标不认人。
+  /// 品牌图标管「谁」：猫是 AI，爪印是用户。机器小人和通用 user 图标不认人。
   Widget _buildAvatar(ThemeData theme, {required bool isUser}) {
     final scheme = theme.colorScheme;
     return CircleAvatar(

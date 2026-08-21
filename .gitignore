@@ -75,3 +75,6 @@ android/key.properties
 .do-commit.sh
 .crlf-fix.sh
 .check-noise.sh
+
+# 会话里生成的一次性脚本，一律不进仓库
+.*.sh

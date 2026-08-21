@@ -382,7 +382,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _switchRow(
               theme,
               asset: 'flower',
-              title: '让沐自己收藏',
+              // 名字跟着设置走。写死一个名字的话，用户在上面「你」那一栏
+              // 改了称呼，这个开关的标题还停在旧名字上。
+              title:
+                  _settings.aiName.trim().isEmpty
+                      ? '让 TA 自己收藏'
+                      : '让${_settings.aiName.trim()}自己收藏',
               subtitle: '它回看对话时，挑一两句留下',
               value: _settings.aiSelfFavorite,
               onChanged: (v) async {

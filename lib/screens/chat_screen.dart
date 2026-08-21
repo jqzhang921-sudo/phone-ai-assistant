@@ -105,7 +105,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  /// 抽屉顶部那句「和沐一起，N 轮对话」
+  /// 抽屉顶部那句「和 XX 一起，N 轮对话」
   int get _totalRounds =>
       _savedConversations.fold(0, (sum, c) => sum + c.messages.length);
 

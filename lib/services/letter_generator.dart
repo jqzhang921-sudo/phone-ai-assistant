@@ -67,7 +67,7 @@ Future<LetterMaterial> collectMaterial({DateTime? since}) async {
   return LetterMaterial(
     diaries:
         diaries.where((d) => after(d.createdAt)).map((d) => d.content).toList(),
-    // 排除沐自己收的：收藏是写信的素材来源之一，它收自己挑的话再拿去写信，
+    // 排除 AI 自己收的：收藏是写信的素材来源之一，它收自己挑的话再拿去写信，
     // 信就从「回应你的生活」变成「回应它自己挑的东西」，越转越自我循环。
     // `both` 保留——那是你也收了的。
     musings:

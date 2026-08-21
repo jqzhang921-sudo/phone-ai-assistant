@@ -44,7 +44,7 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
     });
   }
 
-  /// 让沐自己挑几句。
+  /// 让 AI 自己挑几句。
   ///
   /// 触发点放在进这一页时，和「写信」一样不做后台任务——生成要联网、
   /// 人得在前台，国产 ROM 的后台限制也让定时不可靠。冷却在

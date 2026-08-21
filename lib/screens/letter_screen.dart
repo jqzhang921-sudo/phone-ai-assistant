@@ -237,7 +237,7 @@ class _LetterScreenState extends State<LetterScreen> {
 class _LetterCard extends StatelessWidget {
   final Letter letter;
 
-  /// 作者行要写「沐 写给你」，名字来自设置；没填就退回中性说法
+  /// 作者行要写「XX 写给你」，名字来自设置；没填就退回中性说法
   final String aiName;
   final VoidCallback onTap;
 

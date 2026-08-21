@@ -43,7 +43,7 @@ class AppSettings {
   bool ttsAutoPlay;
   bool titleSerif; // true=衬线体(宋体)，false=黑体
 
-  /// 让沐自己也收藏。默认关——这是它替你做决定，得你先点头。
+  /// 让 AI 自己也收藏。默认关——这是它替用户做决定，得先点头。
   bool aiSelfFavorite;
 
   AppSettings({

@@ -163,7 +163,7 @@ class SaveToCornerTool {
           'description':
               '是不是用户让你收的。用户开口要你收就填 true；'
               '你自己觉得值得留、用户没提，填 false。如实填——'
-              '用户可能关掉了「让沐自己收藏」，那时 false 会被拒绝。',
+              '用户可能关掉了「自己收藏」这个开关，那时 false 会被拒绝。',
         },
       },
       'required': ['content', 'said_by', 'asked_by_user'],
@@ -182,7 +182,7 @@ class SaveToCornerTool {
         return {'success': false, 'error': 'said_by 只能是 user 或 me'};
       }
 
-      // 用户没开「让沐自己收藏」时，它不该借这个工具绕过去自作主张。
+      // 用户没开「自己收藏」开关时，它不该借这个工具绕过去自作主张。
       // 用户开口要的不受限制——那是 TA 的意思，不是它的。
       final askedByUser = args['asked_by_user'] == true;
       if (!askedByUser) {
@@ -191,7 +191,7 @@ class SaveToCornerTool {
           return {
             'success': false,
             'error':
-                '用户没有开「让沐自己收藏」，你不能自己决定收。'
+                '用户没有开「自己收藏」这个开关，你不能自己决定收。'
                 '想收的话可以问一句 TA 要不要收，TA 同意了再调一次'
                 '（asked_by_user 填 true）。',
           };

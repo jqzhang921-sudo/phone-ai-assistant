@@ -285,7 +285,7 @@ class StorageService {
   static const _kLastLetterAttemptKey = 'last_letter_attempt_at';
   static const _kLastFavoritePickKey = 'last_favorite_pick_at';
 
-  /// 沐上一次自己挑收藏是什么时候——用来算冷却
+  /// AI 上一次自己挑收藏是什么时候——用来算冷却
   static Future<DateTime?> getLastFavoritePick() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kLastFavoritePickKey);

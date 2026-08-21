@@ -14,7 +14,7 @@ enum MusingSource {
 }
 
 /// 这条是谁收的。和 [MusingSource]（谁**说**的）是两件正交的事：
-/// 沐说的一句话，可能是你收的、它自己收的，也可能你们各自都收了。
+/// AI 说的一句话，可能是你收的、它自己收的，也可能你们各自都收了。
 ///
 /// [both] 是这个功能里唯一产生新信息的状态——它独立挑中了你也挑中的那句。
 enum MusingSavedBy { user, ai, both }
@@ -52,7 +52,7 @@ class MusingEntry {
     this.savedBy = MusingSavedBy.user,
   }) : createdAt = createdAt ?? DateTime.now();
 
-  /// 沐收的时候你已经收过了（或反过来）——升成「一起收的」
+  /// AI 收的时候你已经收过了（或反过来）——升成「一起收的」
   MusingEntry get sharedWith => MusingEntry(
     id: id,
     date: date,

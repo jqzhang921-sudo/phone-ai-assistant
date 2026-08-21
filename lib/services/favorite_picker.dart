@@ -5,7 +5,7 @@ import '../models/musing_entry.dart';
 import 'ai_client.dart';
 import 'storage_service.dart';
 
-/// 让沐自己从最近的对话里挑几句值得留下的。
+/// 让 AI 自己从最近的对话里挑几句值得留下的。
 ///
 /// 三条约束，都是有原因的：
 ///
