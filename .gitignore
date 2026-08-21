@@ -70,3 +70,8 @@ agent-bridge/.env
 android/key.properties
 *.jks
 *.keystore
+
+# 会话里的一次性脚本
+.do-commit.sh
+.crlf-fix.sh
+.check-noise.sh
