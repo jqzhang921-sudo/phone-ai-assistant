@@ -1,4 +1,5 @@
 import '../models/book.dart';
+import '../models/diary_entry.dart';
 import '../models/memory_fact.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
@@ -82,7 +83,6 @@ Future<String> buildStableFacts() async {
 /// 变成明确想要的效果。那时候要一并解决索引行的质量问题——正文开头不是
 /// 「这条讲什么」，真正的钩子得在写入时让模型自己写一句。
 Future<String> buildMemoryContext({
-  int fullDiaries = 3,
   int fullMusings = 5,
   int maxBooks = 5,
 }) async {
@@ -90,7 +90,7 @@ Future<String> buildMemoryContext({
 
   buf.writeln(_whereYouLive);
 
-  await _appendDiaries(buf, fullDiaries);
+  await _appendDiaries(buf);
   await _appendMusings(buf, fullMusings);
   await _appendBooks(buf, maxBooks);
   await _appendLetterStatus(buf);
@@ -122,21 +122,58 @@ const _whereYouLive = '''
 用户提到这些名字时，指的就是这个 App 里的功能，不是别的产品。
 ''';
 
-/// 日记：只给形状 + 最近 [full] 篇全文。
+/// 日记这一段的字数上限。
 ///
-/// 形状那一行（共几篇、最早到哪天）是刻意留的：它据此判断「值不值得翻」。
-/// 没有这行，模型对存量一无所知，要么白调一次工具，要么干脆不调。
-/// 一行的成本换掉一次无谓的工具往返，划算。
-Future<void> _appendDiaries(StringBuffer buf, int full) async {
+/// 日记是模型写的，`diary_generator` 里明写着「150~250 字」，所以原来那个
+/// `take(3)` 实际是每轮 450~750 字——整段记忆里最大的一笔，而且是唯一没有
+/// 上限的一段（其余几段本来就封了顶）。
+///
+/// 至少给一篇完整的：宁可超一点，也不给半篇——半篇日记比没有更糟，
+/// 它会顺着断掉的地方往下编。
+const _kDiaryBudget = 500;
+
+/// 日记：只给**最近有日记的那一天**，更早的交给 `recall_records`。
+///
+/// 原来是 `take(3)`，按**条**取。两个毛病：
+///
+/// 1. 语义是歪的。日记一天可以写几篇，取 3 条可能横跨三天，也可能全是今天的
+///    ——「最近 3 篇」这个说法对应不到任何一个人能理解的时间范围。按「天」取，
+///    「它记得今天写了什么」是句能说清楚的话。
+/// 2. 贵。3 篇 × 150~250 字是这整段里最大的一笔。
+///
+/// 为什么不干脆全交给工具（连当天的也不给）：日记是**它自己写的**。写完转头
+/// 聊天却不知道自己写过，接不住「我今天写了…」这种话。当天那篇在场是有价值的，
+/// 更早的本来就该翻。
+///
+/// 开头那句「一共多少篇、最早到哪天」留着：它据此判断「值不值得翻」。
+/// 没有这句，模型对存量一无所知，要么白调一次工具，要么干脆不调。
+/// 一行的成本换掉一次无谓的往返，划算。
+Future<void> _appendDiaries(StringBuffer buf) async {
   final entries = await StorageService.listDiaryEntries();
   if (entries.isEmpty) return;
 
-  final shown = entries.take(full).toList();
+  // entries 已按日期倒序，第一条所在那天就是「最近有日记的一天」。
+  // 用它而不是「今天」：今天可能还没写，那就该给上一次写的那天，
+  // 而不是一片空白。
+  final latestDay = entries.first.dateKey;
+  final sameDay = entries.where((e) => e.dateKey == latestDay).toList();
+
+  // 按字数收口，但**第一篇无条件给全**。
+  final shown = <DiaryEntry>[];
+  var used = 0;
+  for (final e in sameDay) {
+    if (shown.isNotEmpty && used + e.content.length > _kDiaryBudget) break;
+    shown.add(e);
+    used += e.content.length;
+  }
+
   buf.writeln('## 你写下的日记');
   buf.writeln(
     '一共 ${entries.length} 篇，最早的一篇在 ${entries.last.dateKey}。'
-    '${entries.length > shown.length ? '下面只有最近 ${shown.length} 篇的全文，'
-        '更早的用 recall_records 按关键词翻——你知道有，但没记着原文。' : ''}',
+    '下面是 $latestDay 那天的'
+    '${shown.length < sameDay.length ? '前 ${shown.length} 篇（那天共 ${sameDay.length} 篇）' : '全部 ${shown.length} 篇'}。'
+    '${entries.length > shown.length ? '更早的没列出来——你知道自己写过，但没记着原文，'
+        '要用到具体内容就用 recall_records 按关键词翻。' : ''}',
   );
   for (final e in shown) {
     buf.writeln('- ${e.dateKey}：${e.content}');
