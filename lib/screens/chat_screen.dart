@@ -552,10 +552,23 @@ class _ChatScreenState extends State<ChatScreen> {
     // initState 取过一次，用户去设置里改完名字再回来，界面问候语会刷新，
     // 系统提示词却还是旧的。
     //
+    // 但**必须兜住异常**：AppSettings.load() 里 settings.dart:102 有一句
+    // `_secureStorage.read(...)`（读 ElevenLabs key），没有 try/catch。
+    // keystore 出问题它就整个抛。这条路径以前不碰 settings，抛了顶多是
+    // 首页问候语没名字；现在它在发消息的主路上，不兜住就等于「keystore 打嗝
+    // → 消息发不出去」——为了一个名字把主功能搭进去，不值。
+    // 失败就退回 initState 拿到的那份：旧一点，但有。
+    //
     // 放在最前面不影响 KV 缓存——名字几乎不变，这段前缀仍然逐字节稳定。
-    final settings = await AppSettings.load();
-    final aiName = settings.aiName.trim();
-    final userName = settings.userName.trim();
+    var aiName = _aiName.trim();
+    var userName = _userName.trim();
+    try {
+      final settings = await AppSettings.load();
+      aiName = settings.aiName.trim();
+      userName = settings.userName.trim();
+    } catch (e) {
+      debugPrint('[chat] 读设置失败，名字退回 initState 那份：$e');
+    }
     final names = [
       if (aiName.isNotEmpty) '你叫$aiName。',
       if (userName.isNotEmpty) 'TA 叫 $userName。',
