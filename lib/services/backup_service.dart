@@ -50,6 +50,10 @@ class BackupService {
     'bookshelf_ignored_weread_ids',
     'chat_background_preset',
     'api_providers',
+    // 稳定事实（关于用户是谁）。这一条**最不能漏**：日记和收藏丢了还能从
+    // 对话里重新长出来，这层是它对用户的全部认识，换手机丢了就是从零重认识。
+    // 上面 bookshelf_books 那次就是漏在这个列表里，别再来一遍。
+    'memory_facts',
   ];
 
   /// 同上，按前缀匹配的那些。

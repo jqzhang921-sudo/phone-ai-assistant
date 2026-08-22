@@ -6,6 +6,7 @@ import '../models/book.dart';
 import '../models/conversation.dart';
 import '../models/diary_entry.dart';
 import '../models/letter.dart';
+import '../models/memory_fact.dart';
 import '../models/musing_entry.dart';
 
 class StorageService {
@@ -278,6 +279,84 @@ class StorageService {
     final entries = await listFavoritedMusings();
     final todayKey = _todayKey();
     return entries.where((e) => e.dateKey == todayKey).toList();
+  }
+
+  // ---------------- 稳定事实（关于用户是谁） ----------------
+  static const _kMemoryFactsKey = 'memory_facts';
+
+  /// 每一类的条数上限。
+  ///
+  /// 这一层是**常驻上下文**的，每轮都要重发，所以必须有个天花板：
+  /// 四类 × 8 条 × 约 40 字 ≈ 1300 字，是能接受的固定成本。
+  ///
+  /// 满了之后**不静默丢弃**——由写入的工具拒绝并告诉模型「先改写或删掉一条」。
+  /// 悄悄挤掉最旧的那条，就是把「自然衰减」那套从后门放进来：用户看不见，
+  /// 和 bug 分不开。宁可让它撞墙，也不让它无声地忘。
+  static const kMaxFactsPerCategory = 8;
+
+  /// 全部事实。**顺序必须是稳定的**，不能按「最近更新」排。
+  ///
+  /// 这一层拼进 system 前缀，靠逐字节不变吃 KV 缓存。要是按更新时间倒序，
+  /// 改动任何一条都会把整段重排，等于每次写记忆都把后面几千 token 的历史
+  /// 挤出缓存——那正是 b715c47 当初把 memoryContext 挪到消息尾部要避开的事。
+  ///
+  /// 所以固定用「分类顺序 + 创建时间升序」：新加的一条只会**追加在本类末尾**，
+  /// 前面那些逐字节不动。
+  static Future<List<MemoryFact>> listMemoryFacts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kMemoryFactsKey);
+    if (raw == null) return [];
+    final list =
+        (jsonDecode(raw) as List)
+            .map((e) => MemoryFact.fromJson(e as Map<String, dynamic>))
+            .toList();
+    list.sort((a, b) {
+      final byCategory = a.category.index.compareTo(b.category.index);
+      if (byCategory != 0) return byCategory;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+    return list;
+  }
+
+  static Future<List<MemoryFact>> listMemoryFactsIn(
+    MemoryCategory category,
+  ) async {
+    final all = await listMemoryFacts();
+    return all.where((f) => f.category == category).toList();
+  }
+
+  static Future<void> _saveMemoryFacts(List<MemoryFact> facts) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _kMemoryFactsKey,
+      jsonEncode(facts.map((f) => f.toJson()).toList()),
+    );
+  }
+
+  static Future<void> addMemoryFact(MemoryFact fact) async {
+    final facts = await listMemoryFacts();
+    facts.add(fact);
+    await _saveMemoryFacts(facts);
+  }
+
+  /// 按 id 替换。找不到就什么都不做——**不要顺手插入一条新的**：
+  /// 调用方以为自己在改，结果多出一条，比失败更难查。
+  static Future<bool> updateMemoryFact(MemoryFact fact) async {
+    final facts = await listMemoryFacts();
+    final i = facts.indexWhere((f) => f.id == fact.id);
+    if (i < 0) return false;
+    facts[i] = fact;
+    await _saveMemoryFacts(facts);
+    return true;
+  }
+
+  static Future<bool> removeMemoryFact(String id) async {
+    final facts = await listMemoryFacts();
+    final before = facts.length;
+    facts.removeWhere((f) => f.id == id);
+    if (facts.length == before) return false;
+    await _saveMemoryFacts(facts);
+    return true;
   }
 
   // ---------------- 信 ----------------

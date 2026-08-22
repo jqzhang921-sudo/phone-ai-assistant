@@ -573,8 +573,28 @@ class _ChatScreenState extends State<ChatScreen> {
       if (aiName.isNotEmpty) '你叫$aiName。',
       if (userName.isNotEmpty) 'TA 叫 $userName。',
     ].join();
+
+    // 稳定事实进 system 块，**不进 memoryContext**。
+    //
+    // 那两块的去处是不一样的：memoryContext 天天变，挂在最后一条用户消息
+    // 尾部；这一块几乎不变，跟人设一起待在前缀里吃 KV 缓存。详见
+    // buildStableFacts 的注释。
+    //
+    // 排在人设之后：名字和人设是最不变的，放最前面；事实偶尔会改，
+    // 排在它们后面，改一次不至于把前面那段也一起失效。
+    //
+    // 同样兜异常——它只是「知道得多一点」，读不出来就当没有，
+    // 不能因为它把消息卡住。
+    var facts = '';
+    try {
+      facts = await buildStableFacts();
+    } catch (e) {
+      debugPrint('[chat] 读稳定事实失败，这次不带：$e');
+    }
+
     final systemPrompt =
-        '$names${_conversation.systemPrompt ?? basePersona}';
+        '$names${_conversation.systemPrompt ?? basePersona}'
+        '${facts.isEmpty ? '' : '\n\n$facts'}';
 
     // 聊得够久了就把早期消息折成摘要。
     //

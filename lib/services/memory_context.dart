@@ -1,6 +1,53 @@
 import '../models/book.dart';
+import '../models/memory_fact.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
+
+/// 「稳定事实」块——关于用户是谁。**去处和 [buildMemoryContext] 不一样，
+/// 这是这两个函数唯一重要的区别，别把它们拼到一起。**
+///
+/// - 这一块跟人设一起进 **system 前缀**：内容几乎不变，逐字节稳定，吃得到
+///   KV 缓存，每轮几乎不额外付钱。
+/// - [buildMemoryContext] 挂在**最后一条用户消息尾部**：内容天天变，放前面
+///   会把后面几千 token 的历史挤出缓存（见 b715c47）。
+///
+/// 分开的理由不只是缓存，还有语义：名字、称呼、TA 在意什么，是「不问就得知道」
+/// 的东西——你没法靠调工具知道对方叫什么，因为你得先知道该问。而某天说过的
+/// 某句话是「问了才翻」的，交给 `recall_records`。
+///
+/// 空的时候返回空串，调用方直接拼就行，不用判空。
+Future<String> buildStableFacts() async {
+  final facts = await StorageService.listMemoryFacts();
+  if (facts.isEmpty) return '';
+
+  final buf = StringBuffer();
+  buf.writeln('## 你知道的关于 TA 的事');
+  buf.writeln(
+    '（这些是你长期记着的，不是这次对话里冒出来的。'
+    '用来接住话头，不要主动罗列，也不要拿它去证明你记得。）',
+  );
+
+  for (final category in MemoryCategory.values) {
+    final inCategory = facts.where((f) => f.category == category).toList();
+    if (inCategory.isEmpty) continue;
+    buf.writeln('${category.label}：');
+    for (final f in inCategory) {
+      // why 一并给出来：模型改写这条时要靠它判断该不该动
+      // （比如「她说的」和「我猜的」，前者不该被自己推翻）。
+      final why = f.why;
+      buf.writeln(
+        '- ${f.content}'
+        '${why == null || why.isEmpty ? '' : '（${_clip(why, 40)}）'}',
+      );
+    }
+  }
+
+  buf.writeln(
+    '这些是会变的。发现某条已经不对了，用 update_memory 改掉或 forget 删掉，'
+    '**不要在对话里将错就错**。「最近」那一类尤其容易过期。',
+  );
+  return buf.toString();
+}
 
 /// 拼给聊天 system prompt 的上下文块。
 ///
