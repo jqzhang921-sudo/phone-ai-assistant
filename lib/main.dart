@@ -11,6 +11,12 @@ import 'services/storage_service.dart';
 import 'services/external_mcp_service.dart';
 import 'services/tts_service.dart';
 
+/// 让没有 context 的工具也能弹框问用户。
+///
+/// 注意：MCP server 也会从电脑那边调同一批工具，那时人不在手机前面，
+/// 弹框不会有人点——所以调用方必须给超时，超时按「拒绝」处理。
+final appNavigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -109,6 +115,9 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
             final titleSerif = s.titleSerif;
             return MaterialApp(
               title: '手机 AI 助手',
+              // 工具是不带 context 的静态函数，但有些工具需要当场问用户
+              // （比如读日历）。给它们一个能挂弹框的地方。
+              navigatorKey: appNavigatorKey,
               debugShowCheckedModeBanner: false,
               theme: AppTheme.lightWith(titleSerif: titleSerif),
               darkTheme: AppTheme.darkWith(titleSerif: titleSerif),

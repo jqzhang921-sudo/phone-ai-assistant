@@ -1,5 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 定闹钟/倒计时交给系统时钟应用（普通权限，装上即有，不弹框） -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>
+    <!-- 日历只读。
+         写日历走 intent（打开系统日历的新建页，用户自己点保存），
+         所以不需要 WRITE_CALENDAR。
+
+         曾经短暂声明过 WRITE，因为 device_calendar 插件的权限判断是
+         `WRITE && READ`，不给写就不让读。后来换成自己查 ContentProvider
+         （见 CalendarChannel.kt），才把这个多余的授权去掉。 -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.CAMERA"/>

@@ -6,6 +6,22 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// 语音来源：系统（免费，离线）或 ElevenLabs（云端，音质好，按量计费）
 enum TtsProvider { system, elevenlabs }
 
+/// 读日历的授权策略。
+///
+/// Android 自己的 READ_CALENDAR 是一次性授权，给了之后系统不再过问。
+/// 但日历内容会随工具返回值发给模型——那是会离开这台手机的数据，
+/// 值得在系统权限之上再有一层用户自己说了算的开关。
+enum CalendarAccess {
+  /// 每次读之前问一句（默认）
+  ask,
+
+  /// 一直允许，不再打扰
+  always,
+
+  /// 不允许，工具直接拒绝
+  never,
+}
+
 class AppSettings {
   static const _themeKey = 'theme_mode';
   static const _ttsEnabledKey = 'tts_enabled';
@@ -18,6 +34,7 @@ class AppSettings {
   static const _ttsAutoPlayKey = 'tts_auto_play';
   static const _titleSerifKey = 'title_serif';
   static const _aiSelfFavoriteKey = 'ai_self_favorite';
+  static const _calendarAccessKey = 'calendar_access';
 
   // ElevenLabs — key stored in secure storage
   static const _elevenLabsKeyKey = 'elevenlabs_api_key';
@@ -46,6 +63,10 @@ class AppSettings {
   /// 让 AI 自己也收藏。默认关——这是它替用户做决定，得先点头。
   bool aiSelfFavorite;
 
+  /// 读日历的授权策略。默认「每次问」——日历数据会离开手机，
+  /// 保守的默认值比省事重要。
+  CalendarAccess calendarAccess;
+
   AppSettings({
     this.ttsEnabled = true,
     this.autoTts = false,
@@ -60,6 +81,7 @@ class AppSettings {
     this.ttsAutoPlay = false,
     this.titleSerif = true,
     this.aiSelfFavorite = false,
+    this.calendarAccess = CalendarAccess.ask,
   });
 
   static Future<AppSettings> load() async {
@@ -98,6 +120,10 @@ class AppSettings {
       ttsAutoPlay: prefs.getBool(_ttsAutoPlayKey) ?? false,
       titleSerif: prefs.getBool(_titleSerifKey) ?? true,
       aiSelfFavorite: prefs.getBool(_aiSelfFavoriteKey) ?? false,
+      calendarAccess: CalendarAccess.values.firstWhere(
+        (v) => v.name == prefs.getString(_calendarAccessKey),
+        orElse: () => CalendarAccess.ask,
+      ),
     );
   }
 
@@ -121,5 +147,6 @@ class AppSettings {
     await prefs.setBool(_ttsAutoPlayKey, ttsAutoPlay);
     await prefs.setBool(_titleSerifKey, titleSerif);
     await prefs.setBool(_aiSelfFavoriteKey, aiSelfFavorite);
+    await prefs.setString(_calendarAccessKey, calendarAccess.name);
   }
 }

@@ -18,16 +18,16 @@ class DiscussionNote {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'bookId': bookId,
-        'content': content,
-        'createdAt': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'bookId': bookId,
+    'content': content,
+    'createdAt': createdAt.toIso8601String(),
+  };
 
   factory DiscussionNote.fromJson(Map<String, dynamic> json) => DiscussionNote(
-        id: json['id'],
-        bookId: json['bookId'],
-        content: json['content'],
-        createdAt: DateTime.parse(json['createdAt']),
-      );
+    id: json['id'],
+    bookId: json['bookId'],
+    content: json['content'],
+    createdAt: DateTime.parse(json['createdAt']),
+  );
 }

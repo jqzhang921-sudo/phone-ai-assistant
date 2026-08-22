@@ -29,6 +29,10 @@ const _labels = <String, String>{
   'write_diary_entry': 'Write diary',
   'recall_records': 'Recall records',
   'save_to_corner': 'Save to corner',
+  'set_alarm': 'Set alarm',
+  'set_timer': 'Set timer',
+  'add_calendar_event': 'Add to calendar',
+  'list_calendar_events': 'Read calendar',
   'list_highlighted_books': 'Highlighted books',
   'get_book_highlights': 'Book highlights',
 };

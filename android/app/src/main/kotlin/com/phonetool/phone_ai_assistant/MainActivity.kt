@@ -18,6 +18,7 @@ class MainActivity : FlutterActivity() {
     private var audioRecord: AudioRecord? = null
     private var recordFile: File? = null
     private val isRecording = AtomicBoolean(false)
+    private var calendar: CalendarChannel? = null
 
     companion object {
         private const val CHANNEL = "voice_recorder"
@@ -41,6 +42,21 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        val cal = CalendarChannel(this)
+        calendar = cal
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CalendarChannel.CHANNEL)
+            .setMethodCallHandler { call, result -> cal.handle(call, result) }
+    }
+
+    // 日历权限是异步申请的，结果得转回 CalendarChannel 挂起的那个 result
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (calendar?.onPermissionResult(requestCode, grantResults) == true) return
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     private fun startRecording(result: MethodChannel.Result) {

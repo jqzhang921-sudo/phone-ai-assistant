@@ -4,6 +4,8 @@ import 'dart:io';
 import '../models/mcp_tool.dart';
 import 'phone_tools/camera_tool.dart';
 import 'phone_tools/diary_tool.dart';
+import 'phone_tools/alarm_tool.dart';
+import 'phone_tools/calendar_read_tool.dart';
 import 'phone_tools/recall_tool.dart';
 import 'phone_tools/file_tool.dart';
 import 'phone_tools/location_tool.dart';
@@ -53,6 +55,10 @@ class McpServer {
     _registerTool(DiaryTool.definition, DiaryTool.execute);
     _registerTool(RecallTool.definition, RecallTool.execute);
     _registerTool(SaveToCornerTool.definition, SaveToCornerTool.execute);
+    _registerTool(AlarmTool.definition, AlarmTool.execute);
+    _registerTool(TimerTool.definition, TimerTool.execute);
+    _registerTool(CalendarTool.definition, CalendarTool.execute);
+    _registerTool(CalendarReadTool.definition, CalendarReadTool.execute);
     _registerTool(
       ListHighlightedBooksTool.definition,
       ListHighlightedBooksTool.execute,

@@ -436,6 +436,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _row(
               theme,
+              icon: PhosphorIconsRegular.calendarBlank,
+              title: '查看日历',
+              subtitle: '日历内容会发给模型',
+              value: switch (_settings.calendarAccess) {
+                CalendarAccess.ask => '每次询问',
+                CalendarAccess.always => '一直允许',
+                CalendarAccess.never => '不允许',
+              },
+              onTap: _pickCalendarAccess,
+            ),
+            _row(
+              theme,
               asset: 'books',
               title: '微信读书',
               value: _wereadKeyController.text.isEmpty ? '未配置' : '已配置',
@@ -763,6 +775,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeMode.dark => '常开',
     ThemeMode.system => '跟随系统',
   };
+
+  Future<void> _pickCalendarAccess() async {
+    const labels = {
+      CalendarAccess.ask: ('每次询问', '每次它想看日历都问你一句'),
+      CalendarAccess.always: ('一直允许', '不再打扰，它随时能看'),
+      CalendarAccess.never: ('不允许', '工具直接拒绝，看不到'),
+    };
+    final picked = await showModalBottomSheet<CalendarAccess>(
+      context: context,
+      builder:
+          (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final entry in labels.entries)
+                  ListTile(
+                    title: Text(entry.value.$1),
+                    subtitle: Text(entry.value.$2),
+                    trailing:
+                        _settings.calendarAccess == entry.key
+                            ? const Icon(PhosphorIconsRegular.check, size: 20)
+                            : null,
+                    onTap: () => Navigator.of(ctx).pop(entry.key),
+                  ),
+              ],
+            ),
+          ),
+    );
+    if (picked == null) return;
+    setState(() => _settings.calendarAccess = picked);
+    await _settings.save();
+  }
 
   Future<void> _pickThemeMode() async {
     final picked = await showModalBottomSheet<ThemeMode>(
