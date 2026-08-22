@@ -36,12 +36,18 @@ Future<String> buildStableFacts() async {
       // （比如「她说的」和「我猜的」，前者不该被自己推翻）。
       final why = f.why;
       buf.writeln(
-        '- ${f.content}'
-        '${why == null || why.isEmpty ? '' : '（${_clip(why, 40)}）'}',
+        '- [${shortFactId(f.id)}] ${f.content}'
+        '${why == null || why.isEmpty ? '' : '（${_clip(why, 40)}）'}'
+        '${f.pinned ? '【用户钉住的：不要改，也不要删】' : ''}',
       );
     }
   }
 
+  buf.writeln(
+    '方括号里是每条的编号，给 update_memory / forget 用的。'
+    '**那是内部编号，别说给用户听**——用户要的是你记得这件事，'
+    '不是你能背出它的编号。',
+  );
   buf.writeln(
     '这些是会变的。发现某条已经不对了，用 update_memory 改掉或 forget 删掉，'
     '**不要在对话里将错就错**。「最近」那一类尤其容易过期。',

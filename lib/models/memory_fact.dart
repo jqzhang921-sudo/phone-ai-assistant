@@ -56,6 +56,14 @@ extension MemoryCategoryLabel on MemoryCategory {
   };
 }
 
+/// 给模型看的短 id：uuid 去掉横杠取前 6 位。
+///
+/// 常驻上下文里每条都得带一个（不然它没法指名道姓地改或删），全长 uuid
+/// 太占地方。6 位十六进制在「每类 8 条、共 32 条」的上限下撞车概率可以忽略；
+/// 工具仍然按前缀匹配、撞了就拒绝并列候选——和 dairy-mcp 里 delete_diary
+/// 同一套做法，宁可让它多给几位，也不猜。
+String shortFactId(String id) => id.replaceAll('-', '').substring(0, 6);
+
 /// 谁写的。用户问「这是你自己记的还是我说的」时要答得出来，
 /// 记忆页上也要能一眼分开：它自己推断的和用户亲口说的，可信度不是一回事。
 enum MemorySource { ai, user }

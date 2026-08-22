@@ -69,4 +69,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('## 你在哪儿'), findsOneWidget);
   });
+
+  testWidgets('记忆页：稳定事实按分类分组，钉住的标出来', (tester) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+          (call) async => null,
+        );
+
+    SharedPreferences.setMockInitialValues({
+      'user_name': 'Cleo',
+      'ai_name': '沐',
+      'diary_entries': jsonEncode([]),
+      'favorited_musings': jsonEncode([]),
+      'bookshelf_books': jsonEncode([]),
+      'memory_facts': jsonEncode([
+        {
+          'id': 'aaaaaaaa-1111-2222-3333-444444444444',
+          'category': 'profile',
+          'content': '叫 Cleo，不喜欢被叫全名',
+          'why': 'TA 自己说的',
+          'source': 'user',
+          'pinned': true,
+          'createdAt': '2026-08-20T10:00:00.000',
+          'updatedAt': '2026-08-20T10:00:00.000',
+        },
+        {
+          'id': 'bbbbbbbb-1111-2222-3333-444444444444',
+          'category': 'rapport',
+          'content': '不喜欢被哄，出了问题直接说',
+          'why': '几次对话里 TA 都这么讲过',
+          'source': 'ai',
+          'pinned': false,
+          'createdAt': '2026-08-21T10:00:00.000',
+          'updatedAt': '2026-08-21T10:00:00.000',
+        },
+      ]),
+    });
+
+    await tester.binding.setSurfaceSize(const Size(1000, 6000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const MaterialApp(home: MemoryScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('关于你'), findsOneWidget);
+    // 两条分属不同分类，两个分类标题都该出现
+    expect(find.text('关于 TA'), findsOneWidget);
+    expect(find.text('相处方式'), findsOneWidget);
+    expect(find.text('叫 Cleo，不喜欢被叫全名'), findsOneWidget);
+    expect(find.text('不喜欢被哄，出了问题直接说'), findsOneWidget);
+    // 来源和 why 要摆在一起——一条不认识的事实，光看内容判断不了真假
+    expect(find.textContaining('你说的 · TA 自己说的'), findsOneWidget);
+    expect(find.textContaining('它自己记的 · 几次对话里'), findsOneWidget);
+    // 空态那句在有数据时不该出现
+    expect(find.textContaining('还是空的'), findsNothing);
+  });
 }

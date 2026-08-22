@@ -9,6 +9,7 @@ import 'phone_tools/calendar_read_tool.dart';
 import 'phone_tools/recall_tool.dart';
 import 'phone_tools/file_tool.dart';
 import 'phone_tools/location_tool.dart';
+import 'phone_tools/memory_tool.dart';
 import 'phone_tools/sensors_tool.dart';
 import 'phone_tools/search_tool.dart';
 import 'phone_tools/time_tool.dart';
@@ -55,6 +56,12 @@ class McpServer {
     _registerTool(DiaryTool.definition, DiaryTool.execute);
     _registerTool(RecallTool.definition, RecallTool.execute);
     _registerTool(SaveToCornerTool.definition, SaveToCornerTool.execute);
+    // 稳定事实的三个写入口。注册在 recall/save 旁边是有意的：
+    // 这五个合起来才是完整的记忆——常驻的（remember/update/forget）
+    // 和按需翻的（recall_records/save_to_corner）。
+    _registerTool(MemoryTools.rememberDefinition, MemoryTools.remember);
+    _registerTool(MemoryTools.updateDefinition, MemoryTools.update);
+    _registerTool(MemoryTools.forgetDefinition, MemoryTools.forget);
     _registerTool(AlarmTool.definition, AlarmTool.execute);
     _registerTool(TimerTool.definition, TimerTool.execute);
     _registerTool(CalendarTool.definition, CalendarTool.execute);
