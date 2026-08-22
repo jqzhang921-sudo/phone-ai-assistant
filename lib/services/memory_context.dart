@@ -1,10 +1,10 @@
 import '../models/book.dart';
 import '../models/diary_entry.dart';
-import '../models/memory_fact.dart';
+import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
 
-/// 「稳定事实」块——关于用户是谁。**去处和 [buildMemoryContext] 不一样，
+/// 长期记忆的**摘要层**——关于用户是谁。**去处和 [buildMemoryContext] 不一样，
 /// 这是这两个函数唯一重要的区别，别把它们拼到一起。**
 ///
 /// - 这一块跟人设一起进 **system 前缀**：内容几乎不变，逐字节稳定，吃得到
@@ -13,39 +13,39 @@ import 'storage_service.dart';
 ///   会把后面几千 token 的历史挤出缓存（见 b715c47）。
 ///
 /// 分开的理由不只是缓存，还有语义：名字、称呼、TA 在意什么，是「不问就得知道」
-/// 的东西——你没法靠调工具知道对方叫什么，因为你得先知道该问。而某天说过的
-/// 某句话是「问了才翻」的，交给 `recall_records`。
+/// 的东西——你没法靠调工具知道对方叫什么，因为你得先知道该问。
+///
+/// **只给每条的名字和一行摘要，细节一概不给**（要 open_memory 取）。
+/// 这是这一版的核心：常驻成本按「话题数」算，不按「记了多少内容」算，
+/// 所以记得再多，每轮也就多那么几行。
 ///
 /// 空的时候返回空串，调用方直接拼就行，不用判空。
-Future<String> buildStableFacts() async {
-  final facts = await StorageService.listMemoryFacts();
-  if (facts.isEmpty) return '';
+Future<String> buildMemoryDigest() async {
+  final topics = await StorageService.listMemoryTopics();
+  if (topics.isEmpty) return '';
 
   final buf = StringBuffer();
-  buf.writeln('## 你知道的关于 TA 的事');
+  buf.writeln('## 你长期记着的、关于 TA 的事');
   buf.writeln(
-    '（这些是你长期记着的，不是这次对话里冒出来的。'
-    '用来接住话头，不要主动罗列，也不要拿它去证明你记得。）',
+    '下面每行只说**这条讲什么**，不是内容本身。'
+    '要用到具体内容，用 open_memory 把那条的细节取出来再说，别照着摘要猜。',
   );
 
   for (final category in MemoryCategory.values) {
-    final inCategory = facts.where((f) => f.category == category).toList();
+    final inCategory = topics.where((t) => t.category == category).toList();
     if (inCategory.isEmpty) continue;
     buf.writeln('${category.label}：');
-    for (final f in inCategory) {
-      // why 一并给出来：模型改写这条时要靠它判断该不该动
-      // （比如「她说的」和「我猜的」，前者不该被自己推翻）。
-      final why = f.why;
+    for (final t in inCategory) {
       buf.writeln(
-        '- [${shortFactId(f.id)}] ${f.content}'
-        '${why == null || why.isEmpty ? '' : '（${_clip(why, 40)}）'}'
-        '${f.pinned ? '【用户钉住的：不要改，也不要删】' : ''}',
+        '- [${shortTopicId(t.id)}] ${t.name}：${t.summary}'
+        '${t.details.isEmpty ? '（还没有细节）' : '（${t.details.length} 条细节）'}'
+        '${t.pinned ? '【用户钉住的：不要改，也不要删】' : ''}',
       );
     }
   }
 
   buf.writeln(
-    '方括号里是每条的编号，给 update_memory / forget 用的。'
+    '方括号里是编号，给 open_memory / update_memory / forget 用的。'
     '**那是内部编号，别说给用户听**——用户要的是你记得这件事，'
     '不是你能背出它的编号。',
   );

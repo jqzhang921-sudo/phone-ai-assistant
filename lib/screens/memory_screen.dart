@@ -3,7 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../config/app_shape.dart';
 import '../config/settings.dart';
-import '../models/memory_fact.dart';
+import '../models/memory_topic.dart';
 import '../services/memory_context.dart';
 import '../services/storage_service.dart';
 
@@ -30,10 +30,14 @@ class _MemoryScreenState extends State<MemoryScreen> {
   String? _memory;
   String? _error;
 
-  /// 稳定事实单独拿列表，不只是拼好的字符串——这一页要能**改**它们，
+  /// 长期记忆单独拿列表，不只是拼好的字符串——这一页要能**改**它们，
   /// 不是只给人看。原文视图里才用拼好的那段。
-  List<MemoryFact> _facts = [];
-  String _factsRaw = '';
+  List<MemoryTopic> _topics = [];
+  String _digestRaw = '';
+
+  /// 展开了细节的话题。默认全收起——这一页的默认视图应该和模型的默认视图
+  /// 一样：只看得到摘要。想看细节就点开，那一下等于亲手做了一次 open_memory。
+  final _expanded = <String>{};
   String _aiName = '';
   String _userName = '';
 
@@ -67,13 +71,13 @@ class _MemoryScreenState extends State<MemoryScreen> {
       debugPrint('[memory] 读设置失败，名字这行不显示：$e');
     }
 
-    var facts = <MemoryFact>[];
-    var factsRaw = '';
+    var topics = <MemoryTopic>[];
+    var digestRaw = '';
     try {
-      facts = await StorageService.listMemoryFacts();
-      factsRaw = await buildStableFacts();
+      topics = await StorageService.listMemoryTopics();
+      digestRaw = await buildMemoryDigest();
     } catch (e) {
-      debugPrint('[memory] 读稳定事实失败：$e');
+      debugPrint('[memory] 读长期记忆失败：$e');
     }
 
     String? memory;
@@ -88,8 +92,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
     setState(() {
       _memory = memory;
       _error = error;
-      _facts = facts;
-      _factsRaw = factsRaw;
+      _topics = topics;
+      _digestRaw = digestRaw;
       _aiName = aiName;
       _userName = userName;
     });
@@ -149,9 +153,9 @@ class _MemoryScreenState extends State<MemoryScreen> {
                   _intro(theme, memory),
                   const SizedBox(height: 16),
                   if (_raw)
-                    _rawView(theme, '$_factsRaw\n$memory')
+                    _rawView(theme, '$_digestRaw\n$memory')
                   else ...[
-                    ..._factsSection(theme),
+                    ..._topicsSection(theme),
                     ..._blocks(theme, memory),
                   ],
                 ],
@@ -195,15 +199,16 @@ class _MemoryScreenState extends State<MemoryScreen> {
     );
   }
 
-  /// 「关于你」——稳定事实那一段。**这一页存在的主要理由就是它。**
+  /// 「关于你」——长期记忆那一段。**这一页存在的主要理由就是它。**
   ///
   /// 它自己会往这里写（remember / update_memory / forget），所以这些条目必须
   /// 被看得见、也推翻得掉。看不见的自动写入等于「你不知道它记了什么，
   /// 也拿它没办法」——那正是「自然衰减」最要命的地方，不能换个形式再犯一次。
   ///
-  /// 空的时候也要给一句说明，别只留一片白：用户得知道这块是干嘛的、
-  /// 以及为什么现在还是空的。
-  List<Widget> _factsSection(ThemeData theme) {
+  /// **默认只显示摘要，细节要点开。** 这不是为了好看，是为了让这一页和模型
+  /// 看到的东西对齐：它的上下文里也只有摘要，细节要 open_memory 才取。
+  /// 用户点开的那一下，等于亲手做了一次 open_memory。
+  List<Widget> _topicsSection(ThemeData theme) {
     final scheme = theme.colorScheme;
     final out = <Widget>[
       Padding(
@@ -217,13 +222,14 @@ class _MemoryScreenState extends State<MemoryScreen> {
       ),
     ];
 
-    if (_facts.isEmpty) {
+    if (_topics.isEmpty) {
       out.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 22),
           child: Text(
             '还是空的。聊着聊着它会把「你是谁」这类事记进来——怎么称呼你、'
-            '你在意什么、希望它怎么对你。记进来的都会列在这儿，长按能钉住或删掉。',
+            '你在意什么、希望它怎么对你。记进来的都会列在这儿，点开看细节，'
+            '长按能钉住或删掉。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
               height: 1.6,
@@ -235,7 +241,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
     }
 
     for (final category in MemoryCategory.values) {
-      final inCategory = _facts.where((f) => f.category == category).toList();
+      final inCategory = _topics.where((t) => t.category == category).toList();
       if (inCategory.isEmpty) continue;
       out.add(
         Padding(
@@ -249,15 +255,15 @@ class _MemoryScreenState extends State<MemoryScreen> {
           ),
         ),
       );
-      out.addAll(inCategory.map((f) => _factTile(theme, f)));
+      out.addAll(inCategory.map((t) => _topicTile(theme, t)));
     }
     out.add(const SizedBox(height: 22));
     return out;
   }
 
-  Widget _factTile(ThemeData theme, MemoryFact f) {
+  Widget _topicTile(ThemeData theme, MemoryTopic t) {
     final scheme = theme.colorScheme;
-    final why = f.why;
+    final open = _expanded.contains(t.id);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
@@ -265,7 +271,15 @@ class _MemoryScreenState extends State<MemoryScreen> {
         borderRadius: AppRadius.smAll,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onLongPress: () => _factMenu(f),
+          onTap:
+              () => setState(() {
+                if (open) {
+                  _expanded.remove(t.id);
+                } else {
+                  _expanded.add(t.id);
+                }
+              }),
+          onLongPress: () => _topicMenu(t),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Column(
@@ -274,7 +288,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (f.pinned)
+                    if (t.pinned)
                       Padding(
                         padding: const EdgeInsets.only(right: 6, top: 3),
                         child: PhosphorIcon(
@@ -285,23 +299,84 @@ class _MemoryScreenState extends State<MemoryScreen> {
                       ),
                     Expanded(
                       child: Text(
-                        f.content,
-                        style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+                        t.name,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6, top: 2),
+                      child: PhosphorIcon(
+                        open
+                            ? PhosphorIcons.caretUp(PhosphorIconsStyle.regular)
+                            : PhosphorIcons.caretDown(
+                              PhosphorIconsStyle.regular,
+                            ),
+                        size: 13,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                // 「谁记的」和「为什么」摆在一起：一条你不认识的事实，
-                // 光看内容判断不了它是真的还是它自己编的。
+                const SizedBox(height: 2),
                 Text(
-                  [
-                    f.source == MemorySource.user ? '你说的' : '它自己记的',
-                    if (why != null && why.isNotEmpty) why,
-                    if (f.edited) '改过',
-                  ].join(' · '),
+                  t.summary,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                ),
+                if (open) ...[
+                  const SizedBox(height: 10),
+                  for (final d in t.details)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 7, right: 8),
+                            child: Container(
+                              width: 3,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                color: scheme.onSurfaceVariant,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: SelectableText(
+                              d,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (t.details.isEmpty)
+                    Text(
+                      '（这条没有细节）',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 4),
+                // 「谁记的」摆出来：一条你不认识的记忆，光看内容判断不了它是
+                // 你说过的，还是它自己从几次对话里推出来的。
+                Text(
+                  [
+                    t.source == MemorySource.user ? '你说的' : '它自己记的',
+                    '${t.details.length} 条细节',
+                    if (t.edited) '改过',
+                  ].join(' · '),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                     height: 1.4,
                   ),
                 ),
@@ -317,7 +392,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
   ///
   /// 钉住之后它改不了也删不了（工具里挡着）。这是给用户的兜底——
   /// 自动写入总会写错，得有个「这条不许动」的说法，否则每次都只能事后补救。
-  Future<void> _factMenu(MemoryFact f) async {
+  Future<void> _topicMenu(MemoryTopic t) async {
     final action = await showModalBottomSheet<String>(
       context: context,
       builder:
@@ -328,12 +403,12 @@ class _MemoryScreenState extends State<MemoryScreen> {
                 ListTile(
                   leading: PhosphorIcon(
                     PhosphorIcons.pushPin(
-                      f.pinned
+                      t.pinned
                           ? PhosphorIconsStyle.regular
                           : PhosphorIconsStyle.fill,
                     ),
                   ),
-                  title: Text(f.pinned ? '取消钉住' : '钉住（不让它改或删）'),
+                  title: Text(t.pinned ? '取消钉住' : '钉住（不让它改或删）'),
                   onTap: () => Navigator.of(ctx).pop('pin'),
                 ),
                 ListTile(
@@ -350,18 +425,21 @@ class _MemoryScreenState extends State<MemoryScreen> {
     if (!mounted || action == null) return;
 
     if (action == 'pin') {
-      await StorageService.updateMemoryFact(f.copyWith(pinned: !f.pinned));
+      await StorageService.updateMemoryTopic(t.copyWith(pinned: !t.pinned));
       await _load();
       return;
     }
 
-    // 删除要确认：没有回收站，删了就没了。
+    // 删除要确认：没有回收站，删了就没了，连底下的细节一起没。
     final ok = await showDialog<bool>(
       context: context,
       builder:
           (ctx) => AlertDialog(
             title: const Text('删掉这条记忆？'),
-            content: Text('「${f.content}」\n\n删了就没了，它以后不会再知道这件事。'),
+            content: Text(
+              '「${t.name}」和它底下的 ${t.details.length} 条细节。\n\n'
+              '删了就没了，它以后不会再知道这些。',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
@@ -375,7 +453,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
           ),
     );
     if (ok != true || !mounted) return;
-    await StorageService.removeMemoryFact(f.id);
+    await StorageService.removeMemoryTopic(t.id);
     await _load();
   }
 

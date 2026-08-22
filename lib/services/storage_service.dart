@@ -6,7 +6,7 @@ import '../models/book.dart';
 import '../models/conversation.dart';
 import '../models/diary_entry.dart';
 import '../models/letter.dart';
-import '../models/memory_fact.dart';
+import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
 
 class StorageService {
@@ -281,34 +281,41 @@ class StorageService {
     return entries.where((e) => e.dateKey == todayKey).toList();
   }
 
-  // ---------------- 稳定事实（关于用户是谁） ----------------
-  static const _kMemoryFactsKey = 'memory_facts';
+  // ---------------- 长期记忆（关于用户是谁） ----------------
 
-  /// 每一类的条数上限。
-  ///
-  /// 这一层是**常驻上下文**的，每轮都要重发，所以必须有个天花板：
-  /// 四类 × 8 条 × 约 40 字 ≈ 1300 字，是能接受的固定成本。
-  ///
-  /// 满了之后**不静默丢弃**——由写入的工具拒绝并告诉模型「先改写或删掉一条」。
-  /// 悄悄挤掉最旧的那条，就是把「自然衰减」那套从后门放进来：用户看不见，
-  /// 和 bug 分不开。宁可让它撞墙，也不让它无声地忘。
-  static const kMaxFactsPerCategory = 8;
+  /// prefs 的键沿用 `memory_facts`（扁平版留下的名字），**故意不改**：
+  /// 改了等于让已有数据和备份文件里的那一段变成孤儿，而且备份白名单
+  /// （backup_service 的 _allowedKeys）也得跟着改。键是数据契约，
+  /// 类型改名不该波及它。
+  static const _kMemoryTopicsKey = 'memory_facts';
 
-  /// 全部事实。**顺序必须是稳定的**，不能按「最近更新」排。
+  /// 每一类的话题上限。
   ///
-  /// 这一层拼进 system 前缀，靠逐字节不变吃 KV 缓存。要是按更新时间倒序，
+  /// 比扁平版的 8 少，是因为话题装得下更多东西：一个话题挂十几条细节，
+  /// 不再需要靠条数堆。四类 × 5 条摘要 ≈ 20 行常驻，实际用到的通常只有八九个。
+  static const kMaxTopicsPerCategory = 5;
+
+  /// 一个话题底下的细节上限。
+  ///
+  /// 细节不常驻（要 open_memory 才取），所以可以宽松些；但也不能没有边——
+  /// 一个话题攒到几十条，取出来的那一坨自己就成了新的上下文负担。
+  static const kMaxDetailsPerTopic = 12;
+
+  /// 全部话题。**顺序必须是稳定的**，不能按「最近更新」排。
+  ///
+  /// 摘要那一层拼进 system 前缀，靠逐字节不变吃 KV 缓存。要是按更新时间倒序，
   /// 改动任何一条都会把整段重排，等于每次写记忆都把后面几千 token 的历史
   /// 挤出缓存——那正是 b715c47 当初把 memoryContext 挪到消息尾部要避开的事。
   ///
-  /// 所以固定用「分类顺序 + 创建时间升序」：新加的一条只会**追加在本类末尾**，
+  /// 所以固定用「分类顺序 + 创建时间升序」：新加的只会**追加在本类末尾**，
   /// 前面那些逐字节不动。
-  static Future<List<MemoryFact>> listMemoryFacts() async {
+  static Future<List<MemoryTopic>> listMemoryTopics() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kMemoryFactsKey);
+    final raw = prefs.getString(_kMemoryTopicsKey);
     if (raw == null) return [];
     final list =
         (jsonDecode(raw) as List)
-            .map((e) => MemoryFact.fromJson(e as Map<String, dynamic>))
+            .map((e) => MemoryTopic.fromJson(e as Map<String, dynamic>))
             .toList();
     list.sort((a, b) {
       final byCategory = a.category.index.compareTo(b.category.index);
@@ -318,44 +325,44 @@ class StorageService {
     return list;
   }
 
-  static Future<List<MemoryFact>> listMemoryFactsIn(
+  static Future<List<MemoryTopic>> listMemoryTopicsIn(
     MemoryCategory category,
   ) async {
-    final all = await listMemoryFacts();
-    return all.where((f) => f.category == category).toList();
+    final all = await listMemoryTopics();
+    return all.where((t) => t.category == category).toList();
   }
 
-  static Future<void> _saveMemoryFacts(List<MemoryFact> facts) async {
+  static Future<void> _saveMemoryTopics(List<MemoryTopic> topics) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _kMemoryFactsKey,
-      jsonEncode(facts.map((f) => f.toJson()).toList()),
+      _kMemoryTopicsKey,
+      jsonEncode(topics.map((t) => t.toJson()).toList()),
     );
   }
 
-  static Future<void> addMemoryFact(MemoryFact fact) async {
-    final facts = await listMemoryFacts();
-    facts.add(fact);
-    await _saveMemoryFacts(facts);
+  static Future<void> addMemoryTopic(MemoryTopic topic) async {
+    final topics = await listMemoryTopics();
+    topics.add(topic);
+    await _saveMemoryTopics(topics);
   }
 
   /// 按 id 替换。找不到就什么都不做——**不要顺手插入一条新的**：
   /// 调用方以为自己在改，结果多出一条，比失败更难查。
-  static Future<bool> updateMemoryFact(MemoryFact fact) async {
-    final facts = await listMemoryFacts();
-    final i = facts.indexWhere((f) => f.id == fact.id);
+  static Future<bool> updateMemoryTopic(MemoryTopic topic) async {
+    final topics = await listMemoryTopics();
+    final i = topics.indexWhere((t) => t.id == topic.id);
     if (i < 0) return false;
-    facts[i] = fact;
-    await _saveMemoryFacts(facts);
+    topics[i] = topic;
+    await _saveMemoryTopics(topics);
     return true;
   }
 
-  static Future<bool> removeMemoryFact(String id) async {
-    final facts = await listMemoryFacts();
-    final before = facts.length;
-    facts.removeWhere((f) => f.id == id);
-    if (facts.length == before) return false;
-    await _saveMemoryFacts(facts);
+  static Future<bool> removeMemoryTopic(String id) async {
+    final topics = await listMemoryTopics();
+    final before = topics.length;
+    topics.removeWhere((t) => t.id == id);
+    if (topics.length == before) return false;
+    await _saveMemoryTopics(topics);
     return true;
   }
 

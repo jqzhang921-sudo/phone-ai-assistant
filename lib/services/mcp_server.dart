@@ -60,6 +60,7 @@ class McpServer {
     // 这五个合起来才是完整的记忆——常驻的（remember/update/forget）
     // 和按需翻的（recall_records/save_to_corner）。
     _registerTool(MemoryTools.rememberDefinition, MemoryTools.remember);
+    _registerTool(MemoryTools.openDefinition, MemoryTools.open);
     _registerTool(MemoryTools.updateDefinition, MemoryTools.update);
     _registerTool(MemoryTools.forgetDefinition, MemoryTools.forget);
     _registerTool(AlarmTool.definition, AlarmTool.execute);

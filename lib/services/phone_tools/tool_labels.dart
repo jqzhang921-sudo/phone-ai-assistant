@@ -30,6 +30,7 @@ const _labels = <String, String>{
   'recall_records': 'Recall records',
   'save_to_corner': 'Save to corner',
   'remember': 'Remember',
+  'open_memory': 'Open memory',
   'update_memory': 'Update memory',
   'forget': 'Forget',
   'set_alarm': 'Set alarm',

@@ -5,15 +5,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:phone_ai_assistant/screens/memory_screen.dart';
 
+/// AppSettings.load() 会读 flutter_secure_storage（ElevenLabs key），
+/// 测试环境没有插件实现，不打桩就抛 MissingPluginException。
+void _mockSecureStorage() {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (call) async => null,
+      );
+}
+
+/// ListView 只给可见的孩子建元素，屏幕外的 find 不到。
+/// 把视口调到足够高，整页一次装下。
+Future<void> _tallViewport(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(1000, 6000));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+}
+
 void main() {
   testWidgets('记忆页：渲染、名字、排版/原文切换', (tester) async {
-    // AppSettings.load() 会读 flutter_secure_storage（ElevenLabs key），
-    // 测试环境没有插件实现，不打桩就抛 MissingPluginException。
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-          const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
-          (call) async => null,
-        );
+    _mockSecureStorage();
 
     final now = DateTime(2026, 8, 22);
     SharedPreferences.setMockInitialValues({
@@ -43,40 +54,28 @@ void main() {
       'bookshelf_books': jsonEncode([]),
     });
 
-    // ListView 只给可见的孩子建元素，屏幕外的 find 不到。
-    // 把视口调到足够高，整页一次装下。
-    await tester.binding.setSurfaceSize(const Size(1000, 6000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
+    await _tallViewport(tester);
     await tester.pumpWidget(const MaterialApp(home: MemoryScreen()));
     await tester.pumpAndSettle();
 
     expect(find.text('记忆'), findsOneWidget);
     expect(find.textContaining('每次和它说话'), findsOneWidget);
-    // 顶部那句要报出名字和字数
     expect(find.textContaining('它叫沐'), findsOneWidget);
     expect(find.textContaining('它知道你叫Cleo'), findsOneWidget);
     expect(find.textContaining('字，每轮都要重发'), findsOneWidget);
-    // 章节标题被渲染成了标题（## 已剥掉）
     expect(find.text('你写下的日记'), findsOneWidget);
     expect(find.text('一隅里收藏的话'), findsOneWidget);
     // 排版视图里不该再出现 markdown 标记
     expect(find.textContaining('##'), findsNothing);
     expect(find.textContaining('**'), findsNothing);
 
-    // 切到原文
     await tester.tap(find.byType(IconButton).last);
     await tester.pumpAndSettle();
     expect(find.textContaining('## 你在哪儿'), findsOneWidget);
   });
 
-  testWidgets('记忆页：稳定事实按分类分组，钉住的标出来', (tester) async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-          const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
-          (call) async => null,
-        );
-
+  testWidgets('记忆页：默认只显示摘要，点开才看到细节', (tester) async {
+    _mockSecureStorage();
     SharedPreferences.setMockInitialValues({
       'user_name': 'Cleo',
       'ai_name': '沐',
@@ -87,8 +86,9 @@ void main() {
         {
           'id': 'aaaaaaaa-1111-2222-3333-444444444444',
           'category': 'profile',
-          'content': '叫 Cleo，不喜欢被叫全名',
-          'why': 'TA 自己说的',
+          'name': '怎么称呼',
+          'summary': 'TA 的名字和不喜欢的叫法',
+          'details': ['叫 Cleo', '不喜欢被叫全名'],
           'source': 'user',
           'pinned': true,
           'createdAt': '2026-08-20T10:00:00.000',
@@ -97,8 +97,9 @@ void main() {
         {
           'id': 'bbbbbbbb-1111-2222-3333-444444444444',
           'category': 'rapport',
-          'content': '不喜欢被哄，出了问题直接说',
-          'why': '几次对话里 TA 都这么讲过',
+          'name': '说话方式',
+          'summary': 'TA 希望你怎么跟 TA 说话',
+          'details': ['不喜欢被哄，出了问题直接说'],
           'source': 'ai',
           'pinned': false,
           'createdAt': '2026-08-21T10:00:00.000',
@@ -107,22 +108,67 @@ void main() {
       ]),
     });
 
-    await tester.binding.setSurfaceSize(const Size(1000, 6000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
+    await _tallViewport(tester);
     await tester.pumpWidget(const MaterialApp(home: MemoryScreen()));
     await tester.pumpAndSettle();
 
     expect(find.text('关于你'), findsOneWidget);
-    // 两条分属不同分类，两个分类标题都该出现
     expect(find.text('关于 TA'), findsOneWidget);
     expect(find.text('相处方式'), findsOneWidget);
-    expect(find.text('叫 Cleo，不喜欢被叫全名'), findsOneWidget);
-    expect(find.text('不喜欢被哄，出了问题直接说'), findsOneWidget);
-    // 来源和 why 要摆在一起——一条不认识的事实，光看内容判断不了真假
-    expect(find.textContaining('你说的 · TA 自己说的'), findsOneWidget);
-    expect(find.textContaining('它自己记的 · 几次对话里'), findsOneWidget);
-    // 空态那句在有数据时不该出现
+
+    // 名字和摘要在，细节**不在**——这是这一版的全部要点
+    expect(find.text('怎么称呼'), findsOneWidget);
+    expect(find.text('TA 的名字和不喜欢的叫法'), findsOneWidget);
+    expect(find.text('叫 Cleo'), findsNothing);
+    expect(find.text('不喜欢被叫全名'), findsNothing);
+    expect(find.textContaining('2 条细节'), findsOneWidget);
+
+    // 点开才出现
+    await tester.tap(find.text('怎么称呼'));
+    await tester.pumpAndSettle();
+    expect(find.text('叫 Cleo'), findsOneWidget);
+    expect(find.text('不喜欢被叫全名'), findsOneWidget);
+    // 另一条没点，仍然是收起的
+    expect(find.text('不喜欢被哄，出了问题直接说'), findsNothing);
+
     expect(find.textContaining('还是空的'), findsNothing);
+  });
+
+  testWidgets('记忆页：旧的扁平数据能读出来，不整条丢掉', (tester) async {
+    _mockSecureStorage();
+    SharedPreferences.setMockInitialValues({
+      'user_name': 'Cleo',
+      'ai_name': '沐',
+      'diary_entries': jsonEncode([]),
+      'favorited_musings': jsonEncode([]),
+      'bookshelf_books': jsonEncode([]),
+      // 扁平版（MemoryFact）的形状：只有 content + why，没有 name/summary/details
+      'memory_facts': jsonEncode([
+        {
+          'id': 'cccccccc-1111-2222-3333-444444444444',
+          'category': 'interest',
+          'content': '在写一个陪伴型的 Flutter App',
+          'why': 'TA 自己说的',
+          'source': 'user',
+          'pinned': false,
+          'createdAt': '2026-08-22T10:00:00.000',
+          'updatedAt': '2026-08-22T10:00:00.000',
+        },
+      ]),
+    });
+
+    await _tallViewport(tester);
+    await tester.pumpWidget(const MaterialApp(home: MemoryScreen()));
+    await tester.pumpAndSettle();
+
+    // content 落到 summary，条目本身没丢
+    expect(find.text('在写一个陪伴型的 Flutter App'), findsOneWidget);
+    // 没有 name 时兜底成「未命名」，而不是空白或崩掉
+    expect(find.text('未命名'), findsOneWidget);
+    // why 不该丢——它进了细节
+    expect(find.textContaining('1 条细节'), findsOneWidget);
+    await tester.tap(find.text('未命名'));
+    await tester.pumpAndSettle();
+    expect(find.text('TA 自己说的'), findsOneWidget);
   });
 }
