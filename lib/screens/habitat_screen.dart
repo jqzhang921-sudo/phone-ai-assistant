@@ -10,6 +10,7 @@ import '../services/letter_generator.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
 import 'letter_screen.dart';
+import 'memory_screen.dart';
 import 'musing_corner_screen.dart';
 import '../config/app_shape.dart';
 
@@ -209,6 +210,21 @@ class _HabitatScreenState extends State<HabitatScreen> {
                 await Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const DiaryScreen()));
+                _load();
+              },
+            ),
+            // 上面三条是「归档」——你存进去的东西。这条不是：它是「它眼里的你」，
+            // 每次说话真实带过去的那段。放在一起是因为都属于「它那边的东西」，
+            // 但它是唯一一条只读、且内容由系统拼出来的。
+            //
+            // ⚠️ 图标是随手挑的功能图标（其余三条用的是品牌 png）。要换。
+            _RowSpec(
+              icon: PhosphorIcons.notebook(PhosphorIconsStyle.regular),
+              title: '记忆',
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MemoryScreen()),
+                );
                 _load();
               },
             ),
