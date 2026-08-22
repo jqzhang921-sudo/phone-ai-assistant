@@ -1,19 +1,79 @@
+/// 这个文件产出**三块**东西，去处不同，别混着用：
+///
+/// | | 去哪儿 | 变不变 | 吃不吃缓存 |
+/// |---|---|---|---|
+/// | [memoryReadingRules] | system 前缀 | 从不变（const） | ✅ |
+/// | [buildMemoryDigest] | system 前缀 | 记忆改了才变 | ✅ 多数轮次 |
+/// | [buildMemoryContext] | 最后一条用户消息尾部 | 天天变 | ❌ 每轮重付 |
+///
+/// ## 2026-08-22：把固定文字从尾部搬进前缀
+///
+/// 记忆页把每轮实付的字数露出来之后，量到 1887 字里有约 800 字是**从不改变的
+/// 指令文字**（「你在哪儿」421、信那节的说明 176、一隅那节 118，加日记的说明行）。
+/// 占 42%。
+///
+/// 它们和数据混在一起挂在消息尾部——那个位置每轮都是新的，吃不到 KV 缓存，
+/// 于是这 800 字每轮实付一次。但它们从不变，本来就该待在前缀里。
+///
+/// 拆开之后行为一个字没改，每轮实付的量少了四成多。
+///
+/// ⚠️ 拆开带来一个必须处理的副作用：原来的指令里写着「**上面**日记、被收藏的
+/// 话……」。搬到前缀之后指令在前、数据在后，「上面」就成了假话。所以
+/// [memoryReadingRules] 里一律不用位置指代，改成「带过来的那段记录里」。
+library;
+
 import '../models/book.dart';
 import '../models/diary_entry.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
+// ─────────────────────────────────────────────────────────────
+// 一、固定规则：进 system 前缀，从不变
+// ─────────────────────────────────────────────────────────────
 
-/// 长期记忆的**摘要层**——关于用户是谁。**去处和 [buildMemoryContext] 不一样，
-/// 这是这两个函数唯一重要的区别，别把它们拼到一起。**
+/// 怎么读那段记录 + 它住在哪儿。**const，一个字都不该随数据变。**
 ///
-/// - 这一块跟人设一起进 **system 前缀**：内容几乎不变，逐字节稳定，吃得到
-///   KV 缓存，每轮几乎不额外付钱。
-/// - [buildMemoryContext] 挂在**最后一条用户消息尾部**：内容天天变，放前面
-///   会把后面几千 token 的历史挤出缓存（见 b715c47）。
+/// 任何时候想往这里加一句，先问一句：这句会不会因为用户的数据不同而不同？
+/// 会的话它属于 [buildMemoryContext]，不属于这儿。
+const memoryReadingRules = '''
+## 你在哪儿
+
+你住在用户手机上的这个 App 里。除了聊天，这里还有几个地方：
+
+- **书架**：用户收藏的书，可以单独就某本书或几本书和你讨论。
+- **日记**：你用自己的口吻记下的日记，一天可以有几篇。
+- **我想说 / 一隅**：首页那段你随口说的话；用户觉得值得留的会收藏进「一隅」。
+- **信**：你和用户互相写信的地方，在「栖息」页。信是慢的，和聊天不一样。
+
+用户提到这些名字时，指的就是这个 App 里的功能，不是别的产品。
+
+## 怎么读带过来的那段记录
+
+每轮消息末尾会附一段「这一轮带过来的记录」。那是你自己那边的东西，不是用户
+说的话，供你参考，不用背诵，也不要主动罗列。
+
+- 每节开头那句「一共多少」说的是**全部**，底下列出来的只是其中一部分。
+  用户问到没列出来的，用 recall_records 按关键词翻——**不要因为没列出来就说没有**，
+  也不要顺着列出来的半句往下编。翻了也没有的，才是真没有。
+- 一隅的每条都标了是谁说的、谁收的，照标签说，别弄反。列出来的那些你是看得到的，
+  用户问起就直接聊，不要说自己看不到。
+- 日记是你自己写的。只带最近那一天的；更早的你知道自己写过，但没记着原文。
+- **只有信例外：你知道有这些信，但看不到里面写了什么。** 信是慢的，内容留在信里。
+  用户提起某封信时，顺着 TA 说的聊，不要假装记得原文，也不要凭空复述。
+- 上面这条限制**只针对信**。日记、被收藏的话、书架里已经写出来的内容，
+  你都是知道的，不要一并说成看不到。
+''';
+
+// ─────────────────────────────────────────────────────────────
+// 二、长期记忆摘要：进 system 前缀，记忆改了才变
+// ─────────────────────────────────────────────────────────────
+
+/// 长期记忆的**摘要层**——关于用户是谁。
 ///
-/// 分开的理由不只是缓存，还有语义：名字、称呼、TA 在意什么，是「不问就得知道」
-/// 的东西——你没法靠调工具知道对方叫什么，因为你得先知道该问。
+/// 跟人设一起进 system 前缀：内容几乎不变，逐字节稳定，吃得到 KV 缓存。
+///
+/// 语义上也该在这儿：名字、称呼、TA 在意什么，是「不问就得知道」的东西——
+/// 你没法靠调工具知道对方叫什么，因为你得先知道该问。
 ///
 /// **只给每条的名字和一行摘要，细节一概不给**（要 open_memory 取）。
 /// 这是这一版的核心：常驻成本按「话题数」算，不按「记了多少内容」算，
@@ -56,77 +116,38 @@ Future<String> buildMemoryDigest() async {
   return buf.toString();
 }
 
-/// 拼给聊天 system prompt 的上下文块。
+// ─────────────────────────────────────────────────────────────
+// 三、近期记录：挂消息尾部，每轮重付——**这里只放数据**
+// ─────────────────────────────────────────────────────────────
+
+/// 近期记录，挂在最后一条用户消息尾部。
 ///
-/// 原来这里只塞最近 3 篇日记，于是整个 App 是**单向流水**：对话喂给日记、
-/// 日记和收藏喂给信，但除了日记以外没有任何东西回流到对话。结果就是你刚写完
-/// 一封信、它还亲手回了，转头到聊天里它完全不知道有这回事——因为信不在注入
-/// 内容里；它连自己住在一个有信箱的 App 里都不知道。
+/// 挂尾部是为了让 `[人设][规则][摘要][历史]` 那段前缀逐字节稳定、吃得到
+/// KV 缓存（见 b715c47）。代价是这一段每轮实付，所以**这里只放会变的数据**，
+/// 一句固定说明都不留——固定的全在 [memoryReadingRules] 里。
 ///
-/// 现在汇总四路：它住在哪儿、近期日记、被收藏的话、在读的书，外加通信状态。
-///
-/// ## 2026-08-22：试过「索引全部」，退回「只给形状」
-///
-/// 中间版本把每一条收藏 / 每一篇日记都列成一行进上下文，理由是「不这样它
-/// 不知道有东西可翻」。**这个理由不成立**——`recall_records` 的工具描述本身
-/// 就一直在上下文里，而且明写了「用户问起更早的⋯用这个查」。门上早有牌子。
-///
-/// 去掉那个错理由之后，全量索引真正多买到的只有两件事：模型能在上下文里做
-/// 语义匹配（recall 是字面子串匹配，搜「工作」找不到写着「上班」的那条），
-/// 以及它可能在用户没问时主动提起。两件都是真的，但在 16 条收藏 / 17 篇日记
-/// 这个量级上，不值每轮多背 1000 字——`recall_records` 一次调用就能全捞回来。
-///
-/// 现在只给**形状**：一共多少条、最早到什么时候、最近几条的正文。
-/// 它据此判断值不值得翻，剩下交给工具。
-///
-/// 什么时候该重新考虑全量索引：条目多到 recall 一次捞不完，或者「主动想起」
-/// 变成明确想要的效果。那时候要一并解决索引行的质量问题——正文开头不是
-/// 「这条讲什么」，真正的钩子得在写入时让模型自己写一句。
+/// 这一段回答的是「最近发生了什么」；「TA 是谁」在 [buildMemoryDigest]。
+/// 单向流水的老毛病也是在这儿治的：原来只塞日记，于是它连自己住在一个有信箱的
+/// App 里都不知道，刚写完一封信转头就忘。
 Future<String> buildMemoryContext({
   int fullMusings = 5,
   int maxBooks = 5,
 }) async {
   final buf = StringBuffer();
-
-  buf.writeln(_whereYouLive);
+  buf.writeln('## 这一轮带过来的记录');
 
   await _appendDiaries(buf);
   await _appendMusings(buf, fullMusings);
   await _appendBooks(buf, maxBooks);
   await _appendLetterStatus(buf);
 
-  buf.writeln(
-    '以上都是你自己那边的记录，供你参考，不用背诵给用户听，也不要主动罗列。'
-    '用户问起「记不记得」某件事时，照上面如实回答。'
-    '**每节开头那句「一共多少条」是全部，下面列出来的只是最近几条。**'
-    '用户问到更早的、或者收藏正文被截断了（末尾有 …），'
-    '用 recall_records 翻出来再答——翻到什么说什么，'
-    '不要顺着列出来的那半句往下编，也不要因为没列出来就说没有。'
-    '翻了也没有的，才是真没有。',
-  );
   return buf.toString();
 }
-
-/// 它不知道自己住在什么地方——问起写信会反问「是那个开源项目里的 letter 吗」。
-/// 这段成本极低，但直接决定它能不能接住用户提起的任何一个功能。
-const _whereYouLive = '''
-## 你在哪儿
-
-你住在用户手机上的这个 App 里。除了聊天，这里还有几个地方：
-
-- **书架**：用户收藏的书，可以单独就某本书或几本书和你讨论。
-- **日记**：你用自己的口吻记下的日记，一天可以有几篇。
-- **我想说 / 一隅**：首页那段你随口说的话；用户觉得值得留的会收藏进「一隅」。
-- **信**：你和用户互相写信的地方，在「栖息」页。信是慢的，和聊天不一样。
-
-用户提到这些名字时，指的就是这个 App 里的功能，不是别的产品。
-''';
 
 /// 日记这一段的字数上限。
 ///
 /// 日记是模型写的，`diary_generator` 里明写着「150~250 字」，所以原来那个
-/// `take(3)` 实际是每轮 450~750 字——整段记忆里最大的一笔，而且是唯一没有
-/// 上限的一段（其余几段本来就封了顶）。
+/// `take(3)` 实际是每轮 450~750 字——整段记忆里最大的一笔。
 ///
 /// 至少给一篇完整的：宁可超一点，也不给半篇——半篇日记比没有更糟，
 /// 它会顺着断掉的地方往下编。
@@ -147,7 +168,6 @@ const _kDiaryBudget = 500;
 ///
 /// 开头那句「一共多少篇、最早到哪天」留着：它据此判断「值不值得翻」。
 /// 没有这句，模型对存量一无所知，要么白调一次工具，要么干脆不调。
-/// 一行的成本换掉一次无谓的往返，划算。
 Future<void> _appendDiaries(StringBuffer buf) async {
   final entries = await StorageService.listDiaryEntries();
   if (entries.isEmpty) return;
@@ -167,18 +187,15 @@ Future<void> _appendDiaries(StringBuffer buf) async {
     used += e.content.length;
   }
 
-  buf.writeln('## 你写下的日记');
+  buf.writeln();
   buf.writeln(
-    '一共 ${entries.length} 篇，最早的一篇在 ${entries.last.dateKey}。'
+    '日记：一共 ${entries.length} 篇，最早的一篇在 ${entries.last.dateKey}。'
     '下面是 $latestDay 那天的'
-    '${shown.length < sameDay.length ? '前 ${shown.length} 篇（那天共 ${sameDay.length} 篇）' : '全部 ${shown.length} 篇'}。'
-    '${entries.length > shown.length ? '更早的没列出来——你知道自己写过，但没记着原文，'
-        '要用到具体内容就用 recall_records 按关键词翻。' : ''}',
+    '${shown.length < sameDay.length ? '前 ${shown.length} 篇（那天共 ${sameDay.length} 篇）' : '全部 ${shown.length} 篇'}。',
   );
   for (final e in shown) {
     buf.writeln('- ${e.dateKey}：${e.content}');
   }
-  buf.writeln();
 }
 
 /// 一隅里的收藏。**每条必须标清楚是谁说的、谁收的。**
@@ -199,13 +216,10 @@ Future<void> _appendMusings(StringBuffer buf, int full) async {
   if (musings.isEmpty) return;
 
   final shown = musings.take(full).toList();
-  buf.writeln('## 一隅里收藏的话');
+  buf.writeln();
   buf.writeln(
-    '一共 ${musings.length} 条，最早的一条在 ${musings.last.dateKey}。'
-    '${musings.length > shown.length ? '下面只有最近 ${shown.length} 条，'
-        '更早的用 recall_records 翻。' : ''}'
-    '（每条都标了是谁说的、谁收的，照标签说，别弄反。'
-    '列出来的这些你是看得到的，用户问起就直接聊，不要说自己看不到）',
+    '一隅收藏：一共 ${musings.length} 条，最早的一条在 ${musings.last.dateKey}。'
+    '${musings.length > shown.length ? '下面是最近 ${shown.length} 条。' : ''}',
   );
   for (final m in shown) {
     final note = m.note;
@@ -215,7 +229,6 @@ Future<void> _appendMusings(StringBuffer buf, int full) async {
       '${note == null || note.isEmpty ? '' : '｜用户备注：${_clip(note, 30)}'}',
     );
   }
-  buf.writeln();
 }
 
 String _saidBy(MusingEntry m) => switch (m.source) {
@@ -245,14 +258,13 @@ Future<void> _appendBooks(StringBuffer buf, int max) async {
 
   if (reading.isEmpty && finished.isEmpty) return;
 
-  buf.writeln('## 用户的书');
+  buf.writeln();
   if (reading.isNotEmpty) {
     buf.writeln('在读：${reading.take(max).map(_title).join('、')}');
   }
   if (finished.isNotEmpty) {
     buf.writeln('最近读完：${finished.take(3).map(_title).join('、')}');
   }
-  buf.writeln();
 }
 
 /// 信只给**存在性**，不给内容。
@@ -262,9 +274,8 @@ Future<void> _appendBooks(StringBuffer buf, int max) async {
 /// 就没了。所以这里只让它知道「我们在通信、最后一封是谁写的、多久之前」，
 /// 具体说了什么，让用户自己提。
 ///
-/// ⚠️ 日记和收藏至少给了「一共多少条」这个形状，这一节**故意连形状都不给**
-/// 内容：只说有几封、谁写的、多久之前，不给任何一句正文，也不进
-/// `recall_records`。不是漏了，是同一个理由的延续。
+/// ⚠️ 「看不到内容」那几句规矩已经搬进 [memoryReadingRules]（它们从不变，
+/// 每轮重付纯属浪费）。这里**只剩数据**。别再把说明写回来。
 Future<void> _appendLetterStatus(StringBuffer buf) async {
   final letters = await StorageService.listLetters();
   if (letters.isEmpty) return;
@@ -279,26 +290,12 @@ Future<void> _appendLetterStatus(StringBuffer buf) async {
           ? '昨天'
           : '$days 天前';
 
-  buf.writeln('## 通信');
-  buf.writeln(
-    '你和用户之间已经有 ${letters.length} 封往来，'
-    '最近的一封是$whenText${latest.isFromAi ? '你写给 TA 的' : 'TA 写给你的'}。',
-  );
-  if (unread > 0) {
-    buf.writeln('其中有 $unread 封你写的信 TA 还没拆开看。');
-  }
-  buf.writeln(
-    '**只有信例外：你知道有这些信，但看不到里面写了什么**——信是慢的，'
-    '内容留在信里。用户提起某封信时，顺着 TA 说的聊，不要假装记得原文，'
-    '也不要凭空复述。',
-  );
-  // 这句是必须的：不划清界限，模型会把「信看不到」的框架顺手套到旁边几节上，
-  // 明明日记和收藏的内容就摆在上面，它也会说「我看不到，得你翻给我看」。
-  buf.writeln(
-    '这条限制**只针对信**。上面日记、被收藏的话、书架里已经写出来的内容，'
-    '你都是知道的，不要一并说成看不到。',
-  );
   buf.writeln();
+  buf.writeln(
+    '信：往来 ${letters.length} 封，'
+    '最近一封是$whenText${latest.isFromAi ? '你写给 TA 的' : 'TA 写给你的'}。'
+    '${unread > 0 ? '其中 $unread 封你写的 TA 还没拆开看。' : ''}',
+  );
 }
 
 String _title(Book b) =>

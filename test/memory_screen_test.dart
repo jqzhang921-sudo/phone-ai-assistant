@@ -62,9 +62,10 @@ void main() {
     expect(find.textContaining('每次和它说话'), findsOneWidget);
     expect(find.textContaining('它叫沐'), findsOneWidget);
     expect(find.textContaining('它知道你叫Cleo'), findsOneWidget);
-    expect(find.textContaining('字，每轮都要重发'), findsOneWidget);
-    expect(find.text('你写下的日记'), findsOneWidget);
-    expect(find.text('一隅里收藏的话'), findsOneWidget);
+    expect(find.textContaining('每轮都要重发一次'), findsOneWidget);
+    // 顶部要把「常驻」和「每轮重付」分开报——成本的形状本来就是两截
+    expect(find.textContaining('跟人设待在一起'), findsOneWidget);
+    expect(find.text('这一轮带过来的记录'), findsOneWidget);
     // 排版视图里不该再出现 markdown 标记
     expect(find.textContaining('##'), findsNothing);
     expect(find.textContaining('**'), findsNothing);

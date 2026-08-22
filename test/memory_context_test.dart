@@ -44,7 +44,12 @@ void main() {
     expect(ctx.contains(_body('X1')), isFalse);
     // 但它得知道自己写过更早的，以及一共多少
     expect(ctx.contains('一共 17 篇'), isTrue);
-    expect(ctx.contains('recall_records'), isTrue);
+
+    // 「更早的用 recall_records 翻」这类**固定说明**不该出现在这一段里。
+    // 它们从不变，搬进了 memoryReadingRules（system 前缀，吃缓存）；
+    // 留在这儿等于每轮重付一次。这条断言就是那次搬迁的回归保护。
+    expect(ctx.contains('recall_records'), isFalse);
+    expect(memoryReadingRules.contains('recall_records'), isTrue);
 
     // ignore: avoid_print
     print('=====按天取：${ctx.length} 字=====');
@@ -85,5 +90,59 @@ void main() {
 
     final ctx = await buildMemoryContext();
     expect(ctx.contains('长' * 900), isTrue);
+  });
+
+  testWidgets('近期记录里只有数据，一句固定说明都不该留', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'diary_entries': jsonEncode([_diary('a', '2026-08-22', 'A')]),
+      'favorited_musings': jsonEncode([
+        {
+          'id': 'm1',
+          'date': '2026-08-22T10:00:00.000',
+          'content': '一句收藏',
+          'createdAt': '2026-08-22T10:00:00.000',
+          'source': 'user',
+          'savedBy': 'user',
+        },
+      ]),
+      'bookshelf_books': jsonEncode([]),
+      'letters': jsonEncode([
+        {
+          'id': 'l1',
+          'content': 'x',
+          'isFromAi': true,
+          'read': false,
+          'createdAt': '2026-08-21T10:00:00.000',
+        },
+      ]),
+    });
+
+    final ctx = await buildMemoryContext();
+
+    // 这些句子全都搬进 memoryReadingRules 了，尾部一句都不该有
+    for (final fixed in [
+      '你住在用户手机上',
+      '不用背诵',
+      '不要主动罗列',
+      '照标签说',
+      '只有信例外',
+      '不要编',
+      '不要假装记得原文',
+    ]) {
+      expect(
+        ctx.contains(fixed),
+        isFalse,
+        reason: '「$fixed」是固定说明，该在 memoryReadingRules 里，不该每轮重发',
+      );
+    }
+
+    // 但数据本身要在
+    expect(ctx.contains('日记：一共 1 篇'), isTrue);
+    expect(ctx.contains('一隅收藏：一共 1 条'), isTrue);
+    expect(ctx.contains('信：往来 1 封'), isTrue);
+    expect(ctx.contains('还没拆开看'), isTrue);
+
+    // ignore: avoid_print
+    print('=====拆分后·尾部：${ctx.length} 字，前缀固定规则：${memoryReadingRules.length} 字=====');
   });
 }

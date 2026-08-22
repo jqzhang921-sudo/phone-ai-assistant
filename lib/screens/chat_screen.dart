@@ -580,21 +580,29 @@ class _ChatScreenState extends State<ChatScreen> {
     // 尾部；这一块几乎不变，跟人设一起待在前缀里吃 KV 缓存。详见
     // buildMemoryDigest 的注释。
     //
-    // 排在人设之后：名字和人设是最不变的，放最前面；事实偶尔会改，
-    // 排在它们后面，改一次不至于把前面那段也一起失效。
+    // 排在人设和规则之后：那两段是 const，最不变；摘要偶尔会改，
+    // 排在它们后面，改一次不至于把前面那两段也一起失效。
     //
     // 同样兜异常——它只是「知道得多一点」，读不出来就当没有，
     // 不能因为它把消息卡住。
-    var facts = '';
+    var digest = '';
     try {
-      facts = await buildMemoryDigest();
+      digest = await buildMemoryDigest();
     } catch (e) {
-      debugPrint('[chat] 读稳定事实失败，这次不带：$e');
+      debugPrint('[chat] 读长期记忆失败，这次不带：$e');
     }
 
-    final systemPrompt =
-        '$names${_conversation.systemPrompt ?? basePersona}'
-        '${facts.isEmpty ? '' : '\n\n$facts'}';
+    // 顺序是按「多久变一次」排的，越不变的越靠前。前缀命中缓存是逐字节从头
+    // 比对的，把易变的放前面会把后面整段一起作废。
+    //
+    // 名字（几乎不变）→ 人设（const）→ 读记录的规则（const）→ 记忆摘要
+    // （记忆改了才变）。近期记录不在这儿：它天天变，挂在最后一条用户消息尾部。
+    final systemPrompt = [
+      if (names.isNotEmpty) names,
+      _conversation.systemPrompt ?? basePersona,
+      memoryReadingRules,
+      if (digest.isNotEmpty) digest,
+    ].join('\n\n');
 
     // 聊得够久了就把早期消息折成摘要。
     //

@@ -153,7 +153,13 @@ class _MemoryScreenState extends State<MemoryScreen> {
                   _intro(theme, memory),
                   const SizedBox(height: 16),
                   if (_raw)
-                    _rawView(theme, '$_digestRaw\n$memory')
+                    _rawView(
+                      theme,
+                      // 原文视图 = 真正发出去的全部三块，按它们在提示词里的顺序：
+                      // 固定规则 → 记忆摘要（都在 system 前缀）→ 近期记录（挂消息尾部）。
+                      // 排版视图只显示后两块——规则是写给模型的，不是「它记得什么」。
+                      '$memoryReadingRules\n$_digestRaw\n$memory',
+                    )
                   else ...[
                     ..._topicsSection(theme),
                     ..._blocks(theme, memory),
@@ -189,9 +195,14 @@ class _MemoryScreenState extends State<MemoryScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            '${names.isEmpty ? '' : '$names。'}这段共 ${memory.length} 字，每轮都要重发一次。',
+            '${names.isEmpty ? '' : '$names。'}'
+            '下面这些每轮都要重发一次，共 ${memory.length} 字；'
+            '另有约 ${memoryReadingRules.length + _digestRaw.length} 字'
+            '（它住在哪儿、怎么读这些记录、还有它长期记着你的那些）'
+            '跟人设待在一起，改动少，多数时候不用重发。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
+              height: 1.5,
             ),
           ),
         ],
