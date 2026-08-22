@@ -537,7 +537,31 @@ class _ChatScreenState extends State<ChatScreen> {
     // 而它排在最前面，一变就把后面几千 token 的对话历史全部挤出 prompt 缓存。
     // ai_client 会把记忆挂到最后一条用户消息上，详见 _attachMemory。
     final memoryContext = await buildMemoryContext();
-    final systemPrompt = _conversation.systemPrompt ?? basePersona;
+    // 名字单独拼在外层，不写进 basePersona。
+    //
+    // 一是 basePersona 是 const；二更要紧：自定义了 systemPrompt 的对话会
+    // 整段替掉 basePersona，名字要是藏在里面就跟着一起没了——「它叫什么」和
+    // 「用什么口吻说话」是两件事，前者不该被后者的替换连坐。
+    //
+    // **只给名字，不往上挂任何形容。** 写成「你叫沐，是一个温柔的陪伴者」就退回
+    // 上面那段注释说的老问题：模型会去演那个形容词。名字是个称呼，不是一个
+    // 要扮演的形象。写信（letter_generator）和挑收藏（favorite_picker）早就
+    // 在用同一句「你叫X。」，这次只是把聊天这处漏掉的补齐。
+    //
+    // 现读 settings，不用 _aiName / _userName 那两个 state 字段：那两个只在
+    // initState 取过一次，用户去设置里改完名字再回来，界面问候语会刷新，
+    // 系统提示词却还是旧的。
+    //
+    // 放在最前面不影响 KV 缓存——名字几乎不变，这段前缀仍然逐字节稳定。
+    final settings = await AppSettings.load();
+    final aiName = settings.aiName.trim();
+    final userName = settings.userName.trim();
+    final names = [
+      if (aiName.isNotEmpty) '你叫$aiName。',
+      if (userName.isNotEmpty) 'TA 叫 $userName。',
+    ].join();
+    final systemPrompt =
+        '$names${_conversation.systemPrompt ?? basePersona}';
 
     // 聊得够久了就把早期消息折成摘要。
     //
