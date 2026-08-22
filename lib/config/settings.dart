@@ -48,6 +48,16 @@ class AppSettings {
   bool ttsEnabled;
   bool autoTts;
   int webSocketPort;
+  /// 手机自己开一个 MCP 服务端等外面连进来。
+  ///
+  /// **默认关。** 它绑的是 anyIPv4，同一个局域网里任何设备都能连上，
+  /// 而且没有任何认证——连上就能调用全部手机工具（拍照、定位、读文件、
+  /// 读日历）。在公共 WiFi 下这是实打实的暴露面。
+  ///
+  /// 注意：`McpServer` 身兼两职，工具**注册表**和这个监听是分开的——
+  /// 关掉监听不影响聊天里的工具，那些走的是 `registeredTools`。
+  ///
+  /// 真要从电脑连手机时再去设置里打开，到那时应该先给它加 token。
   bool serverEnabled;
   ThemeMode themeMode;
   TtsProvider ttsProvider;
@@ -71,7 +81,7 @@ class AppSettings {
     this.ttsEnabled = true,
     this.autoTts = false,
     this.webSocketPort = 8765,
-    this.serverEnabled = true,
+    this.serverEnabled = false,
     this.themeMode = ThemeMode.system,
     this.ttsProvider = TtsProvider.system,
     this.elevenLabsApiKey = '',
@@ -109,7 +119,7 @@ class AppSettings {
       ttsEnabled: prefs.getBool(_ttsEnabledKey) ?? true,
       autoTts: prefs.getBool(_autoTtsKey) ?? false,
       webSocketPort: prefs.getInt(_webSocketPortKey) ?? 8765,
-      serverEnabled: prefs.getBool(_serverEnabledKey) ?? true,
+      serverEnabled: prefs.getBool(_serverEnabledKey) ?? false,
       themeMode: ThemeMode.values[prefs.getInt(_themeKey) ?? 0],
       ttsProvider: TtsProvider.values[prefs.getInt(_ttsProviderKey) ?? 0],
       elevenLabsApiKey: elevenLabsKey,
