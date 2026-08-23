@@ -110,18 +110,10 @@ class MessageBubble extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (message.imageData != null)
+                        if (message.images.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 6),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                              child: Image.memory(
-                                base64Decode(message.imageData!),
-                                height: 160,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
+                            child: _images(message.images),
                           ),
                         if (isUser)
                           Text(
@@ -234,7 +226,7 @@ class MessageBubble extends StatelessWidget {
                     );
                   },
                 ),
-                if (message.imageData != null)
+                if (message.images.isNotEmpty)
                   ListTile(
                     leading: const Icon(PhosphorIconsRegular.image),
                     title: const Text('复制图片'),
@@ -386,6 +378,40 @@ class MessageBubble extends StatelessWidget {
       ),
     );
   }
+
+  /// 一条消息里的图。一张就铺满，多张就排成方格。
+  ///
+  /// 多张仍然**挤在一个气泡里**，不拆成几条：它们是一次发出去的，
+  /// 拆开看就成了几件不相干的事，和发给模型时挤在同一条消息里是一个道理。
+  Widget _images(List<String> images) {
+    if (images.length == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Image.memory(
+          base64Decode(images.first),
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: [
+        for (final image in images)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Image.memory(
+              base64Decode(image),
+              width: 92,
+              height: 92,
+              fit: BoxFit.cover,
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// 收藏用的花。点击时做 200ms 的 1.0 → 1.25 → 1.0，
@@ -440,4 +466,5 @@ class _FlowerButtonState extends State<_FlowerButton>
       ),
     );
   }
+
 }

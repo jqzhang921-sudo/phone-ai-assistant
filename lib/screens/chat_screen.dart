@@ -62,6 +62,16 @@ class _ChatScreenState extends State<ChatScreen> {
   final _focusNode = FocusNode();
   final _uuid = const Uuid();
   final _picker = ImagePicker();
+
+  /// 一条消息最多几张图。
+  ///
+  /// 不是产品洁癖，是报文大小：每张按 1920px 压完再 base64，一张就一两百 KB，
+  /// 而且历史里每一条都要重发。六张已经是单条消息一兆上下了。
+  static const _kMaxImagesPerMessage = 6;
+
+  /// 选好但**还没发出去**的图。这是这次改动的全部要点——
+  /// 以前没有这个中间状态，选完就飞出去了。
+  final _pendingImages = <XFile>[];
   bool _isLoading = false;
   bool _chatMode = false;
   List<Conversation> _savedConversations = [];
@@ -279,47 +289,47 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _pickAndSendImage(ImageSource source) async {
-    final XFile? image = await _picker.pickImage(
-      source: source,
-      maxWidth: 1920,
-      maxHeight: 1920,
-    );
-    if (image == null) return;
-    _enterChatMode();
-    final bytes = await image.readAsBytes();
-    final base64 = base64Encode(bytes);
-
-    final text = _textController.text.trim();
-    _textController.clear();
-
-    // Try MIMO vision analysis first
-    String? visionResult;
-    try {
-      visionResult = await VisionService.analyze(
-        base64,
-        prompt: text.isNotEmpty ? text : null,
+  /// 选图**只放进待发区，不发出去**。
+  ///
+  /// 原来这个函数叫 `_pickAndSendImage`：选完立刻调识图、拼消息、`_continueChat()`，
+  /// 中间没有任何一处可以反悔或者补一句话。从相册点一张图，它就已经飞出去了
+  /// ——这不是发消息该有的节奏，而且它绕开了 `_sendMessage`，
+  /// 于是「空文本不发送」那条判断从来没在这条路上生效过。
+  ///
+  /// 拍照仍然是单张（相机一次就拍一张），相册用 `pickMultiImage`。
+  Future<void> _pickImages(ImageSource source) async {
+    final picked = <XFile>[];
+    if (source == ImageSource.camera) {
+      final shot = await _picker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
       );
-    } catch (_) {}
+      if (shot != null) picked.add(shot);
+    } else {
+      picked.addAll(
+        await _picker.pickMultiImage(maxWidth: 1920, maxHeight: 1920),
+      );
+    }
+    if (picked.isEmpty || !mounted) return;
 
-    final content =
-        visionResult != null
-            ? '${text.isNotEmpty ? "$text\n\n" : ""}[图片分析: $visionResult]'
-            : (text.isNotEmpty ? text : '分析这张图片');
+    final room = _kMaxImagesPerMessage - _pendingImages.length;
+    _enterChatMode();
+    setState(() => _pendingImages.addAll(picked.take(room)));
 
-    final userMsg = ChatMessage(
-      id: _uuid.v4(),
-      role: MessageRole.user,
-      content: content,
-      imageData: base64,
-    );
-
-    setState(() {
-      _conversation.messages.add(userMsg);
-      _isLoading = true;
-    });
-    _scrollToBottom();
-    _continueChat();
+    // 超出的**明说**，别默默吞掉——用户选了八张只看到六张，
+    // 不告诉他就成了「这 App 有时候会丢图」。
+    if (picked.length > room) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '一条消息最多 $_kMaxImagesPerMessage 张，多出的 ${picked.length - room} 张没有加进来',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _showAttachmentMenu() {
@@ -350,14 +360,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         PhosphorIconsRegular.camera,
                         '拍照',
                         () => Navigator.of(ctx).pop(),
-                        action: () => _pickAndSendImage(ImageSource.camera),
+                        action: () => _pickImages(ImageSource.camera),
                       ),
                       _attachmentItem(
                         ctx,
                         PhosphorIconsRegular.images,
                         '相册',
                         () => Navigator.of(ctx).pop(),
-                        action: () => _pickAndSendImage(ImageSource.gallery),
+                        action: () => _pickImages(ImageSource.gallery),
                       ),
                       _attachmentItem(
                         ctx,
@@ -458,18 +468,59 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
-    if (text.isEmpty || _isLoading) return;
-    // 空输入和发送中都已经在上面挡掉了，走到这儿才是真的发出去
+    // **只有图、一个字都没打，也是一条完整的消息**——用户就是想给它看一眼。
+    // 原来这里是 `text.isEmpty` 直接 return，而选图那条路自己绕开了
+    // _sendMessage，所以这条判断在图片上从来没生效过。
+    if ((text.isEmpty && _pendingImages.isEmpty) || _isLoading) return;
+
+    // context 要在 await 之前用掉，别跨异步边界再摸它。
+    final client = context.read<AiClientProvider>().currentClient;
+
     HapticFeedback.lightImpact();
     _enterChatMode();
     _textController.clear();
 
+    final picked = List<XFile>.from(_pendingImages);
+    setState(() => _pendingImages.clear());
+
+    final images = <String>[];
+    for (final file in picked) {
+      images.add(base64Encode(await file.readAsBytes()));
+    }
+
+    // 识图服务是**兜底**，不是主路。
+    //
+    // 模型自己能看图的时候（sendsImagesNatively），原图会随报文一起发过去，
+    // 再调一次外部识图就是同一张图分析两遍、付两份钱，而且模型会同时收到
+    // 图和一段别人写的描述——描述和它自己看到的不一致时，它信哪个都不对。
+    //
+    // 只有模型看不到图时才退回来换一段文字。没配 key 的话 analyze 直接返回
+    // null，这里也就是几次空转。
+    var content = text;
+    if (images.isNotEmpty && client != null && !client.sendsImagesNatively) {
+      final described = <String>[];
+      for (final image in images) {
+        final result = await VisionService.analyze(
+          image,
+          prompt: text.isNotEmpty ? text : null,
+        );
+        if (result != null) described.add(result);
+      }
+      if (described.isNotEmpty) {
+        content =
+            '${text.isNotEmpty ? '$text\n\n' : ''}'
+            '[图片分析: ${described.join('；')}]';
+      }
+    }
+
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       role: MessageRole.user,
-      content: text,
+      content: content,
+      images: images,
     );
 
+    if (!mounted) return;
     setState(() {
       _conversation.messages.add(userMsg);
       _isLoading = true;
@@ -569,10 +620,11 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       debugPrint('[chat] 读设置失败，名字退回 initState 那份：$e');
     }
-    final names = [
-      if (aiName.isNotEmpty) '你叫$aiName。',
-      if (userName.isNotEmpty) 'TA 叫 $userName。',
-    ].join();
+    final names =
+        [
+          if (aiName.isNotEmpty) '你叫$aiName。',
+          if (userName.isNotEmpty) 'TA 叫 $userName。',
+        ].join();
 
     // 长期记忆的摘要层进 system 块，**不进 memoryContext**。
     //
@@ -1051,7 +1103,9 @@ class _ChatScreenState extends State<ChatScreen> {
             role = '📝 系统';
         }
         buffer.writeln('$role: ${msg.content}');
-        if (msg.imageData != null) buffer.writeln('  [图片附件]');
+        if (msg.images.isNotEmpty) {
+          buffer.writeln('  [图片附件 × ${msg.images.length}]');
+        }
         buffer.writeln('');
       }
 
@@ -2222,31 +2276,96 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       color: Colors.transparent,
       padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: _buildTextField(theme)),
-          const SizedBox(width: 8),
-          // 右侧加号：拍照 / 相册 / 文件
-          _circleToolButton(
-            scheme,
-            icon: PhosphorIconsRegular.plus,
-            tooltip: '更多功能',
-            onTap: _isLoading ? null : _showAttachmentMenu,
-          ),
-          const SizedBox(width: 6),
-          // Send button
-          _circleToolButton(
-            scheme,
-            icon:
-                _isLoading
-                    ? PhosphorIconsRegular.hourglass
-                    : PhosphorIconsRegular.paperPlaneTilt,
-            tooltip: '发送',
-            active: true,
-            onTap: _isLoading ? null : _sendMessage,
+          if (_pendingImages.isNotEmpty) _pendingStrip(scheme),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: _buildTextField(theme)),
+              const SizedBox(width: 8),
+              // 右侧加号：拍照 / 相册 / 文件
+              _circleToolButton(
+                scheme,
+                icon: PhosphorIconsRegular.plus,
+                tooltip: '更多功能',
+                onTap: _isLoading ? null : _showAttachmentMenu,
+              ),
+              const SizedBox(width: 6),
+              // Send button
+              _circleToolButton(
+                scheme,
+                icon:
+                    _isLoading
+                        ? PhosphorIconsRegular.hourglass
+                        : PhosphorIconsRegular.paperPlaneTilt,
+                tooltip: '发送',
+                active: true,
+                onTap: _isLoading ? null : _sendMessage,
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// 待发的图，横着排在输入框上方，每张右上角一个叉。
+  ///
+  /// 这条要在**发送之前**看得见、去得掉。没有它，「先选后发」只是把发送延后了，
+  /// 用户还是没法确认自己选了什么、选错了也撤不回来。
+  Widget _pendingStrip(ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: SizedBox(
+        height: 64,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _pendingImages.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (_, i) {
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Image.file(
+                    File(_pendingImages[i].path),
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: -6,
+                  right: -6,
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => setState(() => _pendingImages.removeAt(i)),
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: scheme.outline.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Icon(
+                        PhosphorIconsRegular.x,
+                        size: 12,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
