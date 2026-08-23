@@ -12,6 +12,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../widgets/typing_indicator.dart';
 import '../config/app_tab.dart';
 import '../services/ai_client.dart';
 import '../services/app_providers.dart';
@@ -464,6 +465,23 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
       _continueChat();
     } catch (_) {}
+  }
+
+  /// 「正在输入」只在**还没吐出第一个字**时显示。
+  ///
+  /// 流式消息的 id 以 `stream_` 开头（见 [_updateAssistantMessage]）。一旦它
+  /// 有了内容，回复本身就在屏幕上了，再挂一个「正在输入」是同一件事说两遍，
+  /// 而且它就悬在正在生长的那段字下面，很吵。
+  ///
+  /// 工具轮次里最后一条是 toolResult，这时仍然显示——那会儿它确实还没开口。
+  bool get _showTyping {
+    if (!_isLoading) return false;
+    final messages = _conversation.messages;
+    if (messages.isEmpty) return true;
+    final last = messages.last;
+    return !(last.role == MessageRole.assistant &&
+        last.id.startsWith('stream_') &&
+        last.content.isNotEmpty);
   }
 
   Future<void> _sendMessage() async {
@@ -1385,13 +1403,6 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
               ),
           ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(2),
-            child:
-                _isLoading
-                    ? const LinearProgressIndicator()
-                    : const SizedBox.shrink(),
-          ),
         ),
         body: Column(
           children: [
@@ -1408,17 +1419,24 @@ class _ChatScreenState extends State<ChatScreen> {
                               final items = groupChatItems(
                                 _conversation.messages,
                               );
+                              final typing = _showTyping;
                               return MarkBackdrop(
                                 child: ListView.builder(
                                   controller: _scrollController,
                                   padding: const EdgeInsets.all(12),
-                                  itemCount: items.length,
-                                  itemBuilder:
-                                      (context, index) => chatDisplayItem(
-                                        items,
-                                        index,
-                                        conversationId: _conversation.id,
-                                      ),
+                                  itemCount: items.length + (typing ? 1 : 0),
+                                  itemBuilder: (context, index) {
+                                    // 「正在输入」挂在最后一项：回复将来落在
+                                    // 哪儿，它就等在哪儿。
+                                    if (typing && index == items.length) {
+                                      return TypingIndicator(name: _aiName);
+                                    }
+                                    return chatDisplayItem(
+                                      items,
+                                      index,
+                                      conversationId: _conversation.id,
+                                    );
+                                  },
                                 ),
                               );
                             },
@@ -2345,18 +2363,20 @@ class _ChatScreenState extends State<ChatScreen> {
                     customBorder: const CircleBorder(),
                     onTap: () => setState(() => _pendingImages.removeAt(i)),
                     child: Container(
-                      width: 22,
-                      height: 22,
+                      width: 18,
+                      height: 18,
                       decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest,
+                        // 半透明压在图上，比实色圆片轻——它是个次要动作，
+                        // 不该比缩略图本身还抢眼。
+                        color: scheme.surface.withValues(alpha: 0.82),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: scheme.outline.withValues(alpha: 0.35),
+                          color: scheme.outline.withValues(alpha: 0.25),
                         ),
                       ),
                       child: Icon(
-                        PhosphorIconsRegular.x,
-                        size: 12,
+                        PhosphorIconsLight.x,
+                        size: 11,
                         color: scheme.onSurface,
                       ),
                     ),
