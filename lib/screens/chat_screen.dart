@@ -13,6 +13,7 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../widgets/typing_indicator.dart';
+import 'persona_screen.dart';
 import '../config/app_tab.dart';
 import '../services/ai_client.dart';
 import '../services/app_providers.dart';
@@ -631,12 +632,15 @@ class _ChatScreenState extends State<ChatScreen> {
     // 放在最前面不影响 KV 缓存——名字几乎不变，这段前缀仍然逐字节稳定。
     var aiName = _aiName.trim();
     var userName = _userName.trim();
+    var globalPersona = '';
     try {
       final settings = await AppSettings.load();
       aiName = settings.aiName.trim();
       userName = settings.userName.trim();
+      // 开关关着就当没有。文本还留着，是为了关掉之后再打开不用重写一遍。
+      if (settings.personaEnabled) globalPersona = settings.persona.trim();
     } catch (e) {
-      debugPrint('[chat] 读设置失败，名字退回 initState 那份：$e');
+      debugPrint('[chat] 读设置失败，名字和全局性格退回默认：$e');
     }
     final names =
         [
@@ -667,9 +671,23 @@ class _ChatScreenState extends State<ChatScreen> {
     //
     // 名字（几乎不变）→ 人设（const）→ 读记录的规则（const）→ 记忆摘要
     // （记忆改了才变）。近期记录不在这儿：它天天变，挂在最后一条用户消息尾部。
+    // 性格三层，**这段对话自己的永远赢**：
+    //
+    //   这段对话自己设的  →  有就用它
+    //   全局（开关开着且写了）→  否则用它
+    //   basePersona        →  再否则
+    //
+    // 对话自己的排最前，是因为用户在那一段里明确改过——不该被一个后来打开的
+    // 全局开关从背后推翻。代价是：打开全局后，那些设过自己性格的对话不会跟着变。
+    // 这件事在设置页里用一行字说清楚（「有 N 段对话有自己的设定」），
+    // 而不是靠用户自己发现。
+    final persona =
+        _conversation.systemPrompt ??
+        (globalPersona.isNotEmpty ? globalPersona : basePersona);
+
     final systemPrompt = [
       if (names.isNotEmpty) names,
-      _conversation.systemPrompt ?? basePersona,
+      persona,
       memoryReadingRules,
       if (digest.isNotEmpty) digest,
     ].join('\n\n');
@@ -1091,6 +1109,59 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// 编这段对话自己的性格。
+  ///
+  /// 这个入口在 4c2fd85（全局改版）里被删掉了，但 `Conversation.systemPrompt`
+  /// 的字段、JSON 读写、读取路径一直都在——只是没地方设置。这次是把入口补回来。
+  ///
+  /// ⚠️ 旧版那个对话框改完 `_conversation.systemPrompt` **没有调
+  /// `_saveConversation()`**，退出去可能就没了。这次补上。
+  Future<void> _editPersona() async {
+    // 只是为了判断「全局那边空不空」，读不出来就当空的——
+    // 最坏后果是多问一次，不该因此打不开编辑页。
+    var globalPersona = '';
+    try {
+      globalPersona = (await AppSettings.load()).persona.trim();
+    } catch (e) {
+      debugPrint('[chat] 读全局性格失败，按空的算：$e');
+    }
+    if (!mounted) return;
+
+    final result = await Navigator.of(context).push<PersonaResult>(
+      MaterialPageRoute(
+        builder:
+            (_) => PersonaScreen(
+              initial: _conversation.systemPrompt ?? '',
+              globalIsEmpty: globalPersona.isEmpty,
+            ),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() {
+      // 空串存成 null，不存空字符串：null 才是「没设过，用默认」，
+      // 空串会被上面那个 ?? 当成「设过了，就是空的」，于是人设整个消失。
+      _conversation.systemPrompt = result.text.isEmpty ? null : result.text;
+    });
+    _saveConversation();
+
+    if (result.alsoGlobal) {
+      try {
+        final settings = await AppSettings.load();
+        settings.persona = result.text;
+        // 用户刚说了「用在所有对话」，那就得真的生效——存了文本却不开开关，
+        // 等于什么都没发生，而他不会知道为什么。
+        settings.personaEnabled = true;
+        await settings.save();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('这段对话存好了，但没能存进全局：$e')));
+      }
+    }
+  }
+
   Future<void> _exportConversation() async {
     if (_conversation.messages.isEmpty) {
       ScaffoldMessenger.of(
@@ -1394,11 +1465,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 tooltip: '更多',
                 onSelected: (v) {
                   if (v == 'rename') _showRenameDialog();
+                  if (v == 'persona') _editPersona();
                   if (v == 'export') _exportConversation();
                 },
                 itemBuilder:
                     (_) => const [
                       PopupMenuItem(value: 'rename', child: Text('重命名')),
+                      PopupMenuItem(value: 'persona', child: Text('TA 的性格')),
                       PopupMenuItem(value: 'export', child: Text('导出聊天')),
                     ],
               ),

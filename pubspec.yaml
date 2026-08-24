@@ -46,6 +46,9 @@ dependencies:
   # 会话列表左滑出多个操作。Dismissible 只能「滑走」，撑不起常驻的动作面板
   flutter_slidable: ^3.1.0
   android_intent_plus: ^6.1.0
+  # 解 .docx——它是个 zip 里装着 XML，不解压当文本读出来是乱码。
+  # 只用来抽文字，抽完就丢，不存文件。
+  archive: ^4.0.2
 
 dev_dependencies:
   flutter_test:

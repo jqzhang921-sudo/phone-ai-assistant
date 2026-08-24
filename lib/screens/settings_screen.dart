@@ -19,6 +19,7 @@ import '../services/vision_service.dart';
 import '../services/weread_service.dart';
 import 'tools_screen.dart';
 import 'musing_corner_screen.dart';
+import 'persona_screen.dart';
 import '../widgets/background_sheet.dart';
 import '../services/storage_service.dart';
 import '../config/app_shape.dart';
@@ -36,6 +37,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AppSettings _settings = AppSettings();
   bool _loading = true;
   String? _selectedProvider;
+
+  /// 有多少段对话设了自己的性格。
+  ///
+  /// 露出来是必须的：全局那个开关**管不到**这些对话（对话自己的优先级更高）。
+  /// 不说的话，用户打开全局开关、发现有几段没跟着变，会以为是坏了。
+  int _ownPersonaCount = 0;
   final _keyController = TextEditingController();
   final _endpointController = TextEditingController();
   final _modelController = TextEditingController();
@@ -163,6 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _load();
     _loadFavoriteCount();
+    _loadOwnPersonaCount();
     _loadBackgroundLabel();
   }
 
@@ -356,6 +364,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
 
           _group(theme, '外观与陪伴', [
+            _row(
+              theme,
+              asset: 'cat',
+              title: 'TA 的性格',
+              subtitle:
+                  _settings.persona.trim().isEmpty
+                      ? '想让 TA 是什么样的'
+                      : _clipOneLine(_settings.persona, 28),
+              value:
+                  _settings.persona.trim().isEmpty
+                      ? ''
+                      : (_settings.personaEnabled ? '开着' : '没启用'),
+              onTap: _editGlobalPersona,
+            ),
+            // 开关只在写了东西之后才出现——空着的时候给一个开关，
+            // 开了也什么都不会发生。
+            if (_settings.persona.trim().isNotEmpty)
+              _switchRow(
+                theme,
+                icon: PhosphorIconsRegular.usersThree,
+                title: '所有对话都用这个',
+                subtitle:
+                    _ownPersonaCount > 0
+                        ? '有 $_ownPersonaCount 段对话设了自己的性格，不受这里影响'
+                        : '关掉的话，写的内容还留着',
+                value: _settings.personaEnabled,
+                onChanged: (v) async {
+                  setState(() => _settings.personaEnabled = v);
+                  await _settings.save();
+                },
+              ),
             _row(
               theme,
               asset: 'waves',
@@ -870,6 +909,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _ => '跟随主题',
               };
     });
+  }
+
+  Future<void> _editGlobalPersona() async {
+    final result = await Navigator.of(context).push<PersonaResult>(
+      MaterialPageRoute(
+        builder:
+            (_) => PersonaScreen(initial: _settings.persona, isGlobal: true),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _settings.persona = result.text;
+      // 清空了就顺手关掉开关：留着一个开着、但底下什么都没有的开关，
+      // 用户会以为还在生效。
+      if (result.text.isEmpty) _settings.personaEnabled = false;
+    });
+    await _settings.save();
+  }
+
+  Future<void> _loadOwnPersonaCount() async {
+    try {
+      final convs = await StorageService.listConversations();
+      final n = convs.where((c) => (c.systemPrompt ?? '').isNotEmpty).length;
+      if (!mounted) return;
+      setState(() => _ownPersonaCount = n);
+    } catch (e) {
+      debugPrint('[settings] 数不出有几段对话设了自己的性格：$e');
+    }
   }
 
   Future<void> _loadFavoriteCount() async {
@@ -1530,4 +1597,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
+}
+
+/// 副标题里显示性格的头一句。折行会把设置项撑高，这里只要一眼认出「设过了」。
+String _clipOneLine(String s, int max) {
+  final one = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return one.length > max ? '${one.substring(0, max)}…' : one;
 }
