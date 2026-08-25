@@ -78,3 +78,8 @@ android/key.properties
 
 # 会话里生成的一次性脚本，一律不进仓库
 .*.sh
+
+# Flutter 生成的，文件自己第一行就写着 do not check into version control。
+# 里面还有 /home/... 这种机器专属绝对路径，跟着人走会一直制造无谓的 diff，
+# 切分支时还会挡路。
+.flutter-plugins-dependencies
