@@ -121,8 +121,12 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  /// 抽屉顶部那句「和 XX 一起，N 轮对话」
-  int get _totalRounds =>
+  /// 抽屉顶部那句「和 XX 一起，N 条消息」。
+  ///
+  /// 数的是 `messages.length`，即**条数**——用户和它的话都算。原来这里叫
+  /// 「N 轮对话」，但一轮是一来一回，条数差着一倍；而首页的对话卡片一直
+  /// 写的是「N 条消息」，同一个数在两处叫两个名字。统一成条。
+  int get _totalMessages =>
       _savedConversations.fold(0, (sum, c) => sum + c.messages.length);
 
   @override
@@ -1635,7 +1639,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '和$ta一起，$_totalRounds 轮对话',
+                          '和$ta一起，$_totalMessages 条消息',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
