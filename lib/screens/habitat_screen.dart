@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
 import '../config/settings.dart';
+import '../models/chat_message.dart';
 import '../models/letter.dart';
 import '../services/app_providers.dart';
 import '../services/letter_generator.dart';
@@ -56,13 +57,21 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final letterStatus = await letterTriggerStatus();
     final settings = await AppSettings.load();
     final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
     var today = 0;
     var total = 0;
+    // 「今天聊了多少」必须按**每条消息自己的时间戳**数。
+    //
+    // 原来是看「这段对话今天有没有更新」，然后把整段对话的消息数加进去——
+    // 于是今天在一段 538 条的老对话里回一句，就会显示「今天聊了 538 轮」。
+    // 之前一直没露馅是因为凑巧：那阵子唯一更新过的对话总共才 2 条。
+    //
+    // 数的是**用户消息**：一条用户消息开启一轮来回，这才对得上「轮」这个词。
     for (final c in convs) {
       total += c.messages.length;
-      final t = c.updatedAt.toLocal();
-      if (t.year == now.year && t.month == now.month && t.day == now.day) {
-        today += c.messages.length;
+      for (final m in c.messages) {
+        if (m.role != MessageRole.user) continue;
+        if (!m.timestamp.toLocal().isBefore(midnight)) today++;
       }
     }
     if (mounted) {
@@ -222,9 +231,9 @@ class _HabitatScreenState extends State<HabitatScreen> {
               icon: PhosphorIcons.notebook(PhosphorIconsStyle.regular),
               title: '记忆',
               onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MemoryScreen()),
-                );
+                await Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const MemoryScreen()));
                 _load();
               },
             ),
@@ -295,7 +304,9 @@ class _HabitatScreenState extends State<HabitatScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      '轮对话',
+                      // 这个数是 messages.length，即**条数**不是轮数。
+                      // 首页对话卡片一直写的是「N 条消息」，两处口径要一致。
+                      '条消息',
                       style: TextStyle(
                         fontSize: 12.5,
                         color: scheme.onSurfaceVariant,

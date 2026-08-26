@@ -88,10 +88,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   late Conversation _conversation;
 
+  /// 存一份引用，dispose 时要用它摘监听——那时候 context 已经不能读 Provider 了。
+  AiClientProvider? _aiClients;
+
   @override
   void initState() {
     super.initState();
     _conversation = Conversation(id: _uuid.v4());
+    _aiClients =
+        context.read<AiClientProvider>()..addListener(_onAiClientChanged);
     _loadConversations();
     _loadMusing();
     _loadUserName();
@@ -122,6 +127,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _aiClients?.removeListener(_onAiClientChanged);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -146,9 +152,27 @@ class _ChatScreenState extends State<ChatScreen> {
     await _refreshMusing();
   }
 
+  /// 今天的「我想说」还欠着，等 AI 客户端就绪补生成。
+  ///
+  /// [_loadMusing] 在 initState 里调，而 `AiClientProvider.load()` 是异步的
+  /// ——那一刻 `currentClient` 基本都是 null。原来这里直接 return，于是跨天
+  /// 之后首页永远停在昨天那句，只能手动点刷新（用户反馈「大部分情况都得
+  /// 自己刷」就是这个）。现在标记待办，由 [_onAiClientChanged] 补跑。
+  bool _musingPending = false;
+
+  void _onAiClientChanged() {
+    if (!_musingPending) return;
+    if (_aiClients?.currentClient == null) return;
+    _musingPending = false;
+    _refreshMusing();
+  }
+
   Future<void> _refreshMusing() async {
     final aiClient = context.read<AiClientProvider>().currentClient;
-    if (aiClient == null) return;
+    if (aiClient == null) {
+      _musingPending = true;
+      return;
+    }
     if (mounted) setState(() => _musingLoading = true);
     try {
       final content = await generateDailyMusing(aiClient: aiClient);
