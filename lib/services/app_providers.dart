@@ -155,13 +155,18 @@ class BackgroundProvider extends ChangeNotifier {
   Future<void> update(String? path, String preset) async {
     _path = path;
     _preset = preset;
+    // 只有**真的贴了背景图**才需要覆盖前景色：图是什么亮度只有这里知道，
+    // 主题猜不到。没有图的时候一律回 null，交给主题。
+    //
+    // 原来 preset 'dark' / 'light' 也会在这里钉死前景色。那是配套「预设写死
+    // 底色」用的，而那套底色早就删了（见 home_shell 里的注释：明暗统一归主题
+    // 管），前景色的覆盖却留了下来——预设不再画任何背景，却还在强行指定字色。
+    //
+    // 后果：选过深色预设之后切浅色主题，四个页面（主页 / 聊天 / 书架 / 栖息）
+    // 的标题栏全是白字压奶白底，几乎看不见。2026-08-27 实测复现。
     if (path != null) {
       final avg = await _averageColor(path);
       _darkForeground = avg == null || avg.computeLuminance() > 0.5;
-    } else if (preset == 'dark') {
-      _darkForeground = false;
-    } else if (preset == 'light') {
-      _darkForeground = true;
     } else {
       _darkForeground = null;
     }
