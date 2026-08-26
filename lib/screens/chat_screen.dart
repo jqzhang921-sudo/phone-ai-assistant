@@ -20,7 +20,6 @@ import '../services/app_providers.dart';
 import '../services/mcp_server.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
-import '../services/weread_service.dart';
 import '../config/settings.dart';
 import '../services/tts_service.dart';
 import '../services/memory_context.dart';
@@ -1230,78 +1229,6 @@ class _ChatScreenState extends State<ChatScreen> {
     StorageService.saveConversation(_conversation);
   }
 
-  Widget _buildStatsCard(ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return FutureBuilder<WereadStats>(
-      future: WereadService.fetchReadingStats(),
-      builder: (ctx, snap) {
-        final stats = snap.data;
-        if (snap.hasError || stats == null) return const SizedBox.shrink();
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            boxShadow: AppShadow.soften(theme.brightness == Brightness.dark),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    PhosphorIconsRegular.chartBar,
-                    size: 18,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '阅读统计',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _statItem(scheme, '${stats.finishedThisMonth}', '本月读完'),
-                  _statItem(scheme, '${stats.currentlyReading}', '在读'),
-                  _statItem(scheme, '${stats.finishedThisYear}', '今年读完'),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _statItem(ColorScheme scheme, String num, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            num,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: scheme.primary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 三宫格。图标二选一：品牌图标给 [asset]，功能图标给 [icon]——
   /// 星=新对话、书=书架属于「地方和内容」，显示器属于「机器」，各归各的。
   Widget _quickActionCard(
@@ -2158,10 +2085,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-
-        // 阅读统计
-        _buildStatsCard(theme),
         const SizedBox(height: 14),
 
         // 快捷入口
