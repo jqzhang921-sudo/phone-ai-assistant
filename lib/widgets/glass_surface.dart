@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../config/app_shape.dart';
 import '../config/app_theme.dart';
 
 /// 玻璃本体的两套基色：暖白 / 暖黑。跟着 tone 转（见 [GlassSurface.build]）。
@@ -162,18 +163,18 @@ class GlassSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     // 玻璃本身也是暖色的（暖白 / 暖黑），跟着 tone 转——不然卡片透出粉色，
     // 玻璃那层却还带着棕味，透出来的颜色会发脏。
-    //
-    // 亮底那条描边是**纯白**，转色相是恒等变换，不用绕这一趟。
     final tone = AppTone.of(context);
-    final base = tone.shift(
-      lightBackground ? glassBaseLight : glassBaseDark,
-    );
-    final line =
-        lightBackground
-            ? Colors.white.withValues(alpha: 0.52)
-            : tone.shift(const Color(0xFFF2EAE0)).withValues(alpha: 0.14);
+    final base = tone.shift(lightBackground ? glassBaseLight : glassBaseDark);
 
-    return ClipRRect(
+    // 卡片的边缘怎么立起来，浅底和暗底是两套办法——就是主题里那两条老规矩：
+    // **浅色靠阴影不靠描边**（描边是「碎线太多」的主因），
+    // **深色不画阴影**（暗底上的黑影看不见），改用一道亮边。
+    //
+    // 原来两边都画描边，而且浅底画的是 **52% 的纯白**：白卡压在亮壁纸上，
+    // 白描边等于没画，卡片整个糊进背景里。Cleo 的原话是「刚才的黑色主题，
+    // 卡片就很好看，边缘亮亮的，能看出来是卡片，现在这个就有点模糊了」
+    // ——她夸的正是暗底那道亮边，缺的是浅底这一侧的对应物。
+    final glass = ClipRRect(
       borderRadius: borderRadius,
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: _blur, sigmaY: _blur),
@@ -181,7 +182,15 @@ class GlassSurface extends StatelessWidget {
           decoration: BoxDecoration(
             color: base.withValues(alpha: _alpha),
             borderRadius: borderRadius,
-            border: Border.all(color: line, width: 1),
+            border:
+                lightBackground
+                    ? null
+                    : Border.all(
+                      color: tone
+                          .shift(const Color(0xFFF2EAE0))
+                          .withValues(alpha: 0.14),
+                      width: 1,
+                    ),
           ),
           child:
               tint == null
@@ -197,6 +206,18 @@ class GlassSurface extends StatelessWidget {
                   ),
         ),
       ),
+    );
+
+    if (!lightBackground) return glass;
+
+    // 阴影必须画在 ClipRRect **外面**，不然被裁掉。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow:
+            floating ? AppShadow.softenFloating(false) : AppShadow.soften(false),
+      ),
+      child: glass,
     );
   }
 }
