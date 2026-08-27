@@ -12,6 +12,70 @@ import '../services/tts_service.dart';
 import '../config/app_shape.dart';
 import '../config/app_theme.dart';
 
+/// 气泡的底色和字色。
+///
+/// 抽成纯函数是为了能测。这一处踩过两次，两次都是「字看不见」：
+///
+/// - 没有背景图时，气泡靠**透出底下的页面底色**成立：深色模式的用户气泡是
+///   15% 的浅棕，压在 `#171310` 上出来是一块淡淡的暖影，浅色字读得清。
+/// - 一旦贴了背景图，底下不再是一整块纯色，而是一张有明有暗的照片。
+///   同样那 15%，在兔子那块亮的地方就是**浅字压浅底**——整句话消失，实测过。
+///
+/// 所以 [onPhoto] 时气泡必须自己立住底：用玻璃那套基色（跟着背景明暗走，
+/// 不跟着 ThemeMode），按 [busyness] 加厚，字色跟着基色配。
+/// 结论用测试钉住：合成到纯白和纯黑上都要过 4.5:1。
+({Color fill, Color text}) bubbleColors({
+  required bool isUser,
+  required bool dark,
+  required bool onPhoto,
+  required bool lightSurface,
+  required double busyness,
+  required AppTone tone,
+  required ColorScheme scheme,
+}) {
+  if (!onPhoto) {
+    // 两侧都留一点透明度，让底下那张徽标透上来——那是全 App 唯一的材质层，
+    // 气泡压在上面才有「纸上写字」的层次，实色会把它整片盖掉。
+    //
+    // 深色透得多一点（水印在暗底上本来就更显），浅色收着些：
+    // 白卡在奶白底上本来就只差一点亮度，再透就分不出来了。
+    //
+    // ⚠️ 只转写死的字面量：`scheme.onSurface` 在建主题时已经转过一遍，
+    // 再转一次就是转两次，会跑到别的色相上去。
+    return (
+      fill: tone.shift(
+        isUser
+            ? (dark ? const Color(0x26D9B48F) : const Color(0x99E2DACE))
+            : (dark ? const Color(0xC7251F1A) : const Color(0xE6FFFFFF)),
+      ),
+      text:
+          isUser
+              ? tone.shift(
+                dark ? const Color(0xFFEBD9C4) : const Color(0xFF4A3320),
+              )
+              : (dark
+                  ? tone.shift(const Color(0xFFE8DFD4))
+                  : scheme.onSurface),
+    );
+  }
+
+  final base = tone.shift(
+    lightSurface ? const Color(0xFFFFFDFB) : const Color(0xFF1A1410),
+  );
+  // 0.78 起步是「照片再花也压得住」那一档；花的图再加厚。AI 那侧多 4%，
+  // 因为它承载的是长正文。
+  final alpha = (0.78 + busyness * 0.14 + (isUser ? 0.0 : 0.04)).clamp(0.0, 1.0);
+  // 用户那侧掺一点主色，两侧才分得开——只掺 16%，明度基本不动，
+  // 上面那条对比度结论不会被它推翻。
+  final fill = isUser ? Color.lerp(base, scheme.primary, 0.16)! : base;
+  return (
+    fill: fill.withValues(alpha: alpha),
+    text: tone.shift(
+      lightSurface ? const Color(0xFF1A1512) : const Color(0xFFF2EAE0),
+    ),
+  );
+}
+
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
 
@@ -40,28 +104,21 @@ class MessageBubble extends StatelessWidget {
     final scheme = theme.colorScheme;
     final dark = theme.brightness == Brightness.dark;
 
-    // 两侧都留一点透明度，让底下那张徽标透上来——这是全 App 唯一的
-    // 材质层，气泡压在上面才有「纸上写字」的层次，实色会把它整片盖掉。
-    //
-    // 深色透得多一点（水印在暗底上本来就更显），浅色收着些：
-    // 白卡在奶白底上本来就只差一点亮度，再透就分不出来了。
-    //
-    // 这四个值是写死的暖棕，不走 ColorScheme——玻璃主题下卡片已经透出粉色
-    // 壁纸了，气泡还是棕的，Cleo 说「气泡不太应景」指的就是这里。所以每个
-    // 都过一遍 tone。**只转写死的那几个**：`scheme.onSurface` 在建主题时
-    // 已经转过一遍，再转就是转两次，会跑到别的色相上去。
-    final tone = AppTone.of(context);
-    final bgColor = tone.shift(
-      isUser
-          ? (dark ? const Color(0x26D9B48F) : const Color(0x99E2DACE))
-          : (dark ? const Color(0xC7251F1A) : const Color(0xE6FFFFFF)),
+    // 颜色全交给 bubbleColors——它自己判断底下是纯色底还是一张照片。
+    final bg = context.watch<BackgroundProvider>();
+    final glassOn =
+        context.watch<SettingsProvider>().settings?.glassSurface ?? false;
+    final colors = bubbleColors(
+      isUser: isUser,
+      dark: dark,
+      onPhoto: glassOn && bg.path != null,
+      lightSurface: bg.darkForeground ?? !dark,
+      busyness: bg.backgroundBusyness,
+      tone: AppTone.of(context),
+      scheme: scheme,
     );
-    final textColor =
-        isUser
-            ? tone.shift(
-              dark ? const Color(0xFFEBD9C4) : const Color(0xFF4A3320),
-            )
-            : (dark ? tone.shift(const Color(0xFFE8DFD4)) : scheme.onSurface);
+    final bgColor = colors.fill;
+    final textColor = colors.text;
 
     // 尖角落在靠头像那一侧的**上角**。
     //

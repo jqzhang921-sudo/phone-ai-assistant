@@ -117,6 +117,28 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
     return AppTone.towards(accent);
   }
 
+  /// 这一轮该用深色还是浅色。
+  ///
+  /// 玻璃主题下**深浅跟着背景图走，不听 ThemeMode**。
+  ///
+  /// 不这么做会撕开成两半：`AppSurface` 按背景图决定玻璃是白的还是黑的，
+  /// 卡片里的字却按 ThemeMode 取 `scheme.onSurface`。贴一张黑底壁纸就是
+  /// 深色玻璃压深色字——栖息页那个「588」大数字整个消失，实测过。
+  ///
+  /// 页面大标题之所以没事，是因为四个页面各自写了
+  /// `bg.darkForeground ?? theme.brightness` 这么一句手接。那正说明问题：
+  /// 手接只接得住写过的地方，接不住卡片里成百上千处 `scheme.onSurface`。
+  /// 深浅是主题这一层的事，就该在主题这一层定。
+  ///
+  /// 关掉玻璃开关，ThemeMode 立刻全权说了算。
+  ThemeMode _modeFor(AppSettings s, BackgroundProvider bg) {
+    if (!s.glassSurface || bg.path == null) return s.themeMode;
+    final darkForeground = bg.darkForeground;
+    if (darkForeground == null) return s.themeMode;
+    // darkForeground = 字要用深色 = 背景偏亮 = 浅色主题
+    return darkForeground ? ThemeMode.light : ThemeMode.dark;
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<AppSettings>(
@@ -139,7 +161,7 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
               debugShowCheckedModeBanner: false,
               theme: AppTheme.lightWith(titleSerif: titleSerif, tone: tone),
               darkTheme: AppTheme.darkWith(titleSerif: titleSerif, tone: tone),
-              themeMode: s.themeMode,
+              themeMode: _modeFor(s, bg),
               home: const HomeShell(),
             );
           },
