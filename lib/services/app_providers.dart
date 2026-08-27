@@ -168,13 +168,25 @@ class BackgroundProvider extends ChangeNotifier {
     if (path != null) {
       _stats = await _analyze(path);
       final avg = _stats?.average;
-      _darkForeground = avg == null || avg.computeLuminance() > 0.5;
+      _darkForeground = avg == null || avg.computeLuminance() > _midLuminance;
     } else {
       _stats = null;
       _darkForeground = null;
     }
     notifyListeners();
   }
+
+  /// 「这张图算亮还是算暗」的分界。
+  ///
+  /// ⚠️ 原来写的是 0.5，那是把**相对亮度当成了百分比**。相对亮度是线性的：
+  /// 中灰 `#828282` 只有 0.215，不是 0.5；0.5 那道线对应的 sRGB 灰已经到
+  /// `#BCBCBC` 了。结果是凡比浅灰更暗的图都被判成深色，整页翻成深底浅字。
+  /// Cleo 那张兔子壁纸平均色 `#827F7F`（0.215）就栽在这儿——她说
+  /// 「换了个背景自动切换成暗色了」「这个深色和这个兔子背景不太搭」。
+  ///
+  /// 0.179 是白字和黑字对比度相等的那一点：解 (L+0.05)² = 1.05×0.05。
+  /// 比它亮用深字，比它暗用浅字，两边都不会踩到读不清的一侧。
+  static const double _midLuminance = 0.179;
 
   /// 从背景图里读出来的三个值。一次采样全算完，别为了其中一个再解一遍图。
   ///
