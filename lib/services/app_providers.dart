@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+
+import '../config/oklab.dart';
 import '../config/settings.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
@@ -224,8 +226,16 @@ class BackgroundProvider extends ChangeNotifier {
       final n = data.lengthInBytes ~/ 4;
       var r = 0, g = 0, b = 0;
       // 色相用向量平均，不能直接对角度取平均——359° 和 1° 的平均是 180°，
-      // 那是完全相反的颜色。按饱和度加权：灰的像素对「这张图什么色」没有发言权。
-      var hx = 0.0, hy = 0.0, satWeight = 0.0;
+      // 那是完全相反的颜色。
+      //
+      // ⚠️ 权重是 [hueWeight]（OKLab 彩度 × 明度），不是 HSV 饱和度。HSV 的
+      // `s = (max-min)/max` 在接近黑的像素上是噪声放大器：RGB(10,8,12)
+      // 肉眼是黑，s 却有 0.33、色相 270°（蓝紫）。Cleo 那张「黑底粉兔子」
+      // 壁纸八成面积是黑，那些黑把票全投给蓝紫、粉色一票没投上，
+      // 整个主题变成蓝紫压在粉兔子上。合成同结构的图复现过：
+      // HSV 得 260–266°，换成 hueWeight 得 344–350°（粉，正确）。
+      // 详见 `config/oklab.dart`。
+      var hx = 0.0, hy = 0.0, weightSum = 0.0;
       final lums = <double>[];
 
       for (var i = 0; i < n; i++) {
@@ -236,12 +246,12 @@ class BackgroundProvider extends ChangeNotifier {
         g += pg;
         b += pb;
 
-        final hsv = HSVColor.fromColor(ui.Color.fromARGB(255, pr, pg, pb));
-        final w = hsv.saturation;
-        final rad = hsv.hue * math.pi / 180;
+        final px = ui.Color.fromARGB(255, pr, pg, pb);
+        final w = hueWeight(px);
+        final rad = toOklch(px).h * math.pi / 180;
         hx += math.cos(rad) * w;
         hy += math.sin(rad) * w;
-        satWeight += w;
+        weightSum += w;
 
         lums.add((0.2126 * pr + 0.7152 * pg + 0.0722 * pb) / 255);
       }
@@ -257,23 +267,28 @@ class BackgroundProvider extends ChangeNotifier {
           lums.length;
       final busyness = (math.sqrt(variance) / 0.22).clamp(0.0, 1.0);
 
-      // 真的没有色相可言（近乎黑白）才放弃，回落到徽标棕。
+      // 真的没有色相可言（近乎黑白）才放弃，回落到中性色调。
       //
-      // ⚠️ 门槛原来是 0.06，把「淡」和「灰」当成了一回事——Cleo 那张粉白渐变
-      // 壁纸有明确的粉色相，只是饱和度低，结果过不了线，置顶卡片在粉色背景上
-      // 冒出一块棕。淡不等于没有颜色。
-      final avgSat = satWeight / n;
+      // ⚠️ 门槛别设高。最早是 0.06（HSV 那一版），把「淡」和「灰」当成了一回事
+      // ——粉白渐变壁纸有明确的粉色相，只是很淡，过不了线就冒出一块棕。
+      // 淡不等于没有颜色。
+      //
+      // 0.0015 是在 hueWeight 这个尺度上重新定的（和 HSV 的数字不可比）。
+      // 实测七张：真灰的三张 0.00000–0.00039，有颜色的四张 0.0031–0.0155。
+      // 这道线落在中间，两边都有五倍以上余量。
+      final avgWeight = weightSum / n;
       ui.Color? accent;
-      if (avgSat > 0.02) {
+      if (avgWeight > 0.0015) {
         var hue = math.atan2(hy, hx) * 180 / math.pi;
         if (hue < 0) hue += 360;
-        // 只借**色相**，明度锁死——这样换任何背景，强调色的视觉重量都一样，
+        // 只借**色相**，明度锁死 0.86——这样换任何背景，强调色的视觉重量都一样，
         // 不会有的图上跳出来、有的图上看不见。
         //
-        // 饱和度跟着原图走一点：从一张淡粉壁纸里取出一块艳粉，会比棕色更突兀。
-        // 上限 0.35（徽标棕的档位），下限 0.14——再低就看不出是个颜色了。
-        final sat = (avgSat * 2.2).clamp(0.14, 0.35);
-        accent = HSVColor.fromAHSV(1, hue, sat, 0.85).toColor();
+        // 彩度跟着原图走一点：从一张淡粉壁纸里取出一块艳粉，会比棕色更突兀。
+        // ×7 把实测里最有颜色的那张（0.0155）映到上限 0.10；下限 0.04，
+        // 再低就看不出是个颜色了。大多数图会落在下限上，这是对的。
+        final chroma = (avgWeight * 7).clamp(0.04, 0.10);
+        accent = fromOklch(0.86, chroma, hue);
       }
 
       return (average: average, accent: accent, busyness: busyness);

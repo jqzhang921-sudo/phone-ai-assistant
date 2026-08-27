@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phone_ai_assistant/config/app_theme.dart';
+import 'package:phone_ai_assistant/config/oklab.dart';
 
 /// WCAG 对比度。信卡那条 bug 就是靠它量出来的（白字压强调色只有 1.8:1）。
 double _contrast(Color a, Color b) {
@@ -12,18 +13,17 @@ double _contrast(Color a, Color b) {
 }
 
 /// 从背景图里取强调色的算法（`BackgroundProvider._analyze` 末尾）：
-/// 只借色相，明度锁死 V=0.85、饱和度 0.14–0.35。测试要用真的那一档，
+/// 只借色相，明度锁 OKLab 0.86、彩度 0.04–0.10。测试要用真的那一档，
 /// 换个随手挑的颜色就测不到那个 bug。
-Color _accent(double hue, double sat) =>
-    HSVColor.fromAHSV(1, hue, sat, 0.85).toColor();
+Color _accent(double hue, double chroma) => fromOklch(0.86, chroma, hue);
 
 void main() {
   group('AppTone.shift', () {
-    // 这条是整个色相旋转的地基。只换色相、L 原样留着的话，`#8B5E34` 转到
-    // 黄绿会让白字上的对比度从 5.6:1 掉到 4.0:1——Cleo 调好的那套对比度
-    // 会被悄悄冲掉，而且只在某几个背景下坏。钉住它。
+    // 这条是整个色相旋转的地基。转色相不管亮度的话，白字压 primary 的对比度
+    // 会从 5.6:1 漂到 4.0:1——Cleo 调好的那套对比度会被悄悄冲掉，
+    // 而且只在某几个背景下坏。钉住它。
     //
-    // 容差 0.015：二分本身能到 1/262144，但 toColor() 要量化成 8 位，
+    // 容差 0.015：二分本身能到 1/262144，但要量化成 8 位色深，
     // 最亮那几档一个 LSB 就值约 0.006。
     test('转完色相，相对亮度不变', () {
       const palette = <Color>[
@@ -47,16 +47,28 @@ void main() {
       }
     });
 
+    // 「同样的饱和度在不同色相上不是同一种花」那条。HSL 版本里
+    // #D9B48F 转到绿会变成 #9AC85E（刺眼的草绿），OKLCH 版本不会。
+    test('转完色相，彩度不变——不会转到绿就突然变艳', () {
+      final before = toOklch(const Color(0xFFD9B48F)).c;
+      for (final hue in <double>[0, 60, 120, 180, 240, 300]) {
+        final after = toOklch(AppTone(hueDelta: hue).shift(
+          const Color(0xFFD9B48F),
+        )).c;
+        expect(after, closeTo(before, 0.012), reason: 'hueDelta=$hue');
+      }
+    });
+
     test('alpha 原样带过去', () {
       final tone = AppTone(hueDelta: 120);
       expect(tone.shift(const Color(0x99E2DACE)).a, closeTo(0x99 / 255, 0.004));
     });
 
     test('色相真的转到目标上了', () {
-      final pink = _accent(330, 0.25);
+      final pink = _accent(330, 0.07);
       final tone = AppTone.towards(pink);
       final shifted = tone.shift(AppTheme.brandBrown);
-      expect(HSLColor.fromColor(shifted).hue, closeTo(330, 2));
+      expect(toOklch(shifted).h, closeTo(toOklch(pink).h, 2));
     });
 
     test('none 不动任何颜色', () {
@@ -65,12 +77,11 @@ void main() {
     });
 
     test('neutral 只降彩度，色相和亮度都不动', () {
-      final out = AppTone.neutral.shift(AppTheme.brandBrown);
-      final before = HSLColor.fromColor(AppTheme.brandBrown);
-      final after = HSLColor.fromColor(out);
-      expect(after.saturation, closeTo(before.saturation * 0.35, 0.02));
-      expect(after.hue, closeTo(before.hue, 2));
-      expect(out.computeLuminance(), closeTo(0.1365, 0.015));
+      const brown = AppTheme.brandBrown;
+      final out = AppTone.neutral.shift(brown);
+      expect(toOklch(out).c, closeTo(toOklch(brown).c * 0.35, 0.01));
+      expect(toOklch(out).h, closeTo(toOklch(brown).h, 2));
+      expect(out.computeLuminance(), closeTo(brown.computeLuminance(), 0.015));
     });
 
     test('纯白纯黑不受影响（转色相是恒等变换）', () {
@@ -85,13 +96,13 @@ void main() {
     // 而底色是运行时算出来的强调色——白字压上去 1.6–2.6:1，基本看不见。
     test('强调色那一档底色上，前景必须过 4.5:1', () {
       for (final hue in <double>[0, 30, 90, 200, 330]) {
-        for (final sat in <double>[0.14, 0.25, 0.35]) {
-          final fill = _accent(hue, sat);
+        for (final chroma in <double>[0.04, 0.07, 0.10]) {
+          final fill = _accent(hue, chroma);
           final fg = AppTone.none.inkOn(fill);
           expect(
             _contrast(fill, fg),
             greaterThan(4.5),
-            reason: 'accent hue=$hue sat=$sat 上的前景色读不清',
+            reason: 'accent hue=$hue chroma=$chroma 上的前景色读不清',
           );
           // 顺带钉住 bug 本身：这一档底色上白字就是不够
           expect(_contrast(fill, Colors.white), lessThan(3));

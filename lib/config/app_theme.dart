@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'app_shape.dart';
+import 'oklab.dart';
 
 /// 整套配色的「色调」：往哪个色相转、彩度收多少。
 ///
@@ -13,15 +14,18 @@ import 'app_shape.dart';
 /// 所以这里只做一件事：把徽标棕那一族整体旋到背景图的色相上去。
 /// 对比度、那唯一一档次级灰、明度层级全部原样保留，只有色相变了。
 ///
-/// ## 为什么不能只换色相就完事
+/// ## 两件必须一起做对的事
 ///
-/// 在 HSL 里改 hue、L 留着不动，**看着明度没变，感知亮度会漂**。
-/// `#8B5E34` 转到黄绿是 `#5E8B34`，L 一模一样，可白字压上去的对比度从
-/// 5.6:1 掉到 4.0:1。那是把 Cleo 调了很久的一套对比度悄悄冲掉，而且只在
-/// 某几个背景下坏——这种 bug 事后根本查不出是哪一步弄的。
+/// 1. **在 OKLCH 里转，不在 HSL 里转。** HSL 的饱和度不是感知量：`#D9B48F`
+///    的 0.49 是柔的浅棕，色相转到绿、饱和度照抄，出来是 `#9AC85E` 一块
+///    刺眼的草绿。OKLCH 的彩度各色相之间可比，转过去还是同样的「花」。
+///    详见 `oklab.dart`。
+/// 2. **相对亮度二分回原值。** 只转色相不管亮度的话，白字压 primary 的对比度
+///    会从 5.6:1 漂到 4.0:1——把 Cleo 调了很久的一套对比度悄悄冲掉，而且只在
+///    某几个背景下坏，事后根本查不出是哪一步弄的。
 ///
-/// [shift] 因此转完色相还要把**相对亮度二分回原值**。换任何背景，每个 token
-/// 在纸上的轻重都完全一致。
+/// 注意 OKLab 的 L 和 WCAG 相对亮度不是一回事，所以不能只保住 L 就完事，
+/// 得真的二分。
 class AppTone extends ThemeExtension<AppTone> {
   /// 色相偏移（度）。0 = 不转。
   final double hueDelta;
@@ -47,11 +51,10 @@ class AppTone extends ThemeExtension<AppTone> {
 
   /// 把整套配色转到 [accent] 的色相上。[accent] 来自
   /// `BackgroundProvider.backgroundAccent`。
-  factory AppTone.towards(Color accent) => AppTone(
-    hueDelta: (HSLColor.fromColor(accent).hue - _brandHue + 360) % 360,
-  );
+  factory AppTone.towards(Color accent) =>
+      AppTone(hueDelta: (toOklch(accent).h - _brandHue + 360) % 360);
 
-  static final double _brandHue = HSLColor.fromColor(AppTheme.brandBrown).hue;
+  static final double _brandHue = toOklch(AppTheme.brandBrown).h;
 
   static AppTone of(BuildContext context) =>
       Theme.of(context).extension<AppTone>() ?? none;
@@ -68,27 +71,26 @@ class AppTone extends ThemeExtension<AppTone> {
   }
 
   Color _shift(Color c) {
-    final hsl = HSLColor.fromColor(c);
+    final lch = toOklch(c);
     // 真中性色（纯白、纯黑、纯灰）转色相是恒等变换，别白跑一趟二分。
-    if (hsl.saturation < 0.005) return c;
+    if (lch.c < 0.002) return c;
 
     final target = c.computeLuminance();
-    final hue = (hsl.hue + hueDelta) % 360;
-    final sat = (hsl.saturation * satScale).clamp(0.0, 1.0);
+    final hue = (lch.h + hueDelta) % 360;
+    final chroma = lch.c * satScale;
 
-    // 固定 hue/sat 时相对亮度对 L 单调递增（L=0 是黑、L=1 是白），
+    // 固定色相/彩度时相对亮度对 OKLab 的 L 单调递增（L=0 是黑、L=1 是白），
     // 二分一定收敛。18 次到 1/262144，远超 8 位色深分得出的精度。
     var lo = 0.0, hi = 1.0;
     for (var i = 0; i < 18; i++) {
       final mid = (lo + hi) / 2;
-      final probe = HSLColor.fromAHSL(1, hue, sat, mid).toColor();
-      if (probe.computeLuminance() < target) {
+      if (fromOklch(mid, chroma, hue).computeLuminance() < target) {
         lo = mid;
       } else {
         hi = mid;
       }
     }
-    return HSLColor.fromAHSL(hsl.alpha, hue, sat, (lo + hi) / 2).toColor();
+    return fromOklch((lo + hi) / 2, chroma, hue, alpha: c.a);
   }
 
   /// 在 [background] 上选一个读得清的前景色：深墨和纯白各算一次对比度，
