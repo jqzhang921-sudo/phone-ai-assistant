@@ -15,6 +15,7 @@ import 'letter_screen.dart';
 import 'memory_screen.dart';
 import 'musing_corner_screen.dart';
 import '../config/app_shape.dart';
+import '../config/app_theme.dart';
 
 /// 「栖息」页：给用户留的专属空间（陪伴状态 / 阅读角落 / 日记）。
 class HabitatScreen extends StatefulWidget {
@@ -459,19 +460,25 @@ class _HabitatScreenState extends State<HabitatScreen> {
     //
     // 未读不再靠底色区分（整张已经是实色了），改由标题直接说
     // 「有 N 封信在等你」——一句话比一层色差好认。
-    final fg = scheme.onPrimary;
-
+    //
     // 全 App 唯一的实色主色块，是「有事发生了」的信号（有信在等你），
     // 所以保留分量。但颜色要跟着背景走——粉色壁纸上一块纯棕是整屏最跑调的
     // 东西，Cleo 的截图里一眼就是它。
     final accent = context.watch<BackgroundProvider>().backgroundAccent;
+    final fill = accent ?? scheme.primary;
+
+    // ⚠️ 这里原来写死 `scheme.onPrimary`（白）。底色是运行时从背景图算出来的
+    // 强调色，明度锁在 V=0.85 很亮，白字压上去实测只有 1.6–2.6:1，
+    // 基本看不见；同一块底换成深墨是 7–11:1。底色是算出来的，前景就不能是
+    // 编译期定死的——交给 inkOn 按实际亮度挑。
+    final fg = AppTone.of(context).inkOn(fill);
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.md),
         boxShadow: AppShadow.soften(scheme.brightness == Brightness.dark),
       ),
       child: Material(
-        color: accent ?? scheme.primary,
+        color: fill,
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.md),
