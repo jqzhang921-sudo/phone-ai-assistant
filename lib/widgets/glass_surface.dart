@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 
+/// 玻璃本体的两套基色：暖白 / 暖黑。跟着 tone 转（见 [GlassSurface.build]）。
+const Color glassBaseLight = Color(0xFFFFFDFB);
+const Color glassBaseDark = Color(0xFF1A1410);
+
 /// 毛玻璃表面。玻璃主题下卡片、导航条、标题栏都走它。
 ///
 /// ## 什么时候它是有意义的
@@ -21,12 +25,96 @@ import '../config/app_theme.dart';
 ///
 /// 所以 alpha 跟着 [busyness] 走：渐变底给到最通透，花的图自动加厚。
 /// busyness 由 `BackgroundProvider` 在解析背景图时一并算出（亮度标准差）。
+/// 具体的档位和它为什么是这个档位，见 [glassAlpha]。
 ///
 /// ## saturate 那一下是关键
 ///
 /// 只降 alpha 会让卡片发灰——背景透上来的颜色被卡片本身的白/黑冲淡了，
 /// 看起来是「变透明」而不是「晕染」。Flutter 没有 CSS 那种 `saturate()`，
 /// 这里用一层极淡的、取自背景强调色的叠色把彩度补回来。
+/// 卡片里的字色：亮底玻璃配深字、暗底玻璃配浅字（就是 `scheme.onSurface`
+/// 那两档）。色相旋转不动相对亮度，所以这两个值在任何色调下都成立。
+const _textOnLightGlass = Color(0xFF1A1512);
+const _textOnDarkGlass = Color(0xFFF2EAE0);
+
+/// 玻璃要多不透明。两条线取大的那条。
+///
+/// **一、观感**：`0.30 + busyness * 0.40`。平滑的渐变底最通透，花的图厚实。
+///
+/// **二、读得清**：压在这张图最极端的地方（[extreme]，亮玻璃看暗端、
+/// 暗玻璃看亮端）合成之后仍要过 4.5:1。二分求出这个最小 alpha。
+///
+/// ⚠️ 第二条不能拿 busyness 代替，实测栽过两次：
+///
+/// - 一开始系数是 0.22，最花的图也只到 0.52，而深色玻璃压在纯白上要 0.634。
+/// - 提到 0.40 之后还是不够——Cleo 那张黑底骷髅壁纸的 busyness 只有 0.22
+///   （缩略图上绝大多数像素是黑的，标准差自然小），alpha 只到 0.39，
+///   骷髅的高光从书卡里透出来，量出来书名只有 1.9:1。
+///
+/// **「花不花」和「能有多亮」是两件事。** 一小块高光推不高标准差，却足以让
+/// 一整行字看不见。观感归 busyness 管，可读性归 extreme 管，谁也替不了谁。
+///
+/// 悬浮那档（导航条）再厚 0.06：它糊的是正在滚动的真实内容，不是静止的壁纸。
+double glassAlpha({
+  required double busyness,
+  required bool floating,
+  required double extreme,
+  required bool lightGlass,
+}) {
+  final look = 0.30 + busyness * 0.40;
+  final base = lightGlass ? glassBaseLight : glassBaseDark;
+  final text = lightGlass ? _textOnLightGlass : _textOnDarkGlass;
+  // 把最极端处当成一块同亮度的灰来合成。真实像素当然有色相，但对比度只看
+  // 亮度，用灰做代理算出来的门槛和真值差不了多少，还省掉一次全图采样。
+  final under = _grayOf(extreme);
+
+  var lo = 0.0, hi = 1.0;
+  for (var i = 0; i < 14; i++) {
+    final mid = (lo + hi) / 2;
+    if (_contrast(_composite(base, under, mid), text) < 4.5) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  final readable = hi;
+
+  final alpha = look > readable ? look : readable;
+  return (floating ? alpha + 0.06 : alpha).clamp(0.0, 0.92);
+}
+
+Color _grayOf(double luminance) {
+  // 二分出相对亮度等于 luminance 的那一档灰
+  var lo = 0.0, hi = 1.0;
+  for (var i = 0; i < 14; i++) {
+    final mid = (lo + hi) / 2;
+    if (Color.from(alpha: 1, red: mid, green: mid, blue: mid)
+            .computeLuminance() <
+        luminance) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  final v = (lo + hi) / 2;
+  return Color.from(alpha: 1, red: v, green: v, blue: v);
+}
+
+Color _composite(Color base, Color under, double alpha) => Color.from(
+  alpha: 1,
+  red: base.r * alpha + under.r * (1 - alpha),
+  green: base.g * alpha + under.g * (1 - alpha),
+  blue: base.b * alpha + under.b * (1 - alpha),
+);
+
+double _contrast(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  final hi = la > lb ? la : lb;
+  final lo = la > lb ? lb : la;
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 class GlassSurface extends StatelessWidget {
   final Widget child;
   final BorderRadius borderRadius;
@@ -44,23 +132,29 @@ class GlassSurface extends StatelessWidget {
   /// 值得比卡片再厚一点、模糊再大一点，免得滚动时底下的字糊成一团噪点。
   final bool floating;
 
+  /// 背景图的亮端 / 暗端（相对亮度）。见 `BackgroundProvider.backgroundPeak`。
+  final double peak;
+  final double trough;
+
   const GlassSurface({
     super.key,
     required this.child,
     required this.borderRadius,
     required this.busyness,
     required this.lightBackground,
+    required this.peak,
+    required this.trough,
     this.tint,
     this.floating = false,
   });
 
-  /// 三档实验值里选的中间那档（alpha .34 / blur 44），再按 busyness 上浮。
-  /// 渐变底（busyness≈0）落在 .30，最花的图落在 .52——那正是「稳但像贴纸」
-  /// 那一档，此时本来也该稳优先。
-  double get _alpha {
-    final base = 0.30 + busyness * 0.22;
-    return floating ? (base + 0.06).clamp(0.0, 0.62) : base;
-  }
+  double get _alpha => glassAlpha(
+    busyness: busyness,
+    floating: floating,
+    // 亮玻璃怕的是图上最暗的地方，暗玻璃怕的是最亮的地方。
+    extreme: lightBackground ? trough : peak,
+    lightGlass: lightBackground,
+  );
 
   double get _blur => floating ? 46 : 44;
 
@@ -72,7 +166,7 @@ class GlassSurface extends StatelessWidget {
     // 亮底那条描边是**纯白**，转色相是恒等变换，不用绕这一趟。
     final tone = AppTone.of(context);
     final base = tone.shift(
-      lightBackground ? const Color(0xFFFFFDFB) : const Color(0xFF1A1410),
+      lightBackground ? glassBaseLight : glassBaseDark,
     );
     final line =
         lightBackground

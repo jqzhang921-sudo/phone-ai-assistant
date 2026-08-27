@@ -190,11 +190,30 @@ class BackgroundProvider extends ChangeNotifier {
   /// 比它亮用深字，比它暗用浅字，两边都不会踩到读不清的一侧。
   static const double _midLuminance = 0.179;
 
-  /// 从背景图里读出来的三个值。一次采样全算完，别为了其中一个再解一遍图。
+  /// 背景图最亮的地方有多亮 / 最暗的地方有多暗（相对亮度 0–1）。
+  ///
+  /// 取 p95 / p05，不取最大最小值：一两个高光像素不该让整块玻璃变成实心板。
+  ///
+  /// ⚠️ 这两个值**不能用 [backgroundBusyness] 代替**，实测栽过：那张黑底
+  /// 骷髅壁纸，32×32 缩略图上绝大多数像素是黑的，亮度标准差只有 0.05 上下，
+  /// busyness ≈ 0.22；可骷髅的高光是真的亮，从书卡里透出来，书名压在上面
+  /// 只剩 1.9:1。**「花不花」和「能有多亮」是两件事**——一小块高光推不高
+  /// 标准差，却足以让一整行字看不见。
+  double get backgroundPeak => _stats?.peak ?? 1;
+  double get backgroundTrough => _stats?.trough ?? 0;
+
+  /// 从背景图里读出来的几个值。一次采样全算完，别为了其中一个再解一遍图。
   ///
   /// [average] 只用来定前景色深浅（老用法）。另外两个是玻璃主题要的：
   /// [accent] 让强调色跟着背景走，[busyness] 决定玻璃要多厚才压得住。
-  ({ui.Color average, ui.Color? accent, double busyness})? _stats;
+  ({
+    ui.Color average,
+    ui.Color? accent,
+    double busyness,
+    double peak,
+    double trough,
+  })?
+  _stats;
 
   /// 背景图给出的强调色。没有背景图、或图本身没有明确色相时是 null，
   /// 调用方回落到主题里那个棕色。
@@ -206,10 +225,17 @@ class BackgroundProvider extends ChangeNotifier {
   /// 否则文字压在细节上读不清。没有背景图时返回 0（那时候也用不上）。
   double get backgroundBusyness => _stats?.busyness ?? 0;
 
-  /// 解一次 32×32，把平均色、强调色、花乱程度一起算出来。
-  Future<({ui.Color average, ui.Color? accent, double busyness})?> _analyze(
-    String path,
-  ) async {
+  /// 解一次 32×32，把平均色、强调色、花乱程度、亮端暗端一起算出来。
+  Future<
+    ({
+      ui.Color average,
+      ui.Color? accent,
+      double busyness,
+      double peak,
+      double trough,
+    })?
+  >
+  _analyze(String path) async {
     try {
       final bytes = await File(path).readAsBytes();
       final codec = await ui.instantiateImageCodec(
@@ -237,6 +263,7 @@ class BackgroundProvider extends ChangeNotifier {
       // 详见 `config/oklab.dart`。
       var hx = 0.0, hy = 0.0, weightSum = 0.0;
       final lums = <double>[];
+      final trueLums = <double>[];
 
       for (var i = 0; i < n; i++) {
         final pr = data.getUint8(i * 4);
@@ -254,7 +281,22 @@ class BackgroundProvider extends ChangeNotifier {
         weightSum += w;
 
         lums.add((0.2126 * pr + 0.7152 * pg + 0.0722 * pb) / 255);
+        // busyness 用的是上面那个 luma（够用，且它的门槛是照着 luma 定的）；
+        // 亮端暗端要拿去算对比度，必须是真的相对亮度，得先做 sRGB 反伽马。
+        trueLums.add(px.computeLuminance());
       }
+      trueLums.sort();
+      // 取第三亮 / 第三暗，不是 p95/p05。
+      //
+      // 32×32 的每个采样点已经是原图 34×73 一整块的平均值——那个尺度就约等于
+      // 一张卡片压住的面积。所以「最亮的那几个采样点」问的正是「卡片可能压在
+      // 多亮的一块上」。p95（1024 个里的第 51 亮）完全够不着：那张黑底骷髅
+      // 壁纸的高光实测接近纯白，p95 却只有 0.35 上下，算出来的 alpha 和不管
+      // 亮端时一模一样，书卡该透还是透。
+      //
+      // 跳掉最亮最暗各两个，防单点高光/死黑把整块玻璃顶成实心板。
+      final peak = trueLums[trueLums.length - 3];
+      final trough = trueLums[2];
 
       final average = ui.Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
 
@@ -291,7 +333,13 @@ class BackgroundProvider extends ChangeNotifier {
         accent = fromOklch(0.86, chroma, hue);
       }
 
-      return (average: average, accent: accent, busyness: busyness);
+      return (
+        average: average,
+        accent: accent,
+        busyness: busyness,
+        peak: peak,
+        trough: trough,
+      );
     } catch (_) {
       return null;
     }

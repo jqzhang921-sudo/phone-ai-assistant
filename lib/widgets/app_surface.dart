@@ -66,6 +66,8 @@ class AppSurface extends StatelessWidget {
       return GlassSurface(
         borderRadius: borderRadius,
         busyness: bg.backgroundBusyness,
+        peak: bg.backgroundPeak,
+        trough: bg.backgroundTrough,
         // darkForeground 为 true 表示背景偏亮、字要用深色——那时候玻璃也该是白的。
         lightBackground: bg.darkForeground ?? !dark,
         tint: bg.backgroundAccent,
