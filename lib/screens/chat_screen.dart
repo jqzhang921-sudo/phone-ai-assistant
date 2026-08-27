@@ -12,6 +12,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../widgets/app_surface.dart';
 import '../widgets/typing_indicator.dart';
 import 'persona_screen.dart';
 import '../config/app_tab.dart';
@@ -1270,14 +1271,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final scheme = theme.colorScheme;
     return Expanded(
       // 阴影画在 Material 外面：Material 的 elevation 出来偏灰，
-      // 用 DecoratedBox 兜住 AppShadow，水波纹还归 Material 管。
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          boxShadow: AppShadow.soften(theme.brightness == Brightness.dark),
-        ),
+      // AppSurface 负责底（玻璃或实心），Material 透明浮在上面只管水波纹。
+      // 不能反过来让 Material 上色——那会盖掉玻璃。
+      child: AppSurface(
+        borderRadius: AppRadius.mdAll,
         child: Material(
-          color: scheme.surfaceContainerLow,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.md),
           child: InkWell(
             borderRadius: BorderRadius.circular(AppRadius.md),
@@ -1993,14 +1992,8 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
         // 我想说
-        Container(
-          width: double.infinity,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.xl),
-            boxShadow: AppShadow.soften(dark),
-          ),
+        AppSurface(
+          borderRadius: AppRadius.xlAll,
           child: Stack(
             children: [
               // 右上角压一枚徽标淡印。全 App 就这里和聊天页底层两处有材质，
@@ -2243,60 +2236,79 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-          child: Material(
-            // 置顶用主题自己的淡底，未置顶用卡片底色。
-            //
-            // 原来这里写死了 Colors.white，深色模式下白卡配近白的
-            // onSurface 文字，几乎读不出来；置顶那档又用
-            // `primaryContainer.withValues(alpha: 0.92)` —— withValues 是
-            // **替换** alpha 不是叠加，深色下 18% 的浅棕被拉到 92% 不透明，
-            // 就成了一块很响的实色。两处都交回给 scheme。
-            color:
-                pinned ? scheme.primaryContainer : scheme.surfaceContainerLow,
-            elevation: 0,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            child: ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-              title: Text(
-                conv.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: pinned ? scheme.onPrimaryContainer : scheme.onSurface,
-                ),
-              ),
-              subtitle: Text(
-                '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color:
-                      pinned
-                          ? scheme.onPrimaryContainer.withValues(alpha: 0.75)
-                          : scheme.onSurfaceVariant,
-                ),
-              ),
-              // 只做状态标记，操作都在左滑里，所以不再可点
-              trailing:
+          // 置顶那档的淡底跟着背景走：贴了背景图时用从图里取的色相，
+          // 没有就回落到主题的 primaryContainer（徽标棕）。
+          //
+          // 不这么做的话，粉色背景上会冒出一块棕色的置顶卡——整屏最重的
+          // 一块，比「我想说」还抢。真机上一眼就看出来了。
+          child: AppSurface(
+            borderRadius: AppRadius.mdAll,
+            solidColor: pinned ? _pinnedTint(context, scheme) : null,
+            child: Material(
+              color:
                   pinned
-                      ? Icon(
-                        PhosphorIconsFill.pushPin,
-                        size: 16,
-                        color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
-                      )
-                      : null,
-              onTap: () => _switchConversation(conv),
-              onLongPress: () {
-                HapticFeedback.mediumImpact();
-                _showRenameConversationDialog(conv);
-              },
+                      ? _pinnedTint(context, scheme).withValues(alpha: 0.55)
+                      : Colors.transparent,
+              elevation: 0,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                title: Text(
+                  conv.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color:
+                        pinned ? scheme.onPrimaryContainer : scheme.onSurface,
+                  ),
+                ),
+                subtitle: Text(
+                  '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color:
+                        pinned
+                            ? scheme.onPrimaryContainer.withValues(alpha: 0.75)
+                            : scheme.onSurfaceVariant,
+                  ),
+                ),
+                // 只做状态标记，操作都在左滑里，所以不再可点
+                trailing:
+                    pinned
+                        ? Icon(
+                          PhosphorIconsFill.pushPin,
+                          size: 16,
+                          color: scheme.onPrimaryContainer.withValues(
+                            alpha: 0.8,
+                          ),
+                        )
+                        : null,
+                onTap: () => _switchConversation(conv),
+                onLongPress: () {
+                  HapticFeedback.mediumImpact();
+                  _showRenameConversationDialog(conv);
+                },
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// 置顶卡片的淡底。贴了背景图就用从图里取的色相，否则回落到主题的
+  /// primaryContainer（徽标棕）。
+  ///
+  /// 强调色只借背景的**色相**，饱和度和明度锁在固定档位（见
+  /// `BackgroundProvider._analyze`）——这样换任何背景，它的视觉重量都一样，
+  /// 不会有的图上跳出来、有的图上看不见。
+  Color _pinnedTint(BuildContext context, ColorScheme scheme) {
+    final accent = context.watch<BackgroundProvider>().backgroundAccent;
+    if (accent == null) return scheme.primaryContainer;
+    return accent.withValues(alpha: 0.22);
   }
 
   String _shortTime(DateTime dt) {

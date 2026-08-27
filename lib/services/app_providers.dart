@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../config/settings.dart';
@@ -165,15 +166,36 @@ class BackgroundProvider extends ChangeNotifier {
     // 后果：选过深色预设之后切浅色主题，四个页面（主页 / 聊天 / 书架 / 栖息）
     // 的标题栏全是白字压奶白底，几乎看不见。2026-08-27 实测复现。
     if (path != null) {
-      final avg = await _averageColor(path);
+      _stats = await _analyze(path);
+      final avg = _stats?.average;
       _darkForeground = avg == null || avg.computeLuminance() > 0.5;
     } else {
+      _stats = null;
       _darkForeground = null;
     }
     notifyListeners();
   }
 
-  Future<ui.Color?> _averageColor(String path) async {
+  /// 从背景图里读出来的三个值。一次采样全算完，别为了其中一个再解一遍图。
+  ///
+  /// [average] 只用来定前景色深浅（老用法）。另外两个是玻璃主题要的：
+  /// [accent] 让强调色跟着背景走，[busyness] 决定玻璃要多厚才压得住。
+  ({ui.Color average, ui.Color? accent, double busyness})? _stats;
+
+  /// 背景图给出的强调色。没有背景图、或图本身没有明确色相时是 null，
+  /// 调用方回落到主题里那个棕色。
+  ui.Color? get backgroundAccent => _stats?.accent;
+
+  /// 背景「花不花」：0 = 一整块纯色，1 = 到处都是细节。
+  ///
+  /// 玻璃卡片的不透明度按它走——渐变底可以很通透，有雨丝伞骨的图就得厚一点，
+  /// 否则文字压在细节上读不清。没有背景图时返回 0（那时候也用不上）。
+  double get backgroundBusyness => _stats?.busyness ?? 0;
+
+  /// 解一次 32×32，把平均色、强调色、花乱程度一起算出来。
+  Future<({ui.Color average, ui.Color? accent, double busyness})?> _analyze(
+    String path,
+  ) async {
     try {
       final bytes = await File(path).readAsBytes();
       final codec = await ui.instantiateImageCodec(
@@ -186,14 +208,63 @@ class BackgroundProvider extends ChangeNotifier {
       final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
       img.dispose();
       if (data == null) return null;
-      var r = 0, g = 0, b = 0;
+
       final n = data.lengthInBytes ~/ 4;
+      var r = 0, g = 0, b = 0;
+      // 色相用向量平均，不能直接对角度取平均——359° 和 1° 的平均是 180°，
+      // 那是完全相反的颜色。按饱和度加权：灰的像素对「这张图什么色」没有发言权。
+      var hx = 0.0, hy = 0.0, satWeight = 0.0;
+      final lums = <double>[];
+
       for (var i = 0; i < n; i++) {
-        r += data.getUint8(i * 4);
-        g += data.getUint8(i * 4 + 1);
-        b += data.getUint8(i * 4 + 2);
+        final pr = data.getUint8(i * 4);
+        final pg = data.getUint8(i * 4 + 1);
+        final pb = data.getUint8(i * 4 + 2);
+        r += pr;
+        g += pg;
+        b += pb;
+
+        final hsv = HSVColor.fromColor(ui.Color.fromARGB(255, pr, pg, pb));
+        final w = hsv.saturation;
+        final rad = hsv.hue * math.pi / 180;
+        hx += math.cos(rad) * w;
+        hy += math.sin(rad) * w;
+        satWeight += w;
+
+        lums.add((0.2126 * pr + 0.7152 * pg + 0.0722 * pb) / 255);
       }
-      return ui.Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
+
+      final average = ui.Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
+
+      // 亮度的标准差就是「花不花」：渐变底几乎没有起伏，带图案的会明显跳。
+      // 0.22 是把七张实际壁纸跑过之后定的分界——渐变都在 0.05 以下，
+      // 有雨伞那张 0.18 上下，兔子那张最花。
+      final mean = lums.reduce((a, c) => a + c) / lums.length;
+      final variance =
+          lums.map((l) => (l - mean) * (l - mean)).reduce((a, c) => a + c) /
+          lums.length;
+      final busyness = (math.sqrt(variance) / 0.22).clamp(0.0, 1.0);
+
+      // 真的没有色相可言（近乎黑白）才放弃，回落到徽标棕。
+      //
+      // ⚠️ 门槛原来是 0.06，把「淡」和「灰」当成了一回事——Cleo 那张粉白渐变
+      // 壁纸有明确的粉色相，只是饱和度低，结果过不了线，置顶卡片在粉色背景上
+      // 冒出一块棕。淡不等于没有颜色。
+      final avgSat = satWeight / n;
+      ui.Color? accent;
+      if (avgSat > 0.02) {
+        var hue = math.atan2(hy, hx) * 180 / math.pi;
+        if (hue < 0) hue += 360;
+        // 只借**色相**，明度锁死——这样换任何背景，强调色的视觉重量都一样，
+        // 不会有的图上跳出来、有的图上看不见。
+        //
+        // 饱和度跟着原图走一点：从一张淡粉壁纸里取出一块艳粉，会比棕色更突兀。
+        // 上限 0.35（徽标棕的档位），下限 0.14——再低就看不出是个颜色了。
+        final sat = (avgSat * 2.2).clamp(0.14, 0.35);
+        accent = HSVColor.fromAHSV(1, hue, sat, 0.85).toColor();
+      }
+
+      return (average: average, accent: accent, busyness: busyness);
     } catch (_) {
       return null;
     }

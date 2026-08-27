@@ -37,6 +37,7 @@ class AppSettings {
   static const _calendarAccessKey = 'calendar_access';
   static const _personaKey = 'global_persona';
   static const _personaEnabledKey = 'global_persona_enabled';
+  static const _glassSurfaceKey = 'glass_surface';
 
   // ElevenLabs — key stored in secure storage
   static const _elevenLabsKeyKey = 'elevenlabs_api_key';
@@ -85,6 +86,16 @@ class AppSettings {
   /// 对话自己的永远赢——用户在那段对话里明确改过，不该被一个全局开关推翻。
   String persona;
 
+  /// 毛玻璃表面。默认关。
+  ///
+  /// **不是 [themeMode] 的第四档** —— 深浅和「表面是不是透明」是两个维度，
+  /// 玻璃可以配深色也可以配浅色。所以单独一个开关。
+  ///
+  /// ⚠️ 它**依赖背景图**：没有图的时候底下是一整块 `scheme.surface` 纯色，
+  /// 糊一层纯色还是同一个颜色，白付 GPU。设置页里必须把这个前提说在前面，
+  /// 否则用户打开之后会觉得「怎么没变化」。
+  bool glassSurface;
+
   /// 默认关。开着才用 [persona]。
   ///
   /// 分成「文本」和「开关」两个字段，而不是「空字符串等于关」：这样关掉之后
@@ -109,6 +120,7 @@ class AppSettings {
     this.calendarAccess = CalendarAccess.ask,
     this.persona = '',
     this.personaEnabled = false,
+    this.glassSurface = false,
   });
 
   /// 性格描述的字数上限，手写和导入文件同一个数。
@@ -159,6 +171,7 @@ class AppSettings {
       aiSelfFavorite: prefs.getBool(_aiSelfFavoriteKey) ?? false,
       persona: prefs.getString(_personaKey) ?? '',
       personaEnabled: prefs.getBool(_personaEnabledKey) ?? false,
+      glassSurface: prefs.getBool(_glassSurfaceKey) ?? false,
       calendarAccess: CalendarAccess.values.firstWhere(
         (v) => v.name == prefs.getString(_calendarAccessKey),
         orElse: () => CalendarAccess.ask,
@@ -184,6 +197,7 @@ class AppSettings {
     await prefs.setString(_userNameKey, userName);
     await prefs.setString(_personaKey, persona);
     await prefs.setBool(_personaEnabledKey, personaEnabled);
+    await prefs.setBool(_glassSurfaceKey, glassSurface);
     await prefs.setString(_aiNameKey, aiName);
     await prefs.setBool(_ttsAutoPlayKey, ttsAutoPlay);
     await prefs.setBool(_titleSerifKey, titleSerif);

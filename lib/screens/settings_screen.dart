@@ -402,8 +402,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: _backgroundLabel,
               primary: true,
               onTap: () async {
-                await showBackgroundSheet(context);
+                // 在任何 await 之前取——之后 context 就可能失效了。
+                final bgProvider = context.read<BackgroundProvider>();
+                final changed = await showBackgroundSheet(context);
                 await _loadBackgroundLabel();
+                // 改完必须通知 BackgroundProvider 重新解析——它算的
+                // darkForeground / 强调色 / busyness 全靠这一下。
+                //
+                // 原来这里只刷新了本页那行标签，provider 完全不知道背景变了：
+                // 图存进去了，但 bg.path 还是 null，玻璃表面据此判定「没有背景图」
+                // 一直走实心分支。症状是「设了背景却毫无反应」，重启 App 才生效
+                // （home_shell.initState 会重读一次）。
+                //
+                // 聊天页那条路径一直是对的（onBackgroundChanged 回调），
+                // 只有设置页这条漏了。
+                if (!changed || !mounted) return;
+                final path = await StorageService.getBackgroundImagePath();
+                final preset = await StorageService.getBackgroundPreset();
+                await bgProvider.update(path, preset);
               },
             ),
             _row(
@@ -440,6 +456,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: '深色模式',
               value: _themeModeLabel,
               onTap: _pickThemeMode,
+            ),
+            // 玻璃不是「深色模式」的第四档——深浅和「表面透不透」是两个维度，
+            // 玻璃可以配深色也可以配浅色，所以单独一个开关。
+            //
+            // 副标题按有没有背景图分两种说法：没图的时候必须把前提讲在前面，
+            // 否则用户打开之后会觉得「怎么没变化」——那时候底下是一整块纯色，
+            // 糊它得到的还是同一个颜色。
+            _switchRow(
+              theme,
+              icon: PhosphorIconsRegular.drop,
+              title: '毛玻璃',
+              subtitle:
+                  context.watch<BackgroundProvider>().path == null
+                      ? '要先选一张背景图才看得出效果'
+                      : '卡片半透明，透出底下的背景',
+              value: _settings.glassSurface,
+              onChanged: (v) async {
+                setState(() => _settings.glassSurface = v);
+                await _settings.save();
+              },
             ),
           ]),
 

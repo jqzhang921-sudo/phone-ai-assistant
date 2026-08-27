@@ -9,6 +9,7 @@ import 'chat_screen.dart';
 import 'bookshelf_screen.dart';
 import 'habitat_screen.dart';
 import '../config/app_shape.dart';
+import '../widgets/app_surface.dart';
 
 /// App 一级页面容器：底部导航 + IndexedStack。
 class HomeShell extends StatefulWidget {
@@ -21,7 +22,6 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   bool _hideNav = false;
-  String? _backgroundImagePath;
 
   @override
   void initState() {
@@ -29,16 +29,16 @@ class _HomeShellState extends State<HomeShell> {
     _loadBackground();
   }
 
+  /// 把存储里的背景喂给 provider。启动时跑一次；聊天页改完背景也回调这里。
+  ///
+  /// 不再往本 State 里存一份路径——画背景直接读 provider，见
+  /// [_buildBackgroundDecoration]。
   Future<void> _loadBackground() async {
     final bgProvider = context.read<BackgroundProvider>();
     final path = await StorageService.getBackgroundImagePath();
     final preset = await StorageService.getBackgroundPreset();
-    if (mounted) {
-      setState(() {
-        _backgroundImagePath = path;
-      });
-      await bgProvider.update(path, preset);
-    }
+    if (!mounted) return;
+    await bgProvider.update(path, preset);
   }
 
   /// 切 tab 的唯一入口——底部导航和 [_switchTo] 都走这里。
@@ -95,13 +95,19 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// 背景图只认 [BackgroundProvider] 那一份。
+  ///
+  /// 原来这里读的是本 State 的 `_backgroundImagePath`，于是同一个状态存了两份：
+  /// 一份在这儿负责画，一份在 provider 里负责算前景色。设置页改完背景只更新了
+  /// 存储，两份都不知道——图不显示、玻璃也判定「没有背景图」，看起来就是
+  /// 「设了背景毫无反应」，重启才好。
+  ///
+  /// 收口成一份之后，谁改的背景都不重要，provider 一 notify 这里就重画。
   BoxDecoration _buildBackgroundDecoration(ColorScheme scheme) {
-    if (_backgroundImagePath != null) {
+    final path = context.watch<BackgroundProvider>().path;
+    if (path != null) {
       return BoxDecoration(
-        image: DecorationImage(
-          image: FileImage(File(_backgroundImagePath!)),
-          fit: BoxFit.cover,
-        ),
+        image: DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover),
       );
     }
     // 这两档是「不管主题是深是浅，我就要这个底色」的显式选择，
@@ -123,29 +129,38 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Widget _buildFloatingNav(ColorScheme scheme) {
-    final isDark = scheme.brightness == Brightness.dark;
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Container(
+        // 导航条是玻璃最名副其实的地方：内容真的从它底下滚过去，
+        // 糊的是活的东西，不是一块纯色。AppSurface 会自己判断——
+        // 玻璃关着或者没贴背景图就退回原来的实心 + 阴影。
+        child: SizedBox(
           height: 50,
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            boxShadow: AppShadow.softenFloating(isDark),
-          ),
-          child: Row(
-            children: [
-              // 三个元素长宽比不同，高度按视觉重量对齐，不要都设成同一个数。
-              _navItem(0, 'cat', 17, '主页', scheme),
-              _navItem(1, 'books', 16, '书架', scheme),
-              _navItem(2, 'mountain', 13, '栖息', scheme),
-            ],
+          child: AppSurface(
+            borderRadius: AppRadius.pillAll,
+            floating: true,
+            child: Row(
+              children: [
+                // 三个元素长宽比不同，高度按视觉重量对齐，不要都设成同一个数。
+                _navItem(0, 'cat', 17, '主页', scheme),
+                _navItem(1, 'books', 16, '书架', scheme),
+                _navItem(2, 'mountain', 13, '栖息', scheme),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  /// 选中态的淡底。跟 chat_screen 里置顶卡片是同一套逻辑：
+  /// 有背景图就借它的色相，没有就用主题的 primaryContainer。
+  Color _selectedTint(BuildContext context, ColorScheme scheme) {
+    final accent = context.watch<BackgroundProvider>().backgroundAccent;
+    if (accent == null) return scheme.primaryContainer;
+    return accent.withValues(alpha: 0.26);
   }
 
   Widget _navItem(
@@ -165,9 +180,12 @@ class _HomeShellState extends State<HomeShell> {
           curve: Curves.easeOut,
           margin: const EdgeInsets.all(5),
           decoration: BoxDecoration(
-            // 选中底用 primaryContainer 淡棕，不用实色主色——
-            // 实色太重，会跟页面顶部的棕色元素抢。
-            color: selected ? scheme.primaryContainer : Colors.transparent,
+            // 选中底用淡底，不用实色主色——实色太重，会跟页面顶部的棕色元素抢。
+            //
+            // 贴了背景图时色相跟着图走：粉色壁纸上留一块棕色胶囊，是整屏
+            // 唯一跑调的东西。没有背景图就回落到 primaryContainer（徽标棕）。
+            color:
+                selected ? _selectedTint(context, scheme) : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: Column(
