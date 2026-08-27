@@ -2,6 +2,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../config/app_theme.dart';
+
 /// 毛玻璃表面。玻璃主题下卡片、导航条、标题栏都走它。
 ///
 /// ## 什么时候它是有意义的
@@ -64,12 +66,18 @@ class GlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base =
-        lightBackground ? const Color(0xFFFFFDFB) : const Color(0xFF1A1410);
+    // 玻璃本身也是暖色的（暖白 / 暖黑），跟着 tone 转——不然卡片透出粉色，
+    // 玻璃那层却还带着棕味，透出来的颜色会发脏。
+    //
+    // 亮底那条描边是**纯白**，转色相是恒等变换，不用绕这一趟。
+    final tone = AppTone.of(context);
+    final base = tone.shift(
+      lightBackground ? const Color(0xFFFFFDFB) : const Color(0xFF1A1410),
+    );
     final line =
         lightBackground
             ? Colors.white.withValues(alpha: 0.52)
-            : const Color(0xFFF2EAE0).withValues(alpha: 0.14);
+            : tone.shift(const Color(0xFFF2EAE0)).withValues(alpha: 0.14);
 
     return ClipRRect(
       borderRadius: borderRadius,

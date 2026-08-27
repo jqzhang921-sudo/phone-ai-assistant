@@ -10,6 +10,7 @@ import '../models/musing_entry.dart';
 import '../services/app_providers.dart';
 import '../services/tts_service.dart';
 import '../config/app_shape.dart';
+import '../config/app_theme.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
@@ -44,14 +45,23 @@ class MessageBubble extends StatelessWidget {
     //
     // 深色透得多一点（水印在暗底上本来就更显），浅色收着些：
     // 白卡在奶白底上本来就只差一点亮度，再透就分不出来了。
-    final bgColor =
-        isUser
-            ? (dark ? const Color(0x26D9B48F) : const Color(0x99E2DACE))
-            : (dark ? const Color(0xC7251F1A) : const Color(0xE6FFFFFF));
+    //
+    // 这四个值是写死的暖棕，不走 ColorScheme——玻璃主题下卡片已经透出粉色
+    // 壁纸了，气泡还是棕的，Cleo 说「气泡不太应景」指的就是这里。所以每个
+    // 都过一遍 tone。**只转写死的那几个**：`scheme.onSurface` 在建主题时
+    // 已经转过一遍，再转就是转两次，会跑到别的色相上去。
+    final tone = AppTone.of(context);
+    final bgColor = tone.shift(
+      isUser
+          ? (dark ? const Color(0x26D9B48F) : const Color(0x99E2DACE))
+          : (dark ? const Color(0xC7251F1A) : const Color(0xE6FFFFFF)),
+    );
     final textColor =
         isUser
-            ? (dark ? const Color(0xFFEBD9C4) : const Color(0xFF4A3320))
-            : (dark ? const Color(0xFFE8DFD4) : scheme.onSurface);
+            ? tone.shift(
+              dark ? const Color(0xFFEBD9C4) : const Color(0xFF4A3320),
+            )
+            : (dark ? tone.shift(const Color(0xFFE8DFD4)) : scheme.onSurface);
 
     // 尖角落在靠头像那一侧的**上角**。
     //

@@ -101,6 +101,22 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
     }
   }
 
+  /// 这一轮该用什么色调建主题。
+  ///
+  /// 判断条件**必须和 `AppSurface` 画不画玻璃那三条对齐**：玻璃关着却把整套
+  /// 配色旋到粉色，那是第三种状态，谁也没要过。所以这里也是「玻璃开 +
+  /// 真的贴了背景图」，少一条就回原来那套棕。
+  ///
+  /// 这样「玻璃主题」才是一个完整可选的东西：开 = 卡片透 + 颜色跟着壁纸；
+  /// 关 = Cleo 原来调好的暖棕主题，一个像素都不变。
+  AppTone _toneFor(AppSettings s, BackgroundProvider bg) {
+    if (!s.glassSurface || bg.path == null) return AppTone.none;
+    // 图是黑白的（解不出色相）——退回棕色同样出戏，改用中性色调。
+    final accent = bg.backgroundAccent;
+    if (accent == null) return AppTone.neutral;
+    return AppTone.towards(accent);
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<AppSettings>(
@@ -109,18 +125,20 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
         final settings = snapshot.data ?? AppSettings();
         context.read<SettingsProvider>().setSettings(settings);
 
-        return Consumer<SettingsProvider>(
-          builder: (context, sp, _) {
+        // 背景图也要参与建主题：玻璃主题下整套配色跟着背景色相走。
+        return Consumer2<SettingsProvider, BackgroundProvider>(
+          builder: (context, sp, bg, _) {
             final s = sp.settings ?? settings;
             final titleSerif = s.titleSerif;
+            final tone = _toneFor(s, bg);
             return MaterialApp(
               title: '手机 AI 助手',
               // 工具是不带 context 的静态函数，但有些工具需要当场问用户
               // （比如读日历）。给它们一个能挂弹框的地方。
               navigatorKey: appNavigatorKey,
               debugShowCheckedModeBanner: false,
-              theme: AppTheme.lightWith(titleSerif: titleSerif),
-              darkTheme: AppTheme.darkWith(titleSerif: titleSerif),
+              theme: AppTheme.lightWith(titleSerif: titleSerif, tone: tone),
+              darkTheme: AppTheme.darkWith(titleSerif: titleSerif, tone: tone),
               themeMode: s.themeMode,
               home: const HomeShell(),
             );

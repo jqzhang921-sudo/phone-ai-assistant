@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_theme.dart';
+
 /// 垫在列表底下的徽标水印。
 ///
 /// 这是全 App 唯一的材质层，补的就是「全是纯色块、没有任何质感」那一条。
@@ -35,9 +37,13 @@ class MarkBackdrop extends StatelessWidget {
                   'assets/mark-full.png',
                   width: width,
                   // 深色用品牌奶白（背景色那档），不是主文字色——
-                  // 它是纸的颜色，不是字的颜色
-                  color:
-                      dark ? const Color(0xFFFDF8F1) : const Color(0xFF8B5E34),
+                  // 它是纸的颜色，不是字的颜色。
+                  //
+                  // 也跟着 tone 转：它压在整页最底下，一片棕味的水印会把
+                  // 上面所有透明表面一起带偏。
+                  color: AppTone.of(context).shift(
+                    dark ? const Color(0xFFFDF8F1) : AppTheme.brandBrown,
+                  ),
                 ),
               ),
             ),
