@@ -1319,8 +1319,19 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
 
   Widget _placeholderCover(ThemeData theme, Book book) {
     final scheme = theme.colorScheme;
+    // ⚠️ 不能直接用 scheme.primaryContainer 当底。深色那一档是 `0x2ED9B48F`
+    // ——**18% 透明度**，当初是给选中态的淡底设计的（实色主色做选中底太重）。
+    // 封面「直接落在页面底色上」，平时垫着的是一整块 scheme.surface，所以看着
+    // 像实色；一旦贴了背景图，垫着的变成照片，18% 就等于没有底：Cleo 说
+    // 「书本这里透明度有点点高」「只有这种黑色的是透明的，其他的好像都是实心的」
+    // ——浅色模式下这个 token 是实色 #EFE3D4，所以只有深色壁纸才暴露。
+    //
+    // 合成到 surface 上：没有背景图时和原来一模一样（本来就是压在它上面的），
+    // 有背景图时不再依赖底下是什么。
     return Container(
-      decoration: BoxDecoration(color: scheme.primaryContainer),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(scheme.primaryContainer, scheme.surface),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(10),
         child: Column(
