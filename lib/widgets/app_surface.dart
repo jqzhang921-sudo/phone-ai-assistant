@@ -38,12 +38,9 @@ class AppSurface extends StatelessWidget {
     this.solidColor,
   });
 
-  const AppSurface.card({
-    super.key,
-    required this.child,
-    this.solidColor,
-  }) : borderRadius = AppRadius.lgAll,
-       floating = false;
+  const AppSurface.card({super.key, required this.child, this.solidColor})
+    : borderRadius = AppRadius.lgAll,
+      floating = false;
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +53,16 @@ class AppSurface extends StatelessWidget {
     final glassOn = settings?.glassSurface ?? false;
 
     if (glassOn && bg.path != null) {
+      // 每张卡片糊自己背后那一块——**不能改成整页糊一次**。
+      //
+      // 试过那条路：在背景图和内容之间垫一层全屏模糊，卡片只留半透明。
+      // 滚动闪烁是没了，但它糊的是整张背景图，于是不管选什么壁纸最后都是
+      // 同一片雾，黑底粉兔子那张里兔子完全看不见。背景图存在的意义就是
+      // 要看见它，模糊只该发生在卡片背后。
+      //
+      // 滚动闪烁另有解法：ListView 默认给每个子项套 RepaintBoundary，
+      // 把卡片和它要采样的背景隔进了两个图层，于是滚动时采样跟不上位移。
+      // 调用方在滚动列表里用它时要传 addRepaintBoundaries: false。
       return GlassSurface(
         borderRadius: borderRadius,
         busyness: bg.backgroundBusyness,

@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -65,6 +66,14 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final decoration = _buildBackgroundDecoration(scheme);
+    // ⚠️ 别在这里加整页模糊。
+    //
+    // 试过一版：在背景图和内容之间垫一层全屏 BackdropFilter，卡片只留半透明。
+    // 它确实治好了滚动闪烁，但代价是**把背景图整个毁了**——糊的不只是卡片
+    // 背后那块，是整张图。于是不管选什么背景，最后都是同一片朦胧的雾，
+    // 黑底粉兔子那张里兔子完全看不见了。
+    //
+    // 背景图存在的意义就是要看见它。模糊必须只发生在卡片背后。
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(

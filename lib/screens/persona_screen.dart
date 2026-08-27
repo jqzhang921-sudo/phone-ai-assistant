@@ -126,16 +126,18 @@ class _PersonaScreenState extends State<PersonaScreen> {
       if (over > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('读进来了，但超出 ${AppSettings.maxPersonaChars} 字，末尾截掉了 $over 字'),
+            content: Text(
+              '读进来了，但超出 ${AppSettings.maxPersonaChars} 字，末尾截掉了 $over 字',
+            ),
             duration: const Duration(seconds: 3),
           ),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('读不出来：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('读不出来：$e')));
     } finally {
       if (mounted) setState(() => _importing = false);
     }

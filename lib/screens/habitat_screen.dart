@@ -8,6 +8,7 @@ import '../models/chat_message.dart';
 import '../models/letter.dart';
 import '../services/app_providers.dart';
 import '../services/letter_generator.dart';
+import '../widgets/app_surface.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
 import 'letter_screen.dart';
@@ -183,6 +184,9 @@ class _HabitatScreenState extends State<HabitatScreen> {
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        // 玻璃卡片要 BackdropFilter 采样身后的背景图，而每项默认套的
+        // RepaintBoundary 把两者隔进了不同图层，滚动时会「先透明再模糊」。
+        addRepaintBoundaries: false,
         children: [
           _statCard(theme),
           const SizedBox(height: 20),
@@ -260,13 +264,8 @@ class _HabitatScreenState extends State<HabitatScreen> {
       if (_letterCount > 0) '往来 $_letterCount 封信',
       if (_musingCount > 0) '收藏 $_musingCount 条',
     ];
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        boxShadow: AppShadow.soften(dark),
-      ),
+    return AppSurface(
+      borderRadius: AppRadius.xlAll,
       child: Stack(
         children: [
           Positioned(
@@ -462,13 +461,17 @@ class _HabitatScreenState extends State<HabitatScreen> {
     // 「有 N 封信在等你」——一句话比一层色差好认。
     final fg = scheme.onPrimary;
 
+    // 全 App 唯一的实色主色块，是「有事发生了」的信号（有信在等你），
+    // 所以保留分量。但颜色要跟着背景走——粉色壁纸上一块纯棕是整屏最跑调的
+    // 东西，Cleo 的截图里一眼就是它。
+    final accent = context.watch<BackgroundProvider>().backgroundAccent;
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.md),
         boxShadow: AppShadow.soften(scheme.brightness == Brightness.dark),
       ),
       child: Material(
-        color: scheme.primary,
+        color: accent ?? scheme.primary,
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -548,13 +551,10 @@ class _HabitatScreenState extends State<HabitatScreen> {
 
   Widget _rowGroup(ThemeData theme, List<_RowSpec> specs) {
     final scheme = theme.colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        boxShadow: AppShadow.soften(scheme.brightness == Brightness.dark),
-      ),
+    return AppSurface(
+      borderRadius: AppRadius.lgAll,
       child: Material(
-        color: scheme.surfaceContainerLow,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         clipBehavior: Clip.antiAlias,
         child: Column(

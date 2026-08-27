@@ -12,6 +12,7 @@ import '../models/book.dart';
 import '../services/discussion_group_service.dart';
 import '../services/app_providers.dart';
 import '../services/weread_service.dart';
+import '../widgets/app_surface.dart';
 import 'book_chat_screen.dart';
 import 'book_discussion_screen.dart';
 import 'multi_book_chat_screen.dart';
@@ -950,53 +951,49 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         // 不加副标题：下面那条分段控件已经把「全部 39 / 在读 5」写清楚了
         title: Text('我的书架', style: TextStyle(color: fgColor)),
         actions: [
-          Container(
+          SizedBox(
             height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              boxShadow: AppShadow.softenFloating(
-                theme.brightness == Brightness.dark,
+            child: AppSurface(
+              borderRadius: AppRadius.pillAll,
+              floating: true,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      _searchOpen
+                          ? PhosphorIconsRegular.magnifyingGlassMinus
+                          : PhosphorIconsRegular.magnifyingGlass,
+                      size: 20,
+                    ),
+                    tooltip: '搜索书架',
+                    onPressed: () {
+                      setState(() {
+                        _searchOpen = !_searchOpen;
+                        if (!_searchOpen) {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        }
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      PhosphorIconsRegular.chatCircleText,
+                      size: 20,
+                    ),
+                    tooltip: '发起讨论',
+                    onPressed: _books.isEmpty ? null : _showDiscussingDialog,
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      PhosphorIconsRegular.cloudArrowDown,
+                      size: 20,
+                    ),
+                    tooltip: '从微信读书导入',
+                    onPressed: _importFromWeread,
+                  ),
+                ],
               ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    _searchOpen
-                        ? PhosphorIconsRegular.magnifyingGlassMinus
-                        : PhosphorIconsRegular.magnifyingGlass,
-                    size: 20,
-                  ),
-                  tooltip: '搜索书架',
-                  onPressed: () {
-                    setState(() {
-                      _searchOpen = !_searchOpen;
-                      if (!_searchOpen) {
-                        _searchController.clear();
-                        _searchQuery = '';
-                      }
-                    });
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(
-                    PhosphorIconsRegular.chatCircleText,
-                    size: 20,
-                  ),
-                  tooltip: '发起讨论',
-                  onPressed: _books.isEmpty ? null : _showDiscussingDialog,
-                ),
-                IconButton(
-                  icon: const Icon(
-                    PhosphorIconsRegular.cloudArrowDown,
-                    size: 20,
-                  ),
-                  tooltip: '从微信读书导入',
-                  onPressed: _importFromWeread,
-                ),
-              ],
             ),
           ),
           const SizedBox(width: 12),
@@ -1070,7 +1067,6 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     final wantCount =
         _books.where((b) => b.status == ReadingStatus.wantToRead).length;
 
-    final scheme = theme.colorScheme;
     const items = [
       (null, '全部'),
       (ReadingStatus.reading, '在读'),
@@ -1087,20 +1083,18 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
     // 独立 chip 是四个碎块，分段控件是一个整体。
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
-      child: Container(
-        padding: const EdgeInsets.all(5),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          boxShadow: AppShadow.soften(theme.brightness == Brightness.dark),
-        ),
-        child: Row(
-          children: [
-            for (final (status, label) in items)
-              Expanded(
-                child: _segment(theme, '$label ${counts[status]}', status),
-              ),
-          ],
+      child: AppSurface(
+        borderRadius: AppRadius.pillAll,
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Row(
+            children: [
+              for (final (status, label) in items)
+                Expanded(
+                  child: _segment(theme, '$label ${counts[status]}', status),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1191,6 +1185,9 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
         const pad = 20.0, gap = 20.0;
         final itemW = (c.maxWidth - pad * 2 - gap) / 2;
         return GridView.builder(
+          // 玻璃卡片的 BackdropFilter 要采样身后的背景图，每项默认套的
+          // RepaintBoundary 会把两者隔开，滚动时「先透明再模糊」。
+          addRepaintBoundaries: false,
           padding: const EdgeInsets.fromLTRB(pad, 2, pad, 96),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,

@@ -1990,6 +1990,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      // 关掉每项的 RepaintBoundary：玻璃卡片要用 BackdropFilter 采样身后的
+      // 背景图，而 RepaintBoundary 把卡片和背景隔进了两个图层，滚动时采样
+      // 跟不上位移——症状是卡片「先透明一下再变模糊」。
+      addRepaintBoundaries: false,
       children: [
         // 我想说
         AppSurface(

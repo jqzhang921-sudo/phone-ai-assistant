@@ -189,10 +189,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '每次和它说话，下面这些都会一起带过去。',
-            style: theme.textTheme.bodyMedium,
-          ),
+          Text('每次和它说话，下面这些都会一起带过去。', style: theme.textTheme.bodyMedium),
           const SizedBox(height: 6),
           Text(
             '${names.isEmpty ? '' : '$names。'}'

@@ -64,7 +64,8 @@ class GlassSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = lightBackground ? const Color(0xFFFFFDFB) : const Color(0xFF1A1410);
+    final base =
+        lightBackground ? const Color(0xFFFFFDFB) : const Color(0xFF1A1410);
     final line =
         lightBackground
             ? Colors.white.withValues(alpha: 0.52)

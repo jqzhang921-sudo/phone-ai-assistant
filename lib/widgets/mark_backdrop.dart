@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 /// 气泡/卡片留一点透明度压在上面，才有层次。
 ///
 /// 聊天页和信页共用这一份，别各画各的。
+///
+/// 玻璃模式下的那层模糊**不在这里**——它在 home_shell 里，整页糊一次，
+/// 聊天/书架/栖息共用。别在这一层再糊一遍，会叠成两次。
 class MarkBackdrop extends StatelessWidget {
   final Widget child;
 
