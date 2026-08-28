@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart' show ThemeMode;
+
+import 'app_theme.dart' show AppThemeId;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -38,6 +40,7 @@ class AppSettings {
   static const _personaKey = 'global_persona';
   static const _personaEnabledKey = 'global_persona_enabled';
   static const _glassSurfaceKey = 'glass_surface';
+  static const _themeIdKey = 'theme_id';
 
   // ElevenLabs — key stored in secure storage
   static const _elevenLabsKeyKey = 'elevenlabs_api_key';
@@ -96,6 +99,12 @@ class AppSettings {
   /// 否则用户打开之后会觉得「怎么没变化」。
   bool glassSurface;
 
+  /// 预设主题。和「自定义背景取色」互斥——贴了背景图（且开着毛玻璃）时由图
+  /// 决定配色，这个值仍然留着，移除背景就回到它。
+  ///
+  /// **和 [themeMode] 是两个正交维度**：每套主题都有深浅两态。
+  AppThemeId themeId;
+
   /// 默认关。开着才用 [persona]。
   ///
   /// 分成「文本」和「开关」两个字段，而不是「空字符串等于关」：这样关掉之后
@@ -121,6 +130,7 @@ class AppSettings {
     this.persona = '',
     this.personaEnabled = false,
     this.glassSurface = false,
+    this.themeId = AppThemeId.brown,
   });
 
   /// 性格描述的字数上限，手写和导入文件同一个数。
@@ -172,6 +182,13 @@ class AppSettings {
       persona: prefs.getString(_personaKey) ?? '',
       personaEnabled: prefs.getBool(_personaEnabledKey) ?? false,
       glassSurface: prefs.getBool(_glassSurfaceKey) ?? false,
+      // ⚠️ 存的是 index，所以 AppThemeId 里的顺序**只能往后加，不能重排**，
+      // 重排会把已经存下来的选择错位成另一套主题。
+      themeId:
+          AppThemeId.values[(prefs.getInt(_themeIdKey) ?? 0).clamp(
+            0,
+            AppThemeId.values.length - 1,
+          )],
       calendarAccess: CalendarAccess.values.firstWhere(
         (v) => v.name == prefs.getString(_calendarAccessKey),
         orElse: () => CalendarAccess.ask,
@@ -198,6 +215,7 @@ class AppSettings {
     await prefs.setString(_personaKey, persona);
     await prefs.setBool(_personaEnabledKey, personaEnabled);
     await prefs.setBool(_glassSurfaceKey, glassSurface);
+    await prefs.setInt(_themeIdKey, themeId.index);
     await prefs.setString(_aiNameKey, aiName);
     await prefs.setBool(_ttsAutoPlayKey, ttsAutoPlay);
     await prefs.setBool(_titleSerifKey, titleSerif);

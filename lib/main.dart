@@ -103,18 +103,20 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
 
   /// 这一轮该用什么色调建主题。
   ///
-  /// 判断条件**必须和 `AppSurface` 画不画玻璃那三条对齐**：玻璃关着却把整套
-  /// 配色旋到粉色，那是第三种状态，谁也没要过。所以这里也是「玻璃开 +
-  /// 真的贴了背景图」，少一条就回原来那套棕。
+  /// 两个色源，**背景图优先**：
   ///
-  /// 这样「玻璃主题」才是一个完整可选的东西：开 = 卡片透 + 颜色跟着壁纸；
-  /// 关 = Cleo 原来调好的暖棕主题，一个像素都不变。
+  /// - 贴了背景图 + 开着毛玻璃 → 配色由图决定（设计交付里的互斥规矩）。
+  ///   判断条件和 `AppSurface` 画不画玻璃那几条对齐——玻璃关着却把整套配色
+  ///   旋到粉色，那是第三种状态，谁也没要过。
+  /// - 否则 → 用预设主题（默认 [AppThemeId.brown] = 原来那套棕，
+  ///   一个像素都不变）。
   AppTone _toneFor(AppSettings s, BackgroundProvider bg) {
-    if (!s.glassSurface || bg.path == null) return AppTone.none;
-    // 图是黑白的（解不出色相）——退回棕色同样出戏，改用中性色调。
-    final accent = bg.backgroundAccent;
-    if (accent == null) return AppTone.neutral;
-    return AppTone.towards(accent);
+    if (s.glassSurface && bg.path != null) {
+      // 图是黑白的（解不出色相）——退回棕色同样出戏，改用中性色调。
+      final accent = bg.backgroundAccent;
+      return accent == null ? AppTone.neutral : AppTone.towards(accent);
+    }
+    return s.themeId.tone;
   }
 
   /// 这一轮该用深色还是浅色。

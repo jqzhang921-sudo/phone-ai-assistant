@@ -54,6 +54,19 @@ class AppTone extends ThemeExtension<AppTone> {
   factory AppTone.towards(Color accent) =>
       AppTone(hueDelta: (toOklch(accent).h - _brandHue + 360) % 360);
 
+  /// 预设主题用：色相**和彩度**都取自 [seed]，明度阶梯还是原来那套。
+  ///
+  /// 和 [AppTone.towards] 的区别在彩度：背景图那条路取出来的强调色，彩度是
+  /// 算法定的（`_analyze` 里锁在 0.04–0.10），不该拿它定整套配色的浓淡；
+  /// 而预设的 seed 是设计师挑的一个具体颜色，浓淡本来就是它的一部分。
+  factory AppTone.fromSeed(Color seed) {
+    final s = toOklch(seed);
+    return AppTone(
+      hueDelta: (s.h - _brandHue + 360) % 360,
+      satScale: s.c / toOklch(AppTheme.brandBrown).c,
+    );
+  }
+
   static final double _brandHue = toOklch(AppTheme.brandBrown).h;
 
   static AppTone of(BuildContext context) =>
@@ -154,8 +167,51 @@ class AppTone extends ThemeExtension<AppTone> {
 ///    阴影要自己画（Material 的 elevation 出来是灰的）。
 /// 3. **深色模式不画阴影**，层次改用 `#171310` → `#251F1A` 的明度差；
 ///    主色从棕换成浅棕，棕色在暗底上看不见。
+/// 预设主题。**每个就是两个数**：色相偏移 + 彩度倍率，走的是和「自定义背景
+/// 取色」完全同一条 [AppTone] 链。
+///
+/// 设计交付里特地强调过「不要为预设另写一套派生逻辑，否则两条路出来的界面会
+/// 长得不像一家」。它给的派生规则是「主色相 + 固定明度阶梯」——那正是 AppTone
+/// 做的事，只不过 AppTone 锁的是感知亮度而不是 HSL 明度。
+///
+/// 走同一条链还有个不写在设计稿里、但更要命的理由：**气泡、玻璃本体、水印、
+/// [AppTone.inkOn] 的墨色这些根本不在 ColorScheme 里**，是散在各文件的写死
+/// 字面量。三套独立 ColorScheme 只换得掉卡片颜色，气泡还会是棕的——那正是
+/// 2026-08-27 花一整夜修掉的「棕色主题 + 换个 primary」。只有挂在
+/// ThemeExtension 上的 AppTone 够得着它们。
+///
+/// 色相和彩度取自设计交付给的 seed 主色，明度阶梯用原来那套，所以「白字压
+/// primary」的对比度在四套主题里完全一致（5.6:1），不用逐个手挑再验一遍。
+/// 设计稿里苔绿的 `#55683C` 和这条链算出来的 `#5B6E42` 几乎重合，说明思路
+/// 本来就是同一个；黛蓝和梅子会比设计稿亮一档，那是因为设计稿是逐个挑的、
+/// 没严格贴着同一条明度阶梯。
+enum AppThemeId {
+  brown(null, '暖棕'),
+  moss(Color(0xFF55683C), '苔绿'),
+  slate(Color(0xFF3F5568), '黛蓝'),
+  plum(Color(0xFF6B4A5E), '梅子');
+
+  const AppThemeId(this.seed, this.label);
+
+  /// 设计交付给的浅色主色。null = 默认暖棕，不做任何旋转。
+  final Color? seed;
+  final String label;
+
+  /// 算一次存下来：`shift()` 内部按 tone 实例缓存，每次新建就等于清空缓存。
+  AppTone get tone => _presetTones.putIfAbsent(
+    this,
+    () => seed == null ? AppTone.none : AppTone.fromSeed(seed!),
+  );
+}
+
+final Map<AppThemeId, AppTone> _presetTones = {};
+
 class AppTheme {
   AppTheme._();
+
+  /// 给设置页的主题选择器用：不建整个 ThemeData，只要配色。
+  static ColorScheme schemeOf(Brightness brightness, AppTone tone) =>
+      _scheme(brightness, tone);
 
   /// 徽标的温暖棕。整套配色的基准色相就是它的色相（约 29°），
   /// [AppTone.towards] 拿它算「要转多少度」，所以这里和 [_scheme] 里的

@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/backup_service.dart';
 import '../config/api_keys.dart';
+import '../config/app_theme.dart';
 import '../config/settings.dart';
 import '../config/build_info.dart';
 import '../services/ai_client.dart';
@@ -395,6 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await _settings.save();
                 },
               ),
+            _themePicker(theme),
             _row(
               theme,
               asset: 'waves',
@@ -563,6 +565,149 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // 填一次就不再动的，全收进二级页。
 
   /// 组标题在容器外，容器本身是圆角白卡 + 柔光。
+
+  /// 主题四格。每格是那套主题的一个缩影：底色 = surface，左上一枚主色方块，
+  /// 底部两条色带。
+  ///
+  /// 贴了背景图（且开着毛玻璃）时配色由图决定，这时四格**灰掉但不隐藏**——
+  /// 藏起来用户会以为功能没了，灰掉才看得出「它还在，只是现在不生效」。
+  /// 这条是设计交付里写死的互斥规矩。
+  Widget _themePicker(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final byImage =
+        _settings.glassSurface &&
+        context.watch<BackgroundProvider>().path != null;
+
+    final grid = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final id in AppThemeId.values) ...[
+          if (id != AppThemeId.values.first) const SizedBox(width: 9),
+          Expanded(child: _themeCell(theme, id)),
+        ],
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('主题', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          byImage
+              ? Opacity(opacity: 0.42, child: IgnorePointer(child: grid))
+              : grid,
+          if (byImage) ...[
+            const SizedBox(height: 10),
+            Text(
+              '配色由背景图决定，移除背景可回到预设',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _themeCell(ThemeData theme, AppThemeId id) {
+    // 格子预览的是**当前深浅下**那套主题长什么样，所以跟着 theme.brightness。
+    final s = AppTheme.schemeOf(theme.brightness, id.tone);
+    final selected = _settings.themeId == id;
+
+    // 设计稿写的两条色带是 primaryContainer / surfaceContainerLow。
+    // 但浅色下 surfaceContainerLow 是纯白、surface 是奶白，两条几乎一样，
+    // 摆在格子里等于只有一条。第二条改用 secondary，看得出这套主题的性格。
+    Widget band(Color c) => Container(
+      height: 6,
+      decoration: BoxDecoration(
+        color: c,
+        borderRadius: BorderRadius.circular(3),
+      ),
+    );
+
+    return GestureDetector(
+      onTap:
+          selected
+              ? null
+              : () async {
+                setState(() => _settings.themeId = id);
+                await _settings.save();
+              },
+      child: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: s.surface,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(
+                  color: selected ? s.primary : theme.colorScheme.outlineVariant,
+                  width: selected ? 2.5 : 1,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Container(
+                    width: 15,
+                    height: 15,
+                    decoration: BoxDecoration(
+                      color: s.primary,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  if (selected)
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: s.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          PhosphorIconsBold.check,
+                          size: 11,
+                          color: s.onPrimary,
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Column(
+                      children: [
+                        band(s.primaryContainer),
+                        const SizedBox(height: 4),
+                        band(s.secondary),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            id.label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color:
+                  selected
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _group(ThemeData theme, String title, List<Widget> rows) {
     final scheme = theme.colorScheme;
     final dark = theme.brightness == Brightness.dark;
