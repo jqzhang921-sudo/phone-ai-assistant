@@ -193,8 +193,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _load() async {
+    // await 之前先把 provider 取出来——之后 context 就可能失效了
+    final settingsProvider = context.read<SettingsProvider>();
     _configs = await ApiKeyService.loadKeys();
-    _settings = await AppSettings.load();
+    // ⚠️ 用 provider 手上那一份，不要自己再 load 一份。
+    //
+    // 原来这里是 `await AppSettings.load()`，于是设置页和 provider 拿着
+    // **两个不同的对象**。改本地那份只写进 SharedPreferences，provider 和
+    // MaterialApp 的主题都不知道——「主题预设」和「毛玻璃」按下去毫无反应，
+    // 重启 App 才生效。改完还要叫一声 [SettingsProvider.touch]。
+    _settings = settingsProvider.settings ?? await AppSettings.load();
     _elevenKeyController.text = _settings.elevenLabsApiKey;
     _elevenVoiceController.text = _settings.elevenLabsVoiceId;
     _tavilyKeyController.text = await SearchTool.getStoredKey() ?? '';
@@ -477,6 +485,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (v) async {
                 setState(() => _settings.glassSurface = v);
                 await _settings.save();
+                if (context.mounted) {
+                  context.read<SettingsProvider>().touch();
+                }
               },
             ),
           ]),
@@ -633,6 +644,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               : () async {
                 setState(() => _settings.themeId = id);
                 await _settings.save();
+                if (mounted) context.read<SettingsProvider>().touch();
               },
       child: Column(
         children: [

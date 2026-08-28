@@ -23,6 +23,14 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 外面直接改了 [settings] 里的字段之后叫一声。
+  ///
+  /// ⚠️ **凡是主题或表面会读到的字段，改完必须叫这一声**：themeId、
+  /// glassSurface、themeMode、titleSerif。MaterialApp 的主题建在
+  /// `Consumer2<SettingsProvider, BackgroundProvider>` 里，没人通知就不重建，
+  /// 症状是「改了设置没反应，重启 App 才生效」——主题预设和毛玻璃开关都栽过。
+  void touch() => notifyListeners();
+
   Future<void> setTitleSerif(bool v) async {
     final s = _settings;
     if (s == null) return;
