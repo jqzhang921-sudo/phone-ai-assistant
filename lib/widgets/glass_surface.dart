@@ -40,7 +40,14 @@ const _textOnDarkGlass = Color(0xFFF2EAE0);
 
 /// 玻璃要多不透明。两条线取大的那条。
 ///
-/// **一、观感**：`0.30 + busyness * 0.40`。平滑的渐变底最通透，花的图厚实。
+/// **一、观感**：浅底 0.55–0.65 / 暗底 0.62–0.70，按 busyness 在档内浮动。
+/// 档位来自设计交付（`落地清单.md` 追加清单 §3）；暗底更实，因为糊过的背景
+/// 在暗底上更容易显脏。
+///
+/// 这一档比之前高很多（原来是 `0.30 + busyness * 0.40`，平滑底只有 0.30）。
+/// **它和模糊半径是一对**：原来靠 sigma 44 的大模糊把背景抹匀来撑可读性，
+/// 代价是背景糊成一片灰、卡片看着「脏」而不是「透」。现在反过来——
+/// 卡片自己更实，模糊收到 16，背景透出来的是**看得出是什么**的东西。
 ///
 /// **二、读得清**：压在这张图最极端的地方（[extreme]，亮玻璃看暗端、
 /// 暗玻璃看亮端）合成之后仍要过 4.5:1。二分求出这个最小 alpha。
@@ -62,7 +69,8 @@ double glassAlpha({
   required double extreme,
   required bool lightGlass,
 }) {
-  final look = 0.30 + busyness * 0.40;
+  final look =
+      lightGlass ? 0.55 + busyness * 0.10 : 0.62 + busyness * 0.08;
   final base = lightGlass ? glassBaseLight : glassBaseDark;
   final text = lightGlass ? _textOnLightGlass : _textOnDarkGlass;
   // 把最极端处当成一块同亮度的灰来合成。真实像素当然有色相，但对比度只看
@@ -157,7 +165,12 @@ class GlassSurface extends StatelessWidget {
     lightGlass: lightBackground,
   );
 
-  double get _blur => floating ? 46 : 44;
+  /// 设计交付给的档是 12–16：「超过 ~20 背景全糊成灰，卡片看着『脏』
+  /// 不是『透』」。原来是 44——那是 alpha 只有 0.30 时用大模糊兼职撑可读性，
+  /// 现在 alpha 抬上去了，模糊就该退回它自己的活儿。
+  ///
+  /// 悬浮那档略大：它糊的是**正在滚动的真实内容**，糊得不够会看见字在底下爬。
+  double get _blur => floating ? 20 : 16;
 
   @override
   Widget build(BuildContext context) {

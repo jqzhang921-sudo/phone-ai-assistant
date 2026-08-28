@@ -80,20 +80,30 @@ void main() {
       extreme: 0.72, // 真实亮端
       lightGlass: false,
     );
-    expect(byLook, lessThan(0.45)); // 只看「花不花」会给出这么低的值
-    // 看亮端才对：实测这一档给到 0.57，比只看 busyness 厚了近 0.2
-    expect(real, greaterThan(byLook + 0.15));
+    // 现在观感那条线本身就在 0.62 以上了，可读性那条只在更极端时才顶上来。
+    // 留着这条是为了记住：两条线量的是不同的东西，别再把 busyness 当可读性用。
+    expect(real, greaterThanOrEqualTo(byLook));
   });
 
-  test('平滑的亮壁纸还是通透的——她说那几张都很好，别一起改掉', () {
-    // 亮壁纸没有暗区，浅色玻璃压深色字毫无压力，alpha 就该由观感说了算
-    final a = glassAlpha(
-      busyness: 0.2,
-      floating: false,
-      extreme: 0.6,
-      lightGlass: true,
+  // 设计交付给的档：浅 0.55–0.65 / 暗 0.62–0.70。平滑的图落在档底，
+  // 花的图落在档顶；再花或再极端就由可读性那条线接管。
+  test('观感那条线落在设计交付给的档位里', () {
+    expect(
+      glassAlpha(busyness: 0, floating: false, extreme: 0.6, lightGlass: true),
+      closeTo(0.55, 0.005),
     );
-    expect(a, lessThan(0.42));
+    expect(
+      glassAlpha(busyness: 1, floating: false, extreme: 0.6, lightGlass: true),
+      closeTo(0.65, 0.005),
+    );
+    expect(
+      glassAlpha(busyness: 0, floating: false, extreme: 0.1, lightGlass: false),
+      closeTo(0.62, 0.005),
+    );
+    expect(
+      glassAlpha(busyness: 1, floating: false, extreme: 0.1, lightGlass: false),
+      closeTo(0.70, 0.005),
+    );
   });
 
   test('悬浮那档更厚，且不越界', () {

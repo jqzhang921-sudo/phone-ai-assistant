@@ -464,8 +464,24 @@ class _HabitatScreenState extends State<HabitatScreen> {
     // 全 App 唯一的实色主色块，是「有事发生了」的信号（有信在等你），
     // 所以保留分量。但颜色要跟着背景走——粉色壁纸上一块纯棕是整屏最跑调的
     // 东西，Cleo 的截图里一眼就是它。
+    // 底色分三种情况，各自只对一种：
+    //
+    // - 有背景图 → accent，浅色调的一块，跟着壁纸走
+    // - 没背景图 + 深色 → **不能用实心 primary**。深色下 primary 是浅棕
+    //   `#D9B48F`，整条亮米色横杠压在 `#171310` 上太扎眼（设计交付原话：
+    //   「深色下大面积高明度主色太扎眼」）。换成 primaryContainer。
+    // - 没背景图 + 浅色 → `#8B5E34` 白字，是全 App 唯一的实色主色块，不动
+    //
+    // ⚠️ primaryContainer 的深色档是 `0x2ED9B48F`——**18% 半透明**，
+    // 昨天刚坑过书封。直接拿它当实心块，一贴壁纸又是透的，所以要
+    // alphaBlend 到 surface 上。
     final accent = context.watch<BackgroundProvider>().backgroundAccent;
-    final fill = accent ?? scheme.primary;
+    final dark = theme.brightness == Brightness.dark;
+    final fill =
+        accent ??
+        (dark
+            ? Color.alphaBlend(scheme.primaryContainer, scheme.surface)
+            : scheme.primary);
 
     // ⚠️ 这里原来写死 `scheme.onPrimary`（白）。底色是运行时从背景图算出来的
     // 强调色，明度锁在 V=0.85 很亮，白字压上去实测只有 1.6–2.6:1，
