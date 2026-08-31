@@ -464,29 +464,30 @@ class _HabitatScreenState extends State<HabitatScreen> {
     // 全 App 唯一的实色主色块，是「有事发生了」的信号（有信在等你），
     // 所以保留分量。但颜色要跟着背景走——粉色壁纸上一块纯棕是整屏最跑调的
     // 东西，Cleo 的截图里一眼就是它。
-    // 底色分三种情况，各自只对一种：
     //
-    // - 有背景图 → accent，浅色调的一块，跟着壁纸走
-    // - 没背景图 + 深色 → **不能用实心 primary**。深色下 primary 是浅棕
-    //   `#D9B48F`，整条亮米色横杠压在 `#171310` 上太扎眼（设计交付原话：
+    // ⚠️ 贴壁纸时这里原来走 `backgroundAccent`（从图里取的强调色），那是
+    // 「纯棕跑调」的补丁。色相旋转（AppTone）已经把整套 scheme 转到壁纸色相
+    // 上了，primary 本身就跟着壁纸走，绕过它没必要了。而 accent 的明度锁在
+    // V=0.85，是浅浅的一块，撑不起「全 App 唯一的实色卡」这个分量。
+    // → 换回旋转后的 primary，三种情况收成两种，只按深浅分：
+    //
+    // - 深色 → **不能用实心 primary**。深色档的 primary 是高明度色（原棕系
+    //   是 `#D9B48F`），整条亮横杠压在 `#171310` 上太扎眼（设计交付原话：
     //   「深色下大面积高明度主色太扎眼」）。换成 primaryContainer。
-    // - 没背景图 + 浅色 → `#8B5E34` 白字，是全 App 唯一的实色主色块，不动
+    // - 浅色 → 旋转后的 primary 实心块（原棕系是 `#8B5E34`）
     //
     // ⚠️ primaryContainer 的深色档是 `0x2ED9B48F`——**18% 半透明**，
     // 昨天刚坑过书封。直接拿它当实心块，一贴壁纸又是透的，所以要
     // alphaBlend 到 surface 上。
-    final accent = context.watch<BackgroundProvider>().backgroundAccent;
     final dark = theme.brightness == Brightness.dark;
-    final fill =
-        accent ??
-        (dark
-            ? Color.alphaBlend(scheme.primaryContainer, scheme.surface)
-            : scheme.primary);
+    final fill = dark
+        ? Color.alphaBlend(scheme.primaryContainer, scheme.surface)
+        : scheme.primary;
 
-    // ⚠️ 这里原来写死 `scheme.onPrimary`（白）。底色是运行时从背景图算出来的
-    // 强调色，明度锁在 V=0.85 很亮，白字压上去实测只有 1.6–2.6:1，
-    // 基本看不见；同一块底换成深墨是 7–11:1。底色是算出来的，前景就不能是
-    // 编译期定死的——交给 inkOn 按实际亮度挑。
+    // ⚠️ 这里原来写死 `scheme.onPrimary`（白）。底色现在是旋转后的 primary，
+    // 色相跟着壁纸走、亮度不固定——绿和黄那几档旋转出来明显更亮，白字压上去
+    // 就不够。底色是算出来的，前景就不能是编译期定死的，交给 inkOn 按实际
+    // 亮度挑。
     final fg = AppTone.of(context).inkOn(fill);
     return DecoratedBox(
       decoration: BoxDecoration(
