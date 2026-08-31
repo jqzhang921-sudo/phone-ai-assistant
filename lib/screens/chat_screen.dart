@@ -713,10 +713,16 @@ class _ChatScreenState extends State<ChatScreen> {
         _conversation.systemPrompt ??
         (globalPersona.isNotEmpty ? globalPersona : basePersona);
 
+    // 写记忆的规矩紧跟读记忆的：两段都是 const，一起待在前缀里，中间不夹
+    // 会变的东西。摘要排在它俩后面——「先看已有的那几条」指的就是它。
+    //
+    // 故意放在 persona 外面，和 memoryReadingRules 一样：自定义了性格的对话会
+    // 整段替掉 persona，记不记东西不该被「用什么口吻说话」连坐。
     final systemPrompt = [
       if (names.isNotEmpty) names,
       persona,
       memoryReadingRules,
+      memoryWritingRules,
       if (digest.isNotEmpty) digest,
     ].join('\n\n');
 
