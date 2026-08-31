@@ -17,17 +17,23 @@ class ExternalMcpClient {
   final List<McpTool> _tools = [];
   String? _lastError;
   String? _serverName;
+  int _skippedTools = 0;
 
   bool get connected => _connected;
   String? get lastError => _lastError;
   String? get serverName => _serverName;
   List<McpTool> get tools => List.unmodifiable(_tools);
 
+  /// 这台服务器上有几个工具没能解析。正常是 0；不是 0 的话，界面上那个
+  /// 「N 工具」会比服务器实际给的少，得让人看得见差在哪，别让它无声消失。
+  int get skippedTools => _skippedTools;
+
   ExternalMcpClient({required this.config});
 
   Future<bool> connect() async {
     _lastError = null;
     _tools.clear();
+    _skippedTools = 0;
 
     try {
       final transport = createTransport(config.url, token: config.token);
@@ -55,11 +61,17 @@ class ExternalMcpClient {
         null,
         const Duration(seconds: 15),
       );
+      // 逐个 try：解析不了的那一个跳过就行，不能让它把整台服务器拖下水。
+      // 外层那个 catch 是给「连不上」准备的，一个畸形工具走到那里，症状会变成
+      // 「连接失败」——看着像是服务器挂了，其实只是某个工具字段不全。
       final list = listed['tools'];
       if (list is List) {
         for (final t in list) {
-          if (t is Map) {
+          if (t is! Map) continue;
+          try {
             _tools.add(McpTool.fromJson(Map<String, dynamic>.from(t)));
+          } catch (_) {
+            _skippedTools++;
           }
         }
       }

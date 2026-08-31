@@ -1546,7 +1546,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                         Text(
-                          '${c.tools.length} 工具',
+                          c.skippedTools > 0
+                              ? '${c.tools.length} 工具 · ${c.skippedTools} 个没读懂'
+                              : '${c.tools.length} 工具',
                           style: theme.textTheme.labelSmall,
                         ),
                       ],
