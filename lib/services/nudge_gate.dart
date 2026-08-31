@@ -20,16 +20,29 @@
 /// 所以「隔了多久没聊」在这里只用来**拦**（刚聊完就别推），不用来**催**。
 library;
 
-/// 用户能调的那几个数。默认值都偏保守——推少了只是没惊喜，推多了会被关掉。
+/// ⚠️ 这里**没有「一天最多几条」**，是想清楚之后拿掉的。
+///
+/// 配额会倒过来变成产出指标：今天还剩两条没用，那就凑两条出来。和「每天必须
+/// 收藏一条」是同一个毛病——**规定了产出**。而要的是产出发生的时候有地方去。
+///
+/// 频率由**有没有事情发生**决定（见 `NudgeService.collectCandidates`）：
+/// 他写完一封信、记了一篇日记，那才是他想开口的时候。没发生就没有，
+/// 不需要一个数字来限制。
+///
+/// [kRunawayPerDay] 是保险丝不是配额：只防止某个 bug 导致连环推送，
+/// 正常路径永远碰不到它，所以也不进设置页。
+const int kRunawayPerDay = 4;
+
+/// 用户能调的东西。只剩两样，因为只有这两样是**你的**偏好，
+/// 其余都该由「发生了什么」决定。
 class NudgePrefs {
   final bool enabled;
 
   /// 静默时段，闭开区间 [start, end)，按小时。默认 23:00–08:00，跨零点。
+  ///
+  /// 这一条留着不是给他立规矩，是你的作息。
   final int quietStartHour;
   final int quietEndHour;
-
-  /// 一天最多几条。
-  final int maxPerDay;
 
   /// 两条推送之间至少隔多久。
   final Duration minGapBetweenNudges;
@@ -42,7 +55,6 @@ class NudgePrefs {
     this.enabled = false,
     this.quietStartHour = 23,
     this.quietEndHour = 8,
-    this.maxPerDay = 2,
     this.minGapBetweenNudges = const Duration(hours: 4),
     this.minSilenceAfterChat = const Duration(hours: 3),
   });
@@ -51,12 +63,10 @@ class NudgePrefs {
     bool? enabled,
     int? quietStartHour,
     int? quietEndHour,
-    int? maxPerDay,
   }) => NudgePrefs(
     enabled: enabled ?? this.enabled,
     quietStartHour: quietStartHour ?? this.quietStartHour,
     quietEndHour: quietEndHour ?? this.quietEndHour,
-    maxPerDay: maxPerDay ?? this.maxPerDay,
     minGapBetweenNudges: minGapBetweenNudges,
     minSilenceAfterChat: minSilenceAfterChat,
   );
@@ -65,14 +75,12 @@ class NudgePrefs {
     'enabled': enabled,
     'quietStartHour': quietStartHour,
     'quietEndHour': quietEndHour,
-    'maxPerDay': maxPerDay,
   };
 
   factory NudgePrefs.fromJson(Map<String, dynamic> json) => NudgePrefs(
     enabled: json['enabled'] as bool? ?? false,
     quietStartHour: json['quietStartHour'] as int? ?? 23,
     quietEndHour: json['quietEndHour'] as int? ?? 8,
-    maxPerDay: json['maxPerDay'] as int? ?? 2,
   );
 }
 
@@ -84,7 +92,8 @@ enum NudgeBlock {
   none,
   disabled,
   quietHours,
-  dailyCap,
+  /// 保险丝断了。正常路径碰不到，看到它基本等于有 bug。
+  runaway,
   tooSoonAfterNudge,
   tooSoonAfterChat,
 }
@@ -92,10 +101,10 @@ enum NudgeBlock {
 extension NudgeBlockLabel on NudgeBlock {
   String get label => switch (this) {
     NudgeBlock.none => '可以推',
-    NudgeBlock.disabled => '主动推送没开',
-    NudgeBlock.quietHours => '在静默时段里',
-    NudgeBlock.dailyCap => '今天已经推够了',
-    NudgeBlock.tooSoonAfterNudge => '离上一条推送太近',
+    NudgeBlock.disabled => '主动说话没开',
+    NudgeBlock.quietHours => '在你设的不打扰时段里',
+    NudgeBlock.runaway => '一天推了太多次，保险丝断了（这不正常，八成是 bug）',
+    NudgeBlock.tooSoonAfterNudge => '离上一条太近',
     NudgeBlock.tooSoonAfterChat => '刚聊完，先让它待一会儿',
   };
 }
@@ -120,8 +129,8 @@ NudgeDecision decideNudge({
     return const NudgeDecision(false, NudgeBlock.quietHours);
   }
 
-  if (sentToday >= prefs.maxPerDay) {
-    return const NudgeDecision(false, NudgeBlock.dailyCap);
+  if (sentToday >= kRunawayPerDay) {
+    return const NudgeDecision(false, NudgeBlock.runaway);
   }
 
   if (lastNudgeAt != null &&
@@ -135,6 +144,33 @@ NudgeDecision decideNudge({
   }
 
   return const NudgeDecision(true, NudgeBlock.none);
+}
+
+/// 这条话和最近推过的那几条是不是一个意思。
+///
+/// 主动消息的通病是**重复**——它会反复说同一类话。单条读着没问题，
+/// 连着三天收到同一句就假了：同一天被过了第二遍。
+///
+/// 用二元组的 Jaccard，不用编辑距离：中文里换个词、调个语序，编辑距离差很多，
+/// 但共享的字对几乎一样——而「像不像同一句话」正是后者在量的东西。
+bool looksRepeated(String text, List<String> recent, {double threshold = 0.6}) {
+  final a = _bigrams(text);
+  if (a.isEmpty) return false;
+  for (final r in recent) {
+    final b = _bigrams(r);
+    if (b.isEmpty) continue;
+    final inter = a.intersection(b).length;
+    final union = a.union(b).length;
+    if (union > 0 && inter / union >= threshold) return true;
+  }
+  return false;
+}
+
+Set<String> _bigrams(String s) {
+  // 标点和空白不带信息，去掉之后短句之间才比得出差别。
+  final clean = s.replaceAll(RegExp(r'[\s\p{P}\p{S}]', unicode: true), '');
+  if (clean.length < 2) return {clean};
+  return {for (var i = 0; i < clean.length - 1; i++) clean.substring(i, i + 2)};
 }
 
 /// 静默时段判断，单独抽出来因为**跨零点那半最容易写错**。

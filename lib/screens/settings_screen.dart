@@ -773,18 +773,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         },
       ),
       const SizedBox(height: 8),
-      Text('一天最多几条', style: theme.textTheme.labelLarge),
-      const SizedBox(height: 6),
-      Wrap(
-        spacing: 8,
-        children: [
-          for (final n in [1, 2, 3])
-            ChoiceChip(
-              label: Text('$n 条'),
-              selected: _nudgePrefs.maxPerDay == n,
-              onSelected: (_) => save(_nudgePrefs.copyWith(maxPerDay: n)),
-            ),
-        ],
+      // 这里**故意没有「一天最多几条」**。配额会倒过来变成产出指标：
+      // 今天还剩两条没用，就凑两条出来。频率该由「有没有事情发生」决定。
+      Text(
+        '他写完一封信、记了一篇日记，那才是他想说话的时候。'
+        '没有这样的事，就什么都不会发生——所以这里没有「一天几条」可以调。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
       ),
       const SizedBox(height: 16),
       Text('这段时间里不打扰', style: theme.textTheme.labelLarge),
@@ -817,8 +813,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Text('试一次', style: theme.textTheme.labelLarge),
       const SizedBox(height: 6),
       Text(
-        '跳过上面所有限制，直接问它现在有没有话想说。'
-        '它多数时候会说没有——那是对的，不是坏了。',
+        '跳过时间限制，但不跳过「有没有事发生」——手动点也不会凭空造一条出来，'
+        '否则试出来的东西和它平时的行为对不上。'
+        '多半会告诉你「没有由头」，那是对的，不是坏了。',
         style: theme.textTheme.bodySmall?.copyWith(
           color: scheme.onSurfaceVariant,
         ),

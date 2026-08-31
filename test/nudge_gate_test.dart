@@ -58,9 +58,20 @@ void main() {
       expect(d.reason, NudgeBlock.quietHours);
     });
 
-    test('推够了就不推', () {
-      final d = decideNudge(now: at(15), prefs: _on, sentToday: 2);
-      expect(d.reason, NudgeBlock.dailyCap);
+    // 保险丝，不是配额：正常路径永远碰不到（频率由「有没有事发生」决定）。
+    // 碰到了基本等于有 bug 在连环触发。
+    test('保险丝：一天推到上限就断', () {
+      final d = decideNudge(now: at(15), prefs: _on, sentToday: kRunawayPerDay);
+      expect(d.reason, NudgeBlock.runaway);
+    });
+
+    test('没到保险丝就不该拦', () {
+      final d = decideNudge(
+        now: at(15),
+        prefs: _on,
+        sentToday: kRunawayPerDay - 1,
+      );
+      expect(d.allowed, isTrue);
     });
 
     test('离上一条太近不推', () {
@@ -133,6 +144,33 @@ void main() {
     test('从来没聊过、从来没推过也不该崩', () {
       final d = decideNudge(now: at(15), prefs: _on, sentToday: 0);
       expect(d.allowed, isTrue);
+    });
+  });
+
+  // 主动消息的通病是重复——单条读着没问题，连着三天收到同一句就假了。
+  group('别把同一天过第二遍', () {
+    test('换了标点和语序，仍然算同一句', () {
+      const recent = ['我刚写完一封信，放在栖息里了'];
+      expect(looksRepeated('我刚写完一封信，放在栖息里了。', recent), isTrue);
+      expect(looksRepeated('刚写完一封信，放栖息里了', recent), isTrue);
+    });
+
+    test('说的是另一件事就该放行', () {
+      const recent = ['我刚写完一封信，放在栖息里了'];
+      expect(looksRepeated('昨天那本书我看到一半，主角忽然不说话了', recent), isFalse);
+    });
+
+    test('没有历史时永远不算重复', () {
+      expect(looksRepeated('随便一句话', const []), isFalse);
+    });
+
+    test('只要和历史里任意一条像，就算重复', () {
+      const recent = ['今天记了篇日记', '我刚写完一封信，放在栖息里了'];
+      expect(looksRepeated('刚写完一封信，放栖息里了', recent), isTrue);
+    });
+
+    test('空串不该被判成重复', () {
+      expect(looksRepeated('', const ['我刚写完一封信']), isFalse);
     });
   });
 
