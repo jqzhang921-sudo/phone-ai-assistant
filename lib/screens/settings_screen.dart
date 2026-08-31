@@ -165,6 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showAddMcp = false;
   final _mcpNameController = TextEditingController();
   final _mcpUrlController = TextEditingController();
+  final _mcpTokenController = TextEditingController();
 
   @override
   void initState() {
@@ -189,6 +190,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _aiNameController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
+    _mcpTokenController.dispose();
     super.dispose();
   }
 
@@ -1539,7 +1541,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            '${c.config.name} (${c.config.url})',
+                            '${c.config.name} (${c.config.displayUrl})',
                             style: theme.textTheme.bodySmall,
                           ),
                         ),
@@ -1570,7 +1572,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color: server.enabled ? theme.colorScheme.primary : Colors.grey,
             ),
             title: Text(server.name, style: const TextStyle(fontSize: 14)),
-            subtitle: Text(server.url, style: const TextStyle(fontSize: 11)),
+            subtitle: Text(
+              server.displayUrl,
+              style: const TextStyle(fontSize: 11),
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1627,8 +1632,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 TextField(
                   controller: _mcpUrlController,
                   decoration: const InputDecoration(
-                    labelText: 'WebSocket URL',
-                    hintText: 'ws://192.168.1.100:8765',
+                    labelText: '服务器地址',
+                    hintText: 'https://example.com/mcp',
+                    helperText: 'https:// 为标准 MCP 服务器，ws:// 为本机自带服务器',
+                    helperMaxLines: 2,
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _mcpTokenController,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Token（没有就留空）',
+                    helperText: '需要鉴权的服务器才填。存在手机本地，不加密',
+                    helperMaxLines: 2,
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -1651,6 +1672,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onPressed: () async {
                         final name = _mcpNameController.text.trim();
                         final url = _mcpUrlController.text.trim();
+                        final token = _mcpTokenController.text.trim();
                         if (name.isEmpty || url.isEmpty) return;
 
                         // Show loading
@@ -1666,6 +1688,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           id: const Uuid().v4(),
                           name: name,
                           url: url,
+                          token: token.isEmpty ? null : token,
                         );
 
                         // Try to connect first
@@ -1679,6 +1702,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             await ExternalMcpServerService.add(server);
                             _mcpNameController.clear();
                             _mcpUrlController.clear();
+                            _mcpTokenController.clear();
                             _showAddMcp = false;
                             messenger.showSnackBar(
                               SnackBar(
