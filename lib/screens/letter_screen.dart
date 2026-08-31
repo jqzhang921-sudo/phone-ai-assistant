@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_shape.dart';
+import '../config/app_theme.dart';
 import '../widgets/mark_backdrop.dart';
 import '../config/settings.dart';
 import '../models/letter.dart';
@@ -329,12 +330,17 @@ class _LetterCard extends StatelessWidget {
               fontFamily: mine ? null : 'NotoSerifSC',
               fontSize: mine ? 13.5 : 14.5,
               height: mine ? 1.75 : 1.85,
+              // 浅色下这两个暖深墨是写死的（比 onSurface 的 #1A1512 松一档，
+              // 宋体长文这么读着不硬）。写死就不跟主题转，所以过一遍
+              // shift——默认棕下 shift 是恒等，一个像素不变。
               color:
                   dark
                       ? scheme.onSurface.withValues(alpha: mine ? 0.75 : 0.9)
-                      : (mine
-                          ? const Color(0xFF4A423A)
-                          : const Color(0xFF2C251F)),
+                      : AppTone.of(context).shift(
+                          mine
+                              ? const Color(0xFF4A423A)
+                              : const Color(0xFF2C251F),
+                        ),
             ),
           ),
         ],

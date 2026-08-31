@@ -8,6 +8,7 @@ import '../services/diary_generator.dart';
 import '../config/settings.dart';
 import '../services/storage_service.dart';
 import '../config/app_shape.dart';
+import '../config/app_theme.dart';
 
 /// 同一天的所有日记聚成一组，列表里显示为一张卡。
 class _DayGroup {
@@ -447,7 +448,11 @@ class _DayCard extends StatelessWidget {
                     fontFamily: 'NotoSerifSC',
                     fontSize: 14.5,
                     height: 1.85,
-                    color: dark ? scheme.onSurface : const Color(0xFF2C251F),
+                    // 写死的暖深墨过一遍 shift 才跟着主题转，
+                    // 默认棕下是恒等，一个像素不变。
+                    color: dark
+                        ? scheme.onSurface
+                        : AppTone.of(context).shift(const Color(0xFF2C251F)),
                   ),
                 ),
               ],

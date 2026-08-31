@@ -6,6 +6,7 @@ import '../services/app_providers.dart';
 import '../services/storage_service.dart';
 import '../services/favorite_picker.dart';
 import '../config/app_shape.dart';
+import '../config/app_theme.dart';
 
 /// 一隅：收藏的话。
 ///
@@ -326,6 +327,9 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
     final scheme = theme.colorScheme;
     final dark = theme.brightness == Brightness.dark;
     final mine = _isMine(entry);
+    // `_entryCard` 手上只有 theme、没有 context，所以不能用 `AppTone.of`。
+    // 这两个是同一个东西：`of` 内部也是从 theme 的扩展里取。
+    final tone = theme.extension<AppTone>() ?? AppTone.none;
 
     // 谁说的一眼能看出来：它说的走白卡 + 主色竖条 + 宋体，
     // 你说的走浅灰底 + 右缩进 + 黑体。和信、日记同一套规则。
@@ -431,12 +435,17 @@ class _MusingCornerScreenState extends State<MusingCornerScreen> {
               fontFamily: mine ? null : 'NotoSerifSC',
               fontSize: mine ? 13.5 : 14.5,
               height: mine ? 1.75 : 1.85,
+              // 浅色下这两个暖深墨是写死的（比 onSurface 的 #1A1512 松一档，
+              // 宋体长文这么读着不硬）。写死就不跟主题转，所以过一遍
+              // tone.shift——默认棕下 shift 是恒等，一个像素不变。
               color:
                   dark
                       ? scheme.onSurface.withValues(alpha: mine ? 0.75 : 0.9)
-                      : (mine
-                          ? const Color(0xFF4A423A)
-                          : const Color(0xFF2C251F)),
+                      : tone.shift(
+                          mine
+                              ? const Color(0xFF4A423A)
+                              : const Color(0xFF2C251F),
+                        ),
             ),
           ),
           if (entry.note != null) ...[
