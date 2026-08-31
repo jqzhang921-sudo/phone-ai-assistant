@@ -24,6 +24,10 @@ android {
     ndkVersion = "27.0.12077973"
 
     compileOptions {
+        // flutter_local_notifications 用了 java.time 那套 API，而 minSdk 是 24，
+        // 老系统上没有——脱糖（desugaring）把它们打进 APK 顶上。
+        // 不开的话构建直接失败：「requires core library desugaring to be enabled」。
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -66,4 +70,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 脱糖用的运行时库，配合上面的 isCoreLibraryDesugaringEnabled。
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

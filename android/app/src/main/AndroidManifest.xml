@@ -15,6 +15,10 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <!-- 主动推送的通知。Android 13 起是运行时权限，装上不等于有，
+         得在 App 里显式要一次（见 NudgeService.ensurePermission）。
+         13 以下声明了就有，不弹框。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="phone_ai_assistant"
         android:name="${applicationName}"

@@ -31,6 +31,13 @@ dependencies:
   # Share & Export
   share_plus: ^10.1.4
 
+  # 主动推送。先只要「显示通知」这半——后台唤醒（workmanager）等骨架跑通再加，
+  # 一次只引一个原生依赖，构建炸了才知道是谁炸的。
+  #
+  # ⚠️ 钉在 19.x：20.0 起要 Dart >=3.8，而本机 Flutter 是 3.29.0 / Dart 3.7.0。
+  # 想用 22.x 得先升 Flutter，那是另一件事，别夹在这个功能里做。
+  flutter_local_notifications: ^19.0.0
+
   # Voice Input
   speech_to_text: ^7.0.0
 

@@ -25,6 +25,8 @@ import '../widgets/background_sheet.dart';
 import '../services/storage_service.dart';
 import '../config/app_shape.dart';
 import '../services/app_providers.dart';
+import '../services/nudge_gate.dart';
+import '../services/nudge_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -167,6 +169,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _mcpUrlController = TextEditingController();
   final _mcpTokenController = TextEditingController();
 
+  NudgePrefs _nudgePrefs = const NudgePrefs();
+  // 「现在试一次」的结果原样显示出来。点了没反应的话，用户只会以为功能坏了——
+  // 被门槛拦下、模型说没什么可说、没权限，这三种得分得清楚。
+  String? _nudgeResult;
+  bool _nudgeBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -213,6 +221,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _userNameController.text = _settings.userName;
     _aiNameController.text = _settings.aiName;
     _externalServers = await ExternalMcpServerService.load();
+    _nudgePrefs = await NudgeService.loadPrefs();
 
     // 只在首次打开时自动选中一个配置（避免每次保存后被跳走）
     if (_selectedProvider == null && _configs.isNotEmpty) {
@@ -406,6 +415,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   await _settings.save();
                 },
               ),
+            _row(
+              theme,
+              icon: PhosphorIconsRegular.bellSimple,
+              title: '主动说话',
+              subtitle: '它自己想起什么的时候，发一条通知',
+              value: _nudgePrefs.enabled ? '开着' : '关着',
+              onTap:
+                  () => _openDetail('主动说话', (t, set) => _secNudge(t, set)),
+            ),
             _themePicker(theme),
             _row(
               theme,
@@ -719,6 +737,161 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 「主动说话」详情页。
+  ///
+  /// 这一版**没有接后台唤醒**，只有开关、几个数、和一个「现在试一次」。
+  /// 顺序是故意的：先在手动触发下把内容和分寸调顺，再谈让它自己跑——
+  /// ColorOS 上后台本来就不保证准时，内容这层必须能独立成立。
+  List<Widget> _secNudge(ThemeData theme, StateSetter set) {
+    final scheme = theme.colorScheme;
+
+    Future<void> save(NudgePrefs next) async {
+      _nudgePrefs = next;
+      await NudgeService.savePrefs(next);
+      set(() {});
+      if (mounted) setState(() {});
+    }
+
+    return [
+      _switchRow(
+        theme,
+        icon: PhosphorIconsRegular.bellSimple,
+        title: '让它主动说话',
+        subtitle: '关着的时候，下面这些设置都不起作用',
+        value: _nudgePrefs.enabled,
+        onChanged: (v) async {
+          // 开之前先要权限。先存后要的话，开关是开的、通知发不出去，
+          // 看起来就像功能坏了。
+          if (v && !await NudgeService.ensurePermission()) {
+            set(() => _nudgeResult = '系统没给通知权限，得去系统设置里打开');
+            return;
+          }
+          await save(_nudgePrefs.copyWith(enabled: v));
+        },
+      ),
+      const SizedBox(height: 8),
+      Text('一天最多几条', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 8,
+        children: [
+          for (final n in [1, 2, 3])
+            ChoiceChip(
+              label: Text('$n 条'),
+              selected: _nudgePrefs.maxPerDay == n,
+              onSelected: (_) => save(_nudgePrefs.copyWith(maxPerDay: n)),
+            ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      Text('这段时间里不打扰', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 6),
+      Row(
+        children: [
+          _hourPicker(
+            _nudgePrefs.quietStartHour,
+            (h) => save(_nudgePrefs.copyWith(quietStartHour: h)),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text('到'),
+          ),
+          _hourPicker(
+            _nudgePrefs.quietEndHour,
+            (h) => save(_nudgePrefs.copyWith(quietEndHour: h)),
+          ),
+        ],
+      ),
+      const SizedBox(height: 6),
+      Text(
+        '跨零点没问题（比如 23 点到 8 点）。两个数一样 = 不设静默。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+
+      const SizedBox(height: 24),
+      Text('试一次', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 6),
+      Text(
+        '跳过上面所有限制，直接问它现在有没有话想说。'
+        '它多数时候会说没有——那是对的，不是坏了。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 10),
+      FilledButton.icon(
+        icon:
+            _nudgeBusy
+                ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+                : const Icon(PhosphorIconsRegular.paperPlaneTilt, size: 16),
+        label: Text(_nudgeBusy ? '问它…' : '现在试一次'),
+        onPressed:
+            _nudgeBusy
+                ? null
+                : () async {
+                  // await 之前取，之后 context 可能已经失效。
+                  final client =
+                      context.read<AiClientProvider>().currentClient;
+                  if (client == null) {
+                    set(() => _nudgeResult = '还没配好模型');
+                    return;
+                  }
+                  set(() {
+                    _nudgeBusy = true;
+                    _nudgeResult = null;
+                  });
+                  final r = await NudgeService.run(
+                    aiClient: client,
+                    force: true,
+                  );
+                  set(() {
+                    _nudgeBusy = false;
+                    _nudgeResult = r.sent ? '推出去了：${r.text}' : r.message;
+                  });
+                },
+      ),
+      if (_nudgeResult != null) ...[
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Text(_nudgeResult!, style: theme.textTheme.bodySmall),
+        ),
+      ],
+
+      const SizedBox(height: 24),
+      Text(
+        '现在还没接后台唤醒，所以它只会在你打开 App 的时候才有机会说话。'
+        '真正的「关着 App 也能收到」是下一步——那一步在你手机上要另外开几个'
+        '系统开关才靠得住，到时候再一起弄。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+    ];
+  }
+
+  Widget _hourPicker(int value, ValueChanged<int> onChanged) {
+    return DropdownButton<int>(
+      value: value,
+      onChanged: (v) => v == null ? null : onChanged(v),
+      items: [
+        for (var h = 0; h < 24; h++)
+          DropdownMenuItem(value: h, child: Text('$h 点')),
+      ],
     );
   }
 
