@@ -79,13 +79,16 @@ class StreamableHttpTransport extends McpTransport {
   /// 可空。⚠️ 不要打进日志、错误文案或任何界面提示。
   final String? token;
 
-  final http.Client _client = http.Client();
+  final http.Client _client;
 
   String? _sessionId;
   bool _initialized = false;
   int _nextId = 0;
 
-  StreamableHttpTransport(this.endpoint, {this.token});
+  /// [client] 只给测试用：塞一个假服务器进来，就能在不联网的情况下验
+  /// SSE 解析、session id 回传、401 文案这些。生产路径不传，自己开一个。
+  StreamableHttpTransport(this.endpoint, {this.token, http.Client? client})
+    : _client = client ?? http.Client();
 
   @override
   Future<void> open() async {
