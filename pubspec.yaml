@@ -37,6 +37,7 @@ dependencies:
   # ⚠️ 钉在 19.x：20.0 起要 Dart >=3.8，而本机 Flutter 是 3.29.0 / Dart 3.7.0。
   # 想用 22.x 得先升 Flutter，那是另一件事，别夹在这个功能里做。
   flutter_local_notifications: ^19.0.0
+  workmanager: ^0.7.0
 
   # Voice Input
   speech_to_text: ^7.0.0

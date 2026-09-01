@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/settings.dart';
 import '../models/chat_message.dart';
 import 'ai_client.dart';
+import 'memory_context.dart';
 import 'nudge_gate.dart';
 import 'storage_service.dart';
 
@@ -203,9 +204,12 @@ class NudgeService {
 
   /// [force] 给设置页那个「现在试一次」用：跳过门槛，但**不跳过候选**——
   /// 手动点也不该凭空造一条出来，否则试出来的东西和真实行为对不上。
+  /// [notify] = false 时只把话写进对话，不弹通知。
+  /// App 正开着的时候用这个：为一条已经在屏幕上的消息再弹一条通知是噪音。
   static Future<NudgeRunResult> run({
     required AiClient aiClient,
     bool force = false,
+    bool notify = true,
   }) async {
     final now = DateTime.now();
     final sp = await SharedPreferences.getInstance();
@@ -238,13 +242,76 @@ class NudgeService {
       return NudgeRunResult.repeated(text);
     }
 
-    if (!await ensurePermission()) {
+    if (notify && !await ensurePermission()) {
       return NudgeRunResult.failed('没有通知权限');
     }
-    await _show(text);
+    // 先落进对话，再弹通知。反过来的话，通知先到、她点开发现聊天里什么都没有。
+    await _appendToChat(text);
+    if (notify) await _show(text);
     await _bumpCount(sp, now);
     await _remember(sp, text);
     return NudgeRunResult.sent(text);
+  }
+
+  /// 把它主动说的这句写进对话里。
+  ///
+  /// **通知只是提醒，话本身得留在聊天里。** 不写的话有两个后果，第二个更要命：
+  ///
+  /// 1. 她顺着通知点进来，聊天框里什么都没有
+  /// 2. **它自己也不知道说过这句** —— 下一轮的历史里没有这条，于是它会重复、
+  ///    会答非所问（她回「好啊」，它不知道在回什么）
+  ///
+  /// 写进**最近动过的那段对话**：她要找也是去那儿找。一段都没有就跳过，
+  /// 不为了发一条通知凭空建一段对话。
+  static Future<void> _appendToChat(String text) async {
+    try {
+      final convs = await StorageService.listConversations();
+      if (convs.isEmpty) return;
+      convs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      final conv = convs.first;
+      conv.messages.add(
+        ChatMessage(
+          id: 'nudge_${DateTime.now().millisecondsSinceEpoch}',
+          role: MessageRole.assistant,
+          content: text,
+        ),
+      );
+      conv.updatedAt = DateTime.now();
+      await StorageService.saveConversation(conv);
+    } catch (_) {
+      // 写不进去也别让通知发不出来——话到了总比什么都没有强。
+    }
+  }
+
+  /// 最近动过那段对话的尾巴，给 [compose] 当上下文。
+  ///
+  /// 只取尾部几条：这一步是判断「这会儿开口自不自然」，不是回顾整段关系。
+  /// 长期的那部分由记忆摘要负责。
+  static Future<String> _recentTranscript({int take = 8}) async {
+    try {
+      final convs = await StorageService.listConversations();
+      if (convs.isEmpty) return '';
+      convs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      final msgs =
+          convs.first.messages
+              .where(
+                (m) =>
+                    (m.role == MessageRole.user ||
+                        m.role == MessageRole.assistant) &&
+                    m.content.trim().isNotEmpty,
+              )
+              .toList();
+      final tail = msgs.length <= take ? msgs : msgs.sublist(msgs.length - take);
+      return tail
+          .map(
+            (m) =>
+                '${m.role == MessageRole.user ? 'TA' : '你'}：'
+                '${m.content.trim()}',
+          )
+          .join('\n');
+    } catch (_) {
+      return '';
+    }
   }
 
   static String _when(DateTime t) {
@@ -346,17 +413,34 @@ class NudgeService {
         .map((c) => '- 【${c.kind}】${c.what}')
         .join('\n');
 
+    // 要它「根据上下文判断」，就得真给它上下文。只给一个候选和一个钟点，
+    // 它能判断的只有「几点了」——那不叫判断，那叫查表。
+    //
+    // 两样：最近说过什么（决定这会儿开口自不自然、会不会撞上刚聊完的话题），
+    // 和它长期记着她的那些（决定这件事对她算不算事）。
+    final tail = await _recentTranscript();
+    var digest = '';
+    try {
+      digest = await buildMemoryDigest();
+    } catch (_) {}
+
     // 人称约定和 musing_generator / history_compactor 一致：
     // 「你」是模型自己，「TA」是用户。
     return '''
 现在是 ${now.hour} 点，TA 没有在跟你说话。
 
-你这边刚刚真发生了这些事：
+你这边真发生了这些事：
 
 $list
 
+${digest.isEmpty ? '' : '$digest\n'}${tail.isEmpty ? '你们最近没说过话。' : '你们最近说的话（「你」是你自己，「TA」是她）：\n$tail'}
+
 挑其中**一件**，用一句话告诉 TA。40 字以内，像随手发一条微信。
 说那件事本身：它是什么、你为什么这会儿想起它。
+
+**时间本身就是信息。** 刚写完的信和放了三天没被打开的信，值得说的东西不一样，
+语气也不一样——三天前那封，重点已经不是「我写了」，而是它还在那儿。
+这个分寸你自己拿捏，不用问。
 
 如果这几件都不值得现在打扰 TA，**只回两个字：不说**。
 多数时候就该这样，这不是失败。

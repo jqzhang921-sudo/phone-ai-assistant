@@ -26,6 +26,7 @@ import '../services/storage_service.dart';
 import '../config/app_shape.dart';
 import '../services/app_providers.dart';
 import '../services/nudge_gate.dart';
+import '../services/nudge_scheduler.dart';
 import '../services/nudge_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -770,6 +771,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             return;
           }
           await save(_nudgePrefs.copyWith(enabled: v));
+          // 开关同时管后台那条周期任务。只存偏好不动任务的话，关掉之后
+          // 后台还在跑，只是每次都在第一步返回——白耗电。
+          try {
+            v ? await NudgeScheduler.enable() : await NudgeScheduler.disable();
+          } catch (e) {
+            set(() => _nudgeResult = '后台任务没排上：$e');
+          }
         },
       ),
       const SizedBox(height: 8),
@@ -871,9 +879,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       const SizedBox(height: 24),
       Text(
-        '现在还没接后台唤醒，所以它只会在你打开 App 的时候才有机会说话。'
-        '真正的「关着 App 也能收到」是下一步——那一步在你手机上要另外开几个'
-        '系统开关才靠得住，到时候再一起弄。',
+        '开着的时候，系统大约每 15 分钟给它一次「看看有没有事」的机会，'
+        '关着 App 也算。绝大多数次什么都不会发生。\n\n'
+        '⚠️ 手机的省电策略会掐后台任务，所以这条不保证准时——'
+        '要它靠谱，得在系统设置里给这个 App 开「自启动」和「后台运行」。'
+        '就算被掐了也不会丢：攒下的事会在你下次打开 App 时补上。',
         style: theme.textTheme.bodySmall?.copyWith(
           color: scheme.onSurfaceVariant,
         ),

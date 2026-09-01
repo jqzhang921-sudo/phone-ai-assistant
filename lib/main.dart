@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'config/api_keys.dart';
 import 'config/settings.dart';
 import 'config/app_theme.dart';
 import 'screens/home_shell.dart';
-import 'services/ai_client.dart';
 import 'services/app_providers.dart';
 import 'services/storage_service.dart';
 import 'services/external_mcp_service.dart';
+import 'services/nudge_scheduler.dart';
 import 'services/tts_service.dart';
 
 /// 让没有 context 的工具也能弹框问用户。
@@ -34,6 +33,15 @@ void main() async {
   );
 
   await StorageService.init();
+
+  // 只是把后台入口注册给原生侧，不会开始跑——跑不跑由设置里那个开关决定。
+  // 必须在 runApp 之前：系统唤醒时走的是另一条路径，那时候没有 widget 树。
+  // 失败了不能让 App 起不来，这只是个附加功能。
+  try {
+    await NudgeScheduler.init();
+  } catch (e) {
+    debugPrint('[nudge] 后台入口没注册上：$e');
+  }
 
   runApp(
     MultiProvider(
@@ -69,6 +77,9 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
     _settingsFuture = AppSettings.load();
     _loadSavedApiKeys();
     _connectExternalMcpServers();
+    // 后台被系统掐掉时的兜底：攒下的事在她打开 App 时补上。
+    // 不弹通知——人已经在 App 里了。门槛照走，所以不会变吵。
+    NudgeScheduler.runOnStartup();
     _autoStartMcpServer();
   }
 
@@ -81,14 +92,11 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
   }
 
   Future<void> _loadSavedApiKeys() async {
-    final configs = await ApiKeyService.loadKeys();
-    for (final config in configs) {
-      if (config.apiKey != null && config.apiKey!.isNotEmpty) {
-        if (mounted) {
-          context.read<AiClientProvider>().setClient(AiClient(config: config));
-          break;
-        }
-      }
+    // 选法抽到了 buildStoredAiClient：后台推送被唤醒时没有 provider，
+    // 也得挑同一个配置。两边共用一份，别各写各的。
+    final client = await buildStoredAiClient();
+    if (client != null && mounted) {
+      context.read<AiClientProvider>().setClient(client);
     }
   }
 

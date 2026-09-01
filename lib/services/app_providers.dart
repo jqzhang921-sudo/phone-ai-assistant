@@ -8,6 +8,7 @@ import '../config/settings.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
 import '../models/mcp_tool.dart';
+import '../config/api_keys.dart';
 import 'ai_client.dart';
 import 'external_mcp_client.dart';
 import 'external_mcp_service.dart';
@@ -48,6 +49,25 @@ class SettingsProvider extends ChangeNotifier {
     await s.save();
     notifyListeners();
   }
+}
+
+/// 从存下来的配置里挑出该用的那一个，建一个 [AiClient]。没有可用的就返回 null。
+///
+/// 规则就是「第一个填了 key 的」——和界面启动时的选法必须一致，所以两边共用
+/// 这一个函数，别各写各的。
+///
+/// 单独抽出来是因为**后台 isolate 里没有 provider**：主动推送被系统唤醒时，
+/// 整个 widget 树都不存在，`context.read<AiClientProvider>()` 无从谈起，
+/// 只能从存储直接建。
+Future<AiClient?> buildStoredAiClient() async {
+  try {
+    for (final config in await ApiKeyService.loadKeys()) {
+      if (config.apiKey != null && config.apiKey!.isNotEmpty) {
+        return AiClient(config: config);
+      }
+    }
+  } catch (_) {}
+  return null;
 }
 
 // 全局状态 Provider
