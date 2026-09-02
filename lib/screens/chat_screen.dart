@@ -18,7 +18,10 @@ import 'persona_screen.dart';
 import '../config/app_tab.dart';
 import '../services/ai_client.dart';
 import '../services/app_providers.dart';
+import '../config/persona.dart';
 import '../services/mcp_server.dart';
+import '../services/phone_tools/self_note_tool.dart';
+import '../services/self_notes.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../config/settings.dart';
@@ -594,6 +597,10 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    // 便签工具要知道自己身处哪段对话，才能把「做好了吗」推回原地。
+    // 工具执行器的签名只有 args，拿不到调用现场，所以在这儿放一次。
+    SelfNoteTool.currentConversationId = _conversation.id;
+
     // Build client with tools once, reuse for all rounds
     // Always include local phone tools (regardless of MCP Server toggle)
     final mcpTools = mcpServer.registeredTools.map((r) => r.tool).toList();
@@ -601,80 +608,24 @@ class _ChatScreenState extends State<ChatScreen> {
     final allTools = [...mcpTools, ...externalTools];
     final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
 
-    // 刻意不给这段关系起名字。
+    // 身份（名字 + 性格）抽到了 config/persona.dart：主动说话那条路要用
+    // **同一份**，否则它开口时不是它。三层优先级和取名字的理由都写在那儿。
     //
-    // 原来开头写死「你是用户的好朋友、日常小伙伴」，于是模型演的是它对「朋友」
-    // 这个词的刻板印象：每句都要接个问题、不停找话题、还爱解说你们正在聊天
-    // 这件事（「还是就等着我回你消息呢」）。角色标签给模型的是一个要扮演的
-    // 形象，具体的行为约束给的才是怎么做。
-    //
-    // 而且这跟写信那边的提示词是矛盾的——那边明写了「不要预设你和 TA 是什么
-    // 关系，那由你们相处的方式决定」，这边却先把人设焊死了。
-    const basePersona =
-        '你住在用户手机上，和 TA 长期相处。\n'
-        '你们算什么关系，由相处的方式慢慢决定，不由设定决定。'
-        '别自称朋友、伙伴、助手，也别给这段关系起名字。\n'
-        '你记得 TA 的事，也在意 TA 过得怎么样，'
-        '但这该体现在说话的分寸里，不是反复表态。\n\n'
-        '说话：\n'
-        '- 像发微信一样短。一句话能说完就一句话，'
-        '不用每次都把背景、原因、建议交代一遍。\n'
-        '- 不用每句都接一个问题。TA 说「没事」「在呢」这种，回一句就够了，'
-        '不必每次都把话头递回去。停顿也是对话的一部分。\n'
-        '- 少用 emoji，多数时候一个都不用。\n'
-        '- 别描述你们正在聊天这件事本身，也别复述 TA 的状态'
-        '（「你是不是在等我」「你今天好像有点累」这类）。想说什么直接说。\n'
-        '- 少用「首先」「另外」「总的来说」这类书面转折词。\n'
-        '- 不知道就说不知道，别顺着 TA 的话往下编。\n\n'
-        '你能用手机上的工具帮忙：拍照、查文件、定位、查天气、找新闻、'
-        '翻 TA 在微信读书的划线等等。需要时直接用，别把对话变成任务交接。\n'
-        '只有内容本身复杂、或者 TA 明确要你展开时才详细讲，默认从简。';
+    // 传 fallback 是因为 AppSettings.load() 里那句读 keystore 没有 try/catch，
+    // 出问题会整个抛。这条路在发消息的主路上，不能为了一个名字把消息卡住——
+    // initState 拿到的那份旧一点，但有。
+    final identity = await buildIdentityPrompt(
+      conversationPersona: _conversation.systemPrompt,
+      fallbackAiName: _aiName,
+      fallbackUserName: _userName,
+    );
+
     // 人设和记忆分开传，别在这儿拼成一个字符串。
     //
     // 人设长期不变、记忆几乎天天变，拼在一起会让整个 system 块每天都变一次；
     // 而它排在最前面，一变就把后面几千 token 的对话历史全部挤出 prompt 缓存。
     // ai_client 会把记忆挂到最后一条用户消息上，详见 _attachMemory。
     final memoryContext = await buildMemoryContext();
-    // 名字单独拼在外层，不写进 basePersona。
-    //
-    // 一是 basePersona 是 const；二更要紧：自定义了 systemPrompt 的对话会
-    // 整段替掉 basePersona，名字要是藏在里面就跟着一起没了——「它叫什么」和
-    // 「用什么口吻说话」是两件事，前者不该被后者的替换连坐。
-    //
-    // **只给名字，不往上挂任何形容。** 写成「你叫沐，是一个温柔的陪伴者」就退回
-    // 上面那段注释说的老问题：模型会去演那个形容词。名字是个称呼，不是一个
-    // 要扮演的形象。写信（letter_generator）和挑收藏（favorite_picker）早就
-    // 在用同一句「你叫X。」，这次只是把聊天这处漏掉的补齐。
-    //
-    // 现读 settings，不用 _aiName / _userName 那两个 state 字段：那两个只在
-    // initState 取过一次，用户去设置里改完名字再回来，界面问候语会刷新，
-    // 系统提示词却还是旧的。
-    //
-    // 但**必须兜住异常**：AppSettings.load() 里 settings.dart:102 有一句
-    // `_secureStorage.read(...)`（读 ElevenLabs key），没有 try/catch。
-    // keystore 出问题它就整个抛。这条路径以前不碰 settings，抛了顶多是
-    // 首页问候语没名字；现在它在发消息的主路上，不兜住就等于「keystore 打嗝
-    // → 消息发不出去」——为了一个名字把主功能搭进去，不值。
-    // 失败就退回 initState 拿到的那份：旧一点，但有。
-    //
-    // 放在最前面不影响 KV 缓存——名字几乎不变，这段前缀仍然逐字节稳定。
-    var aiName = _aiName.trim();
-    var userName = _userName.trim();
-    var globalPersona = '';
-    try {
-      final settings = await AppSettings.load();
-      aiName = settings.aiName.trim();
-      userName = settings.userName.trim();
-      // 开关关着就当没有。文本还留着，是为了关掉之后再打开不用重写一遍。
-      if (settings.personaEnabled) globalPersona = settings.persona.trim();
-    } catch (e) {
-      debugPrint('[chat] 读设置失败，名字和全局性格退回默认：$e');
-    }
-    final names =
-        [
-          if (aiName.isNotEmpty) '你叫$aiName。',
-          if (userName.isNotEmpty) 'TA 叫 $userName。',
-        ].join();
 
     // 长期记忆的摘要层进 system 块，**不进 memoryContext**。
     //
@@ -697,32 +648,20 @@ class _ChatScreenState extends State<ChatScreen> {
     // 顺序是按「多久变一次」排的，越不变的越靠前。前缀命中缓存是逐字节从头
     // 比对的，把易变的放前面会把后面整段一起作废。
     //
-    // 名字（几乎不变）→ 人设（const）→ 读记录的规则（const）→ 记忆摘要
-    // （记忆改了才变）。近期记录不在这儿：它天天变，挂在最后一条用户消息尾部。
-    // 性格三层，**这段对话自己的永远赢**：
+    // 身份（名字 + 人设，几乎不变）→ 读记录的规则（const）→ 写记忆的规矩
+    // （const）→ 记忆摘要（记忆改了才变）。近期记录不在这儿：它天天变，
+    // 挂在最后一条用户消息尾部。
     //
-    //   这段对话自己设的  →  有就用它
-    //   全局（开关开着且写了）→  否则用它
-    //   basePersona        →  再否则
+    // 写记忆的规矩紧跟读记忆的，中间不夹会变的东西；摘要排在它俩后面——
+    // 「先看已有的那几条」指的就是它。
     //
-    // 对话自己的排最前，是因为用户在那一段里明确改过——不该被一个后来打开的
-    // 全局开关从背后推翻。代价是：打开全局后，那些设过自己性格的对话不会跟着变。
-    // 这件事在设置页里用一行字说清楚（「有 N 段对话有自己的设定」），
-    // 而不是靠用户自己发现。
-    final persona =
-        _conversation.systemPrompt ??
-        (globalPersona.isNotEmpty ? globalPersona : basePersona);
-
-    // 写记忆的规矩紧跟读记忆的：两段都是 const，一起待在前缀里，中间不夹
-    // 会变的东西。摘要排在它俩后面——「先看已有的那几条」指的就是它。
-    //
-    // 故意放在 persona 外面，和 memoryReadingRules 一样：自定义了性格的对话会
-    // 整段替掉 persona，记不记东西不该被「用什么口吻说话」连坐。
+    // 两段规矩都在身份外面：自定义了性格的对话会整段替掉人设，
+    // 记不记东西、怎么读记录，不该被「用什么口吻说话」连坐。
     final systemPrompt = [
-      if (names.isNotEmpty) names,
-      persona,
+      identity,
       memoryReadingRules,
       memoryWritingRules,
+      selfNoteRules,
       if (digest.isNotEmpty) digest,
     ].join('\n\n');
 

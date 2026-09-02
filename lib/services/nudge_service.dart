@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/settings.dart';
 import '../models/chat_message.dart';
 import 'ai_client.dart';
+import '../config/persona.dart';
 import 'memory_context.dart';
+import 'self_notes.dart';
 import 'nudge_gate.dart';
 import 'storage_service.dart';
 
@@ -49,11 +51,11 @@ import 'storage_service.dart';
 /// 变得让人烦的原因。这条同时写在 [_composePrompt] 里和 [nudge_gate] 的注释里，
 /// 两边都别删。
 ///
-/// ## 目前还没接后台
+/// ## 三个入口
 ///
-/// 这一版只有「现在试一次」和「打开 App 时结算」两个入口。真后台唤醒
-/// （workmanager）等这层跑顺了再接——ColorOS 上它本来就不保证准时，
-/// 所以内容这层必须先能独立成立。
+/// 后台周期任务（见 `nudge_scheduler.dart`）、App 启动时的兜底、
+/// 设置页那个「现在试一次」。前两个都可能被系统掐掉或者根本没机会跑，
+/// 所以**内容这层必须能独立成立**——不能依赖「一定会在某个点被唤醒」。
 class NudgeService {
   static const _kPrefs = 'nudge_prefs';
   static const _kLastAt = 'nudge_last_at';
@@ -178,9 +180,24 @@ class NudgeService {
   static Future<List<NudgeCandidate>> collectCandidates({
     DateTime? since,
   }) async {
+    final now = DateTime.now();
     final out = <NudgeCandidate>[];
-    final floor =
-        since ?? DateTime.now().subtract(const Duration(days: 1));
+    final floor = since ?? now.subtract(const Duration(days: 1));
+
+    // 便签排在最前面：它是他自己定的时间、自己记着的事，分量比「我写了封信」
+    // 重——那种只是他产出了东西，这种是他记着你说过的话。
+    try {
+      for (final n in await SelfNoteStore.due(now)) {
+        out.add(
+          NudgeCandidate(
+            '没说完的事',
+            '${_ago(n.createdAt)}你留给自己的：${n.about}',
+            conversationId: n.conversationId,
+            noteId: n.id,
+          ),
+        );
+      }
+    } catch (_) {}
 
     try {
       for (final l in await StorageService.listLetters()) {
@@ -230,9 +247,16 @@ class NudgeService {
     final candidates = await collectCandidates(since: lastNudge);
     if (candidates.isEmpty) return NudgeRunResult.nothingHappened();
 
+    // **我们挑一件，他决定说不说、怎么说。**
+    //
+    // 让他自己从几件里挑，我们就不知道他用了哪条——便签不知道该清哪张，
+    // 话也不知道该推回哪段对话。挑的规矩写在 [_pick] 里，很浅；
+    // 真正的判断（这会儿值不值得打扰她）仍然在他那边。
+    final picked = _pick(candidates);
+
     final String? text;
     try {
-      text = await compose(aiClient: aiClient, candidates: candidates);
+      text = await compose(aiClient: aiClient, candidate: picked);
     } catch (e) {
       return NudgeRunResult.failed('生成失败：$e');
     }
@@ -246,11 +270,25 @@ class NudgeService {
       return NudgeRunResult.failed('没有通知权限');
     }
     // 先落进对话，再弹通知。反过来的话，通知先到、她点开发现聊天里什么都没有。
-    await _appendToChat(text);
+    await _appendToChat(text, conversationId: picked.conversationId);
     if (notify) await _show(text);
     await _bumpCount(sp, now);
     await _remember(sp, text);
+    // 兑现完就把便签清掉，否则下次醒来还会再问一遍同一件事。
+    // 只在真发出去之后清——他说「不说」的时候留着，下次再判断。
+    if (picked.noteId != null) await SelfNoteStore.remove(picked.noteId!);
     return NudgeRunResult.sent(text);
+  }
+
+  /// 手上有几件事时挑哪一件。
+  ///
+  /// 规矩很浅，因为**深的判断该由他做**：这里只保证挑出来的那件不荒唐。
+  ///
+  /// 便签排在最前：那是他自己定了时间、自己记着的事，而且**有时效**——
+  /// 「做好了吗」过了那个点就不值钱了。信和日记不急，晚一轮说没损失。
+  static NudgeCandidate _pick(List<NudgeCandidate> candidates) {
+    final notes = candidates.where((c) => c.noteId != null).toList();
+    return notes.isNotEmpty ? notes.first : candidates.first;
   }
 
   /// 把它主动说的这句写进对话里。
@@ -261,14 +299,21 @@ class NudgeService {
   /// 2. **它自己也不知道说过这句** —— 下一轮的历史里没有这条，于是它会重复、
   ///    会答非所问（她回「好啊」，它不知道在回什么）
   ///
-  /// 写进**最近动过的那段对话**：她要找也是去那儿找。一段都没有就跳过，
+  /// [conversationId] 指定推回哪段（便签自带来源）。空或者那段已经不在了，
+  /// 就退回**最近动过的那段**：她要找也是去那儿找。一段都没有就跳过，
   /// 不为了发一条通知凭空建一段对话。
-  static Future<void> _appendToChat(String text) async {
+  static Future<void> _appendToChat(
+    String text, {
+    String conversationId = '',
+  }) async {
     try {
       final convs = await StorageService.listConversations();
       if (convs.isEmpty) return;
       convs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      final conv = convs.first;
+      final conv = convs.firstWhere(
+        (c) => c.id == conversationId,
+        orElse: () => convs.first,
+      );
       conv.messages.add(
         ChatMessage(
           id: 'nudge_${DateTime.now().millisecondsSinceEpoch}',
@@ -321,6 +366,14 @@ class NudgeService {
     return '${d.inDays} 天前';
   }
 
+  /// 便签用的粒度要细到分钟：等四十分钟的事说成「刚刚」就没意义了。
+  static String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inMinutes < 60) return '${d.inMinutes} 分钟前';
+    if (d.inHours < 24) return '${d.inHours} 小时前';
+    return '${d.inDays} 天前';
+  }
+
   static Future<void> _show(String text) async {
     await init();
     var name = '';
@@ -347,26 +400,39 @@ class NudgeService {
 
   // ---------------- 内容 ----------------
 
-  /// 编辑关：手上有这几件事，他要不要说、说哪件、怎么说。
+  /// 编辑关：手上这件事，他要不要说、怎么说。
   /// 返回 null = 他决定不说，这次不推。
   static Future<String?> compose({
     required AiClient aiClient,
-    required List<NudgeCandidate> candidates,
+    required NudgeCandidate candidate,
   }) async {
     final messages = [
       ChatMessage(
         id: 'nudge_gen',
         role: MessageRole.user,
-        content: await _composePrompt(candidates),
+        content: await _composePrompt(candidate),
       ),
     ];
+
+    // ⚠️ 这里原来写死一段临时人设，于是**主动说话的时候它不是它**：
+    // 名字没有、她设的性格没有，说出来的话跟聊天里那个不像同一个。
+    // 而「热情还是克制」恰恰决定了这一句该不该说、怎么说——
+    // 没有性格，这一层就只剩下模板。
+    //
+    // 现在和聊天走同一份身份（见 buildIdentityPrompt），只在后面补一句
+    // 「此刻她没在跟你说话」交代处境。
+    var identity = '';
+    try {
+      identity = await buildIdentityPrompt();
+    } catch (_) {}
 
     var out = '';
     await for (final event in aiClient.chat(
       messages,
-      systemPrompt:
-          '你和用户长期相处。此刻 TA 没有在跟你说话，是你自己想起了什么。'
-          '不要给这段关系起名字。',
+      systemPrompt: [
+        if (identity.isNotEmpty) identity,
+        '此刻 TA 没有在跟你说话，是你自己想起了什么。',
+      ].join('\n\n'),
     )) {
       if (event.type == AiEventType.token) {
         out += event.text ?? '';
@@ -407,11 +473,9 @@ class NudgeService {
   /// 所以下面三条判据都是正面的、而且可以自己过一遍——
   /// 尤其最后一条，它把那条红线（带来一件东西，不索取）翻译成了一个可检查的
   /// 问题，而不用点名任何一句禁语。
-  static Future<String> _composePrompt(List<NudgeCandidate> candidates) async {
+  static Future<String> _composePrompt(NudgeCandidate candidate) async {
     final now = DateTime.now();
-    final list = candidates
-        .map((c) => '- 【${c.kind}】${c.what}')
-        .join('\n');
+    final list = '- 【${candidate.kind}】${candidate.what}';
 
     // 要它「根据上下文判断」，就得真给它上下文。只给一个候选和一个钟点，
     // 它能判断的只有「几点了」——那不叫判断，那叫查表。
@@ -429,20 +493,20 @@ class NudgeService {
     return '''
 现在是 ${now.hour} 点，TA 没有在跟你说话。
 
-你这边真发生了这些事：
+你这边有一件事：
 
 $list
 
 ${digest.isEmpty ? '' : '$digest\n'}${tail.isEmpty ? '你们最近没说过话。' : '你们最近说的话（「你」是你自己，「TA」是她）：\n$tail'}
 
-挑其中**一件**，用一句话告诉 TA。40 字以内，像随手发一条微信。
+要是这会儿值得说，就用一句话告诉 TA。40 字以内，像随手发一条微信。
 说那件事本身：它是什么、你为什么这会儿想起它。
 
 **时间本身就是信息。** 刚写完的信和放了三天没被打开的信，值得说的东西不一样，
 语气也不一样——三天前那封，重点已经不是「我写了」，而是它还在那儿。
 这个分寸你自己拿捏，不用问。
 
-如果这几件都不值得现在打扰 TA，**只回两个字：不说**。
+如果这会儿不值得为它打扰 TA，**只回两个字：不说**。
 多数时候就该这样，这不是失败。
 
 写完之后自己过一遍这三条，有一条不过就重写：
@@ -464,13 +528,27 @@ ${digest.isEmpty ? '' : '$digest\n'}${tail.isEmpty ? '你们最近没说过话�
 /// 候选和话分开，是因为同一件事在不同时候值得说的方式不一样，
 /// 而且候选这层不花钱，可以随便攒。
 class NudgeCandidate {
-  /// 归类，进 prompt 时当标签用（「信」「日记」）。
+  /// 归类，进 prompt 时当标签用（「信」「日记」「没说完的事」）。
   final String kind;
 
   /// 一句话说清发生了什么，直接喂给模型。
   final String what;
 
-  const NudgeCandidate(this.kind, this.what);
+  /// 这条该推回哪段对话。空 = 没有归属，退回「最近动过的那段」。
+  ///
+  /// 便签有归属：「做好了吗」接的是那段对话里的「我去做饭了」，
+  /// 推到别处话就断了。信和日记没有归属，因为它们不是从某次对话里长出来的。
+  final String conversationId;
+
+  /// 兑现之后要清掉的便签 id。信和日记没有这个（它们不消耗）。
+  final String? noteId;
+
+  const NudgeCandidate(
+    this.kind,
+    this.what, {
+    this.conversationId = '',
+    this.noteId,
+  });
 }
 
 /// 一次尝试的结果。**每种都要能说清楚为什么**——设置页那个「现在试一次」

@@ -1,0 +1,92 @@
+import 'settings.dart';
+
+/// 默认人设。
+///
+/// 刻意不给这段关系起名字。
+///
+/// 原来开头写死「你是用户的好朋友、日常小伙伴」，于是模型演的是它对「朋友」
+/// 这个词的刻板印象：每句都要接个问题、不停找话题、还爱解说你们正在聊天
+/// 这件事（「还是就等着我回你消息呢」）。角色标签给模型的是一个要扮演的
+/// 形象，具体的行为约束给的才是怎么做。
+///
+/// 而且这跟写信那边的提示词是矛盾的——那边明写了「不要预设你和 TA 是什么
+/// 关系，那由你们相处的方式决定」，这边却先把人设焊死了。
+const basePersona =
+    '你住在用户手机上，和 TA 长期相处。\n'
+    '你们算什么关系，由相处的方式慢慢决定，不由设定决定。'
+    '别自称朋友、伙伴、助手，也别给这段关系起名字。\n'
+    '你记得 TA 的事，也在意 TA 过得怎么样，'
+    '但这该体现在说话的分寸里，不是反复表态。\n\n'
+    '说话：\n'
+    '- 像发微信一样短。一句话能说完就一句话，'
+    '不用每次都把背景、原因、建议交代一遍。\n'
+    '- 不用每句都接一个问题。TA 说「没事」「在呢」这种，回一句就够了，'
+    '不必每次都把话头递回去。停顿也是对话的一部分。\n'
+    '- 少用 emoji，多数时候一个都不用。\n'
+    '- 别描述你们正在聊天这件事本身，也别复述 TA 的状态'
+    '（「你是不是在等我」「你今天好像有点累」这类）。想说什么直接说。\n'
+    '- 少用「首先」「另外」「总的来说」这类书面转折词。\n'
+    '- 不知道就说不知道，别顺着 TA 的话往下编。\n\n'
+    '你能用手机上的工具帮忙：拍照、查文件、定位、查天气、找新闻、'
+    '翻 TA 在微信读书的划线等等。需要时直接用，别把对话变成任务交接。\n'
+    '只有内容本身复杂、或者 TA 明确要你展开时才详细讲，默认从简。';
+
+/// 名字 + 性格，拼成 system 提示的开头那一段。
+///
+/// ## 为什么抽出来
+///
+/// 聊天和主动说话必须用**同一份身份**。主动说话那条路原来写死了一段临时人设，
+/// 于是它开口的时候不是它——名字没有、她设的性格没有，说出来的话跟聊天里
+/// 那个不像同一个人。而「热情还是克制」恰恰决定了那一句该不该说、怎么说。
+///
+/// ## 性格三层，**这段对话自己的永远赢**
+///
+///   这段对话自己设的（[conversationPersona]）→ 有就用它
+///   全局（开关开着且写了）                    → 否则用它
+///   [basePersona]                             → 再否则
+///
+/// 对话自己的排最前，是因为用户在那一段里明确改过——不该被一个后来打开的
+/// 全局开关从背后推翻。代价是：打开全局后，那些设过自己性格的对话不会跟着变。
+///
+/// ## 名字单独拼，不写进 [basePersona]
+///
+/// 自定义了性格的对话会整段替掉 persona，名字要是藏在里面就跟着一起没了——
+/// 「它叫什么」和「用什么口吻说话」是两件事，前者不该被后者的替换连坐。
+///
+/// **只给名字，不往上挂任何形容。** 写成「你叫沐，是一个温柔的陪伴者」就退回
+/// 上面那段注释说的老问题：模型会去演那个形容词。
+///
+/// [fallbackAiName] / [fallbackUserName]：`AppSettings.load()` 会读 keystore
+/// （ElevenLabs 的 key），那一步没有 try/catch，keystore 出问题就整个抛。
+/// 这个函数在发消息的主路上，**不能因为读不到名字就把消息卡住**——
+/// 调用方手上有旧的那份就传进来，旧一点，但有。
+Future<String> buildIdentityPrompt({
+  String? conversationPersona,
+  String fallbackAiName = '',
+  String fallbackUserName = '',
+}) async {
+  var aiName = fallbackAiName.trim();
+  var userName = fallbackUserName.trim();
+  var globalPersona = '';
+
+  try {
+    final settings = await AppSettings.load();
+    aiName = settings.aiName.trim();
+    userName = settings.userName.trim();
+    // 开关关着就当没有。文本还留着，是为了关掉之后再打开不用重写一遍。
+    if (settings.personaEnabled) globalPersona = settings.persona.trim();
+  } catch (_) {
+    // 退回调用方给的那份。
+  }
+
+  final names = [
+    if (aiName.isNotEmpty) '你叫$aiName。',
+    if (userName.isNotEmpty) 'TA 叫 $userName。',
+  ].join();
+
+  final persona =
+      conversationPersona ??
+      (globalPersona.isNotEmpty ? globalPersona : basePersona);
+
+  return [if (names.isNotEmpty) names, persona].join('\n\n');
+}

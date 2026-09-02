@@ -12,6 +12,7 @@ import 'phone_tools/location_tool.dart';
 import 'phone_tools/memory_tool.dart';
 import 'phone_tools/sensors_tool.dart';
 import 'phone_tools/search_tool.dart';
+import 'phone_tools/self_note_tool.dart';
 import 'phone_tools/time_tool.dart';
 import 'phone_tools/weather_tool.dart';
 import 'phone_tools/weread_tool.dart';
@@ -63,6 +64,10 @@ class McpServer {
     _registerTool(MemoryTools.openDefinition, MemoryTools.open);
     _registerTool(MemoryTools.updateDefinition, MemoryTools.update);
     _registerTool(MemoryTools.forgetDefinition, MemoryTools.forget);
+    // 便签：不是记忆的一种，是「主动说话」的由头。
+    // 记忆答的是「她是谁」，便签答的是「这件事还没完」——前者常驻，
+    // 后者到点兑现完就没了。
+    _registerTool(SelfNoteTool.definition, SelfNoteTool.execute);
     _registerTool(AlarmTool.definition, AlarmTool.execute);
     _registerTool(TimerTool.definition, TimerTool.execute);
     _registerTool(CalendarTool.definition, CalendarTool.execute);
