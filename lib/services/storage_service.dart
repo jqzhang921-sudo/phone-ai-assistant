@@ -65,7 +65,11 @@ class StorageService {
     if (!await dir.exists()) await dir.create(recursive: true);
     final target = '$_convDir/${conv.id}.json';
     final tmp = File('$target.tmp');
-    await tmp.writeAsString(jsonEncode(conv.toJson()), flush: true);
+    // ⚠️ **不要加 `flush: true`。** 原子性靠的是 rename，跟 fsync 没关系：
+    // 读的人经过页缓存，看到的要么是旧文件要么是新文件。加上 flush 只是让每次
+    // 存盘都等一次磁盘同步——一段一千多条消息的对话将近一兆，等下来就是可感的
+    // 卡顿。实测就是这么卡的。
+    await tmp.writeAsString(jsonEncode(conv.toJson()));
     await tmp.rename(target);
   }
 
@@ -86,6 +90,29 @@ class StorageService {
   /// 用户看到的就是「它突然不见了」——而文件其实还在磁盘上。
   /// 有了原子写之后这个数应该恒为 0；不为 0 就是真出事了，得看得见。
   static int lastListFailures = 0;
+
+  /// 最后一次有对话被写过是什么时候。**不解析任何 JSON。**
+  ///
+  /// 主动说话的门槛要判断「是不是刚聊完」，原来走 [listConversations] 再遍历
+  /// 每条消息找最大时间戳——为了一个时间戳，把每一段对话的 JSON 全解析一遍。
+  /// 一段一千多条消息将近一兆，而这件事在 App 启动时就要做一次，正好跟头几帧
+  /// 抢主 isolate。实测掉帧就是它。
+  ///
+  /// 文件的修改时间就够了：存盘就意味着有来有往。它还顺带覆盖了主动说的话
+  /// （那也会写文件），而那本来就该算「刚说过话」。
+  static Future<DateTime?> lastConversationWriteAt() async {
+    final dir = Directory(_convDir);
+    if (!await dir.exists()) return null;
+    DateTime? latest;
+    try {
+      for (final f in await dir.list().toList()) {
+        if (!f.path.endsWith('.json')) continue;
+        final t = f.statSync().modified;
+        if (latest == null || t.isAfter(latest)) latest = t;
+      }
+    } catch (_) {}
+    return latest;
+  }
 
   static Future<List<Conversation>> listConversations() async {
     final dir = Directory(_convDir);

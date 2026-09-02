@@ -62,6 +62,12 @@ class NudgeScheduler {
   /// 消息再弹一条通知是噪音。话照样落进对话，她翻到就看见。
   static Future<void> runOnStartup() async {
     try {
+      // ⚠️ 让开头几帧先画完。
+      //
+      // 这条路要读文件、可能还要调模型，全在主 isolate 上。跟首屏抢会直接掉帧，
+      // 而它一点都不急——攒下的事晚几秒说没有任何区别。
+      await Future.delayed(const Duration(seconds: 3));
+
       final prefs = await NudgeService.loadPrefs();
       if (!prefs.enabled) return;
       final client = await buildStoredAiClient();

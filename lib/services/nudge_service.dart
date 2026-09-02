@@ -218,16 +218,12 @@ class NudgeService {
   }
 
   /// 最后一条消息的时间——门槛用它判断「是不是刚聊完」。
-  static Future<DateTime?> lastChatAt() async {
-    final convs = await StorageService.listConversations();
-    DateTime? latest;
-    for (final c in convs) {
-      for (final m in c.messages) {
-        if (latest == null || m.timestamp.isAfter(latest)) latest = m.timestamp;
-      }
-    }
-    return latest;
-  }
+  ///
+  /// ⚠️ 走文件的修改时间，**不解析 JSON**。原来是把每段对话全读出来再遍历
+  /// 每条消息找最大时间戳，为了一个时间戳解析上兆的文本，而这件事在 App
+  /// 启动时就要做一次——实测就是掉帧的来源。
+  static Future<DateTime?> lastChatAt() =>
+      StorageService.lastConversationWriteAt();
 
   // ---------------- 主流程 ----------------
 
