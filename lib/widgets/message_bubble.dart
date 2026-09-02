@@ -142,12 +142,44 @@ class MessageBubble extends StatelessWidget {
               bottomRight: full,
             );
 
+    // 它自己开口说的那句，要和「回你的话」看得出区别。
+    //
+    // 原来主动推送插进来的就是一条普通 assistant 消息，和回复长得一模一样——
+    // 于是最该被看见的那件事（**它自己想起了什么**）反而没有任何标记，
+    // 用户翻聊天记录根本分不出来。
+    //
+    // 只加一行小字，不换气泡样式：它说的还是同一种话，只是这句没人问它。
+    final isNudge = message.metadata?['nudge'] == true;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
+          if (isNudge && !isUser)
+            Padding(
+              padding: const EdgeInsets.only(left: 44, bottom: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    PhosphorIconsFill.butterfly,
+                    size: 11,
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    // 不写「主动消息」——那是在讲机制。写它做了什么。
+                    '它自己想起来的',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           GestureDetector(
             onLongPress: () {
               HapticFeedback.mediumImpact();

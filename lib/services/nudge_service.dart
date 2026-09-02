@@ -405,6 +405,10 @@ class NudgeService {
           id: 'nudge_${DateTime.now().millisecondsSinceEpoch}',
           role: MessageRole.assistant,
           content: text,
+          // 界面靠这个标记把它和「回你的话」分开显示。
+          // 用 metadata 而不是新加字段：这只是一条 assistant 消息的来历，
+          // 不是一种新的消息类型——发回服务端时它仍旧是普通的一句。
+          metadata: const {'nudge': true},
         ),
       );
       conv.updatedAt = DateTime.now();
