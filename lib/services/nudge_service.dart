@@ -59,8 +59,11 @@ import 'storage_service.dart';
 class NudgeService {
   static const _kPrefs = 'nudge_prefs';
   static const _kLastAt = 'nudge_last_at';
-  static const _kCountDay = 'nudge_count_day';
-  static const _kCount = 'nudge_count';
+  // ⚠️ 键名从 nudge_count 换成了 nudge_notified_*，因为**含义变了**：
+  // 现在只数「真弹了通知的」。旧键留在磁盘上不管它——顺带把线上那个已经被
+  // 烧穿的计数一起丢掉，那是按旧含义攒出来的，按新含义不该算数。
+  static const _kCountDay = 'nudge_notified_day';
+  static const _kCount = 'nudge_notified_count';
   static const _kRecent = 'nudge_recent';
   static const _kLastRun = 'nudge_last_run';
 
@@ -131,12 +134,29 @@ class NudgeService {
     return sp.getInt(_kCount) ?? 0;
   }
 
-  static Future<void> _bumpCount(SharedPreferences sp, DateTime now) async {
+  /// [notified] = 这次真弹了通知。
+  ///
+  /// ⚠️ **静默的那次不能算进保险丝。** 保险丝防的是「一天弹太多通知」，而
+  /// `runOnStartup` 走的是 `notify: false`——只把话写进对话，人本来就在 App 里。
+  ///
+  /// 真机上就是这么烧穿的：一天给她装了九次包，每次装完 App 重启就跑一次
+  /// `runOnStartup`，四条额度全耗在静默写入上，而她一条通知都没看到，
+  /// 后台那边只报「保险丝断了」。
+  ///
+  /// 「上次说话是什么时候」不受这条影响：静默说过也是说过，间隔照算，
+  /// 否则它会接二连三地说。
+  static Future<void> _bumpCount(
+    SharedPreferences sp,
+    DateTime now, {
+    required bool notified,
+  }) async {
+    await sp.setInt(_kLastAt, now.millisecondsSinceEpoch);
+    if (!notified) return;
     final today = '${now.year}-${now.month}-${now.day}';
-    final prev = sp.getString(_kCountDay) == today ? (sp.getInt(_kCount) ?? 0) : 0;
+    final prev =
+        sp.getString(_kCountDay) == today ? (sp.getInt(_kCount) ?? 0) : 0;
     await sp.setString(_kCountDay, today);
     await sp.setInt(_kCount, prev + 1);
-    await sp.setInt(_kLastAt, now.millisecondsSinceEpoch);
   }
 
   static Future<DateTime?> _lastNudgeAt(SharedPreferences sp) async {
@@ -348,7 +368,7 @@ class NudgeService {
     // 先落进对话，再弹通知。反过来的话，通知先到、她点开发现聊天里什么都没有。
     await _appendToChat(text, conversationId: picked.conversationId);
     if (notify) await _show(text);
-    await _bumpCount(sp, now);
+    await _bumpCount(sp, now, notified: notify);
     await _remember(sp, text);
     // 兑现完就把便签清掉，否则下次醒来还会再问一遍同一件事。
     // 只在真发出去之后清——他说「不说」的时候留着，下次再判断。
