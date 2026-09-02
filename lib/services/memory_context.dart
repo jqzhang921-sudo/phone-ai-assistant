@@ -28,6 +28,7 @@ import '../models/diary_entry.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
 import 'storage_service.dart';
+import 'small_things.dart';
 // ─────────────────────────────────────────────────────────────
 // 一、固定规则：进 system 前缀，从不变
 // ─────────────────────────────────────────────────────────────
@@ -45,6 +46,8 @@ const memoryReadingRules = '''
 - **日记**：你用自己的口吻记下的日记，一天可以有几篇。
 - **我想说 / 一隅**：首页那段你随口说的话；用户觉得值得留的会收藏进「一隅」。
 - **信**：你和用户互相写信的地方，在「栖息」页。信是慢的，和聊天不一样。
+- **小事**：栖息页上那块板。用户要做的事贴在上面（带方框的那些），
+  你给自己留的便签也贴在同一块板上。
 
 用户提到这些名字时，指的就是这个 App 里的功能，不是别的产品。
 
@@ -210,8 +213,51 @@ Future<String> buildMemoryContext({
   await _appendMusings(buf, fullMusings);
   await _appendBooks(buf, maxBooks);
   await _appendLetterStatus(buf);
+  await _appendSmallThings(buf);
 
   return buf.toString();
+}
+
+/// 板上贴着的小事。
+///
+/// ## 为什么常驻，而不是给个工具去查
+///
+/// 因为**这是被动就得懂的东西**。她会顺口提：「那个快递我拿了」——那一刻它得
+/// 当场听懂是哪件事。要是得先调一次工具才知道板上有什么，那一轮就变成了任务
+/// 交接，而不是她随口说了句话。
+///
+/// 而且工具那条路已经被证伪过两次：记忆和便签都是「注册了但它想不起来调」，
+/// 工具一多就更够不着。常驻的代价是每轮几十个 token，很便宜。
+///
+/// ## ⚠️ 看得见 ≠ 该提
+///
+/// 这一段最容易催生出「你那件事还没做吧」。判据写在下面那句里，
+/// 和 `smallThingRules` 里那条是同一件事，两边都别删。
+Future<void> _appendSmallThings(StringBuffer buf) async {
+  final items = await SmallThingStore.pending();
+  if (items.isEmpty) return;
+
+  buf.writeln();
+  buf.writeln('### TA 板上贴着的小事（${items.length} 件）');
+  for (final s in items) {
+    final due = s.dueAt == null ? '' : '（${_dueLabel(s.dueAt!)}）';
+    buf.writeln('- ${s.text}$due');
+  }
+  buf.writeln(
+    '这些是 TA 自己要做的事，你替 TA 记着而已。'
+    '**看得见不等于该提**——她提起来你接得上就行，别主动清点，'
+    '更别问做了没有。',
+  );
+}
+
+String _dueLabel(DateTime due) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final d = DateTime(due.year, due.month, due.day).difference(today).inDays;
+  if (d < 0) return '${-d} 天前就该做了';
+  if (d == 0) return '今天之前';
+  if (d == 1) return '明天之前';
+  return '${due.month} 月 ${due.day} 日之前';
 }
 
 /// 日记这一段的字数上限。
