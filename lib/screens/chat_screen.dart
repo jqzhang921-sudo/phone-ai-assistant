@@ -22,6 +22,7 @@ import '../config/persona.dart';
 import '../services/mcp_server.dart';
 import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
+import '../services/small_things.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../config/settings.dart';
@@ -662,6 +663,7 @@ class _ChatScreenState extends State<ChatScreen> {
       memoryReadingRules,
       memoryWritingRules,
       selfNoteRules,
+      smallThingRules,
       if (digest.isNotEmpty) digest,
     ].join('\n\n');
 

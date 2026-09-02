@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
@@ -7,6 +8,7 @@ import '../models/chat_message.dart';
 import '../services/app_providers.dart';
 import '../services/letter_schedule.dart';
 import '../services/self_notes.dart';
+import '../services/small_things.dart';
 import '../widgets/app_surface.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
@@ -45,6 +47,10 @@ class _HabitatScreenState extends State<HabitatScreen> {
   /// 不写「它会问你的事」；到点了也不催，只是纸条还在那儿。
   List<SelfNote> _notes = const [];
 
+  /// 她自己要做的小事。和便签贴在同一块板上，但**是两套生命周期**：
+  /// 便签会自动过期，小事只会因为她勾了才离开。
+  List<SmallThing> _smallThings = const [];
+
   /// 设置里填的「TA 叫什么」。填了就用名字，不填就把句子改写成不需要代词的。
   ///
   /// 原来文案里到处是「它」——中文的「它」指向物件或动物，读起来像在说一个
@@ -66,6 +72,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final settings = await AppSettings.load();
     final now = DateTime.now();
     final notes = await SelfNoteStore.pending(now);
+    final smallThings = await SmallThingStore.pending();
     final midnight = DateTime(now.year, now.month, now.day);
     var today = 0;
     var total = 0;
@@ -94,6 +101,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _unreadLetters = letters.where((l) => l.isFromAi && !l.read).length;
         _letterStatus = letterStatus;
         _notes = notes;
+        _smallThings = smallThings;
         _aiName = settings.aiName;
       });
     }
@@ -198,12 +206,10 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 20),
           _letterEntry(theme),
           const SizedBox(height: 16),
-          // 便签排在信下面、归档那组上面：它和信一样是「它那边」的东西，
-          // 而下面三条是你存进去的。没有便签时整块不出现。
-          if (_notes.isNotEmpty) ...[
-            _noteBoard(theme),
-            const SizedBox(height: 16),
-          ],
+          // 小事板排在信下面、归档那组上面：它和信一样是「正在发生的」，
+          // 而下面三条是归档——你存进去的东西。
+          _noteBoard(theme),
+          const SizedBox(height: 16),
           // 其余三项压成一组紧凑的行。
           //
           // 原来五张等高卡片竖着码，一屏只放得下两张半，而且每张的正文和右下角
@@ -584,11 +590,23 @@ class _HabitatScreenState extends State<HabitatScreen> {
     );
   }
 
-  /// 它给自己贴的便签。一张都没有时整块不出现——空状态在这一页是噪音，
-  /// 而且「它现在没记着什么事」不需要一个卡片来说。
+  /// 「小事」板：它给自己留的便签，和她自己要做的事，贴在一块板上。
+  ///
+  /// ## 两种纸，两套规矩
+  ///
+  /// 便签会自动过期（「饭做好了吗」问晚了就没意义），小事**绝不自动消失**
+  /// （那不叫过期，叫丢东西）。共用一块板没问题，共用生命周期会出最难发现的
+  /// 那种 bug，所以存储是彻底分开的两套。
+  ///
+  /// ## 区分靠形状，不靠颜色
+  ///
+  /// **小事带勾选框，便签不带。** 四种纸色已经拿去做「不像复印的」了，而且
+  /// 颜色在深色模式和色盲眼里都不可靠；勾选框在任何情况下都读得出来，
+  /// 而且它本身就说明了那张纸能拿它怎么办。
   Widget _noteBoard(ThemeData theme) {
     final scheme = theme.colorScheme;
     final tone = AppTone.of(context);
+    final empty = _notes.isEmpty && _smallThings.isEmpty;
 
     return AppSurface(
       borderRadius: AppRadius.lgAll,
@@ -606,18 +624,40 @@ class _HabitatScreenState extends State<HabitatScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  // 不写「它会问你的事」——那是承诺。这是它给自己的便条。
-                  //
-                  // 有名字就用名字。中文的「它」指向物件，「它记着的事」读起来
-                  // 像个功能模块在记录；「沐记着的事」才是有人在惦记。
-                  // 这一页别处（`_aiName`）早就是这么处理的。
-                  _aiName.isEmpty ? '记着的事' : '$_aiName 记着的事',
+                  // 板上现在有两个人的东西，所以标题不再挂它一个人的名字。
+                  // 也没叫「角落」——「一隅」已经是那个词了，撞名字会让两个
+                  // 地方都变模糊。
+                  '小事',
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                const Spacer(),
+                // 加一件她自己的。它也能替她贴（add_small_thing），
+                // 但「我自己想记一件」不该非得先开口说话。
+                InkWell(
+                  onTap: _addSmallThing,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      PhosphorIconsRegular.plus,
+                      size: 16,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               ],
             ),
+            if (empty) ...[
+              const SizedBox(height: 6),
+              Text(
+                '想起什么要做的，点上面的加号贴一张。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             // 固定两列，不按内容自然换行。
             //
@@ -628,27 +668,33 @@ class _HabitatScreenState extends State<HabitatScreen> {
             LayoutBuilder(
               builder: (context, c) {
                 final w = (c.maxWidth - 10) / 2;
+                var i = 0;
                 return Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    for (var i = 0; i < _notes.length; i++)
+                    // 小事排前面：那是她要做的，比「它惦记着什么」更该先看到。
+                    for (final s in _smallThings)
                       SizedBox(
                         width: w,
-                        child: _noteSlip(theme, tone, _notes[i], i),
+                        child: _smallThingSlip(theme, tone, s, i++),
                       ),
+                    for (final n in _notes)
+                      SizedBox(width: w, child: _noteSlip(theme, tone, n, i++)),
                   ],
                 );
               },
             ),
-            const SizedBox(height: 8),
-            Text(
-              '长按可以撕掉',
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 11,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+            if (!empty) ...[
+              const SizedBox(height: 8),
+              Text(
+                '点方框表示做完了 · 长按撕掉',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -740,6 +786,219 @@ class _HabitatScreenState extends State<HabitatScreen> {
         ),
       ),
     );
+  }
+
+  /// 一张她自己的纸条。和便签同一种纸，多一个勾选框。
+  ///
+  /// 勾掉 ≠ 删掉：只记一个时间，纸从板上下来但东西留一周。误触一下就永久丢
+  /// 一件事，代价和收益完全不成比例。所以还给一次撤销。
+  Widget _smallThingSlip(
+    ThemeData theme,
+    AppTone tone,
+    SmallThing s,
+    int index,
+  ) {
+    final scheme = theme.colorScheme;
+    final paper = tone.shift(
+      _paperTones[s.id.hashCode.abs() % _paperTones.length],
+    );
+    final ink = tone.shift(const Color(0xFF3D3529));
+
+    return Transform.rotate(
+      angle: (index.isEven ? 1.2 : -1.2) * 3.1415926 / 180,
+      child: GestureDetector(
+        onLongPress: () async {
+          await SmallThingStore.remove(s.id);
+          if (mounted) _load();
+        },
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          decoration: BoxDecoration(
+            color: paper,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.shadow.withValues(alpha: 0.16),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 勾选框是「这张纸是谁的」唯一可靠的标记——颜色不算数。
+              // 单独做成可点的区域，避免长按撕掉和点击勾选打架。
+              InkWell(
+                onTap: () => _markSmallThingDone(s),
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 7, top: 1, bottom: 2),
+                  child: Container(
+                    width: 13,
+                    height: 13,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: ink.withValues(alpha: 0.5),
+                        width: 1.4,
+                      ),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      s.text,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'NotoSerifSC',
+                        fontSize: 12.5,
+                        height: 1.45,
+                        color: ink,
+                      ),
+                    ),
+                    if (s.dueAt != null) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        _dueText(s.dueAt!),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: ink.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _markSmallThingDone(SmallThing s) async {
+    await SmallThingStore.markDone(s.id);
+    if (!mounted) return;
+    _load();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('做完了'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: '撤销',
+          onPressed: () async {
+            await SmallThingStore.undone(s.id);
+            if (mounted) _load();
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 截止那行。**过期了也只是陈述，不催**——「过期」两个字本身就够重了，
+  /// 再加感叹号或者红色就成了指责。
+  String _dueText(DateTime due) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(due.year, due.month, due.day).difference(today).inDays;
+    if (d < 0) return '${-d} 天前就该做了';
+    if (d == 0) return '今天';
+    if (d == 1) return '明天';
+    if (d < 7) return '$d 天后';
+    return '${due.month} 月 ${due.day} 日';
+  }
+
+  Future<void> _addSmallThing() async {
+    final controller = TextEditingController();
+    DateTime? due;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, set) => AlertDialog(
+                  title: const Text('记一件小事'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: controller,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: '要做什么',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => Navigator.of(ctx).pop(true),
+                      ),
+                      const SizedBox(height: 12),
+                      // 截止是可选的。默认不选——替她安排一个日期是多事，
+                      // 而且大部分小事本来就没有期限。
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final e in <(String, DateTime?)>[
+                            ('不设', null),
+                            ('今天', DateTime.now()),
+                            (
+                              '明天',
+                              DateTime.now().add(const Duration(days: 1)),
+                            ),
+                            (
+                              '这周内',
+                              DateTime.now().add(const Duration(days: 7)),
+                            ),
+                          ])
+                            ChoiceChip(
+                              label: Text(e.$1),
+                              selected:
+                                  due == null
+                                      ? e.$2 == null
+                                      : e.$2 != null &&
+                                          due!.difference(e.$2!).inHours.abs() <
+                                              2,
+                              onSelected: (_) => set(() => due = e.$2),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('算了'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: const Text('贴上'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+
+    final text = controller.text.trim();
+    controller.dispose();
+    if (ok != true || text.isEmpty) return;
+
+    await SmallThingStore.add(
+      SmallThing(
+        id: const Uuid().v4(),
+        text: text,
+        createdAt: DateTime.now(),
+        dueAt: due,
+      ),
+    );
+    if (mounted) _load();
   }
 
   String _untilText(DateTime due) {

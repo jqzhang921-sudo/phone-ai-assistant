@@ -34,6 +34,7 @@ const _labels = <String, String>{
   'update_memory': 'Update memory',
   'forget': 'Forget',
   'follow_up_later': 'Note to self',
+  'add_small_thing': 'Small thing',
   'set_alarm': 'Set alarm',
   'set_timer': 'Set timer',
   'add_calendar_event': 'Add to calendar',
