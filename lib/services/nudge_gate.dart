@@ -65,6 +65,14 @@ class NudgePrefs {
 
   /// 最后一次聊天之后至少静默多久才考虑推。
   ///
+  /// 从 3 小时降到 1 小时：3 小时这个数没考虑到——如果她本来就聊得勤，
+  /// 一整天很难攒出连续 3 小时不碰这个 App 的空档，普通推送（非便签）会
+  /// 一直被 [NudgeBlock.tooSoonAfterChat] 拦住，实测确认过。
+  ///
+  /// 降到 1 小时之后，真正防打扰的还是 [minGapBetweenNudges] 和
+  /// 静默时段那两道——这条只用来确保"不是话音刚落就立刻插一句"，
+  /// 不需要单独扛住全部的打扰风险。
+  ///
   /// ⚠️ **便签不受这条约束**，见 [decideNudge]。
   final Duration minSilenceAfterChat;
 
@@ -74,7 +82,7 @@ class NudgePrefs {
     this.quietEndHour = 8,
     this.minGapBetweenNudges = const Duration(hours: 1),
     this.minGapAfterFollowUp = const Duration(minutes: 20),
-    this.minSilenceAfterChat = const Duration(hours: 3),
+    this.minSilenceAfterChat = const Duration(hours: 1),
   });
 
   NudgePrefs copyWith({

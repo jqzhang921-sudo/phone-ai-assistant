@@ -66,6 +66,11 @@ class NudgeService {
   static const _kCount = 'nudge_notified_count';
   static const _kRecent = 'nudge_recent';
   static const _kLastRun = 'nudge_last_run';
+  static const _kMentioned = 'nudge_mentioned';
+
+  /// 记住多少条「已经提过的事」。留得住几十件就够——超出这个数的信和日记，
+  /// 早就不是「刚发生」的了，本来也不该再当由头。
+  static const _mentionedKeep = 60;
 
   /// 拿多少条历史去比重复。太少挡不住轮流复读，太多会把正常的相似话题也误杀。
   static const _recentKeep = 6;
@@ -207,6 +212,24 @@ class NudgeService {
   static Future<List<String>> _recent(SharedPreferences sp) async =>
       sp.getStringList(_kRecent) ?? const [];
 
+  static Future<Set<String>> _mentioned() async {
+    final sp = await SharedPreferences.getInstance();
+    return (sp.getStringList(_kMentioned) ?? const <String>[]).toSet();
+  }
+
+  static Future<void> _markMentioned(String key) async {
+    final sp = await SharedPreferences.getInstance();
+    // ⚠️ `const []` 会让整个列表推成 List<dynamic>，得写 `const <String>[]`。
+    // flutter analyze 放过了这个，flutter test 才报出来——编译前端比分析器严。
+    final list = <String>[...(sp.getStringList(_kMentioned) ?? const []), key];
+    await sp.setStringList(
+      _kMentioned,
+      list.length <= _mentionedKeep
+          ? list
+          : list.sublist(list.length - _mentionedKeep),
+    );
+  }
+
   static Future<void> _remember(SharedPreferences sp, String text) async {
     final list = [...await _recent(sp), text];
     await sp.setStringList(
@@ -256,19 +279,35 @@ class NudgeService {
       }
     } catch (_) {}
 
+    // 提过的就不再当由头了。**一件事只提一次**——她没动，不是因为没听见。
+    final mentioned = await _mentioned();
+
     try {
       for (final l in await StorageService.listLetters()) {
         // 没读的信是最实在的一条：东西已经写好了，就在那儿等着。
-        if (l.isFromAi && !l.read) {
-          out.add(NudgeCandidate('信', '你给 TA 写的一封信还没被读，写于 ${_when(l.createdAt)}'));
+        if (l.isFromAi && !l.read && !mentioned.contains('letter:${l.id}')) {
+          out.add(
+            NudgeCandidate(
+              '信',
+              '你给 TA 写的一封信还没被读，写于 ${_when(l.createdAt)}',
+              mentionKey: 'letter:${l.id}',
+            ),
+          );
         }
       }
     } catch (_) {}
 
     try {
       for (final d in await StorageService.listDiaryEntries()) {
-        if (d.createdAt.isAfter(floor)) {
-          out.add(NudgeCandidate('日记', '你刚记了一篇日记：${d.summary}'));
+        if (d.createdAt.isAfter(floor) &&
+            !mentioned.contains('diary:${d.id}')) {
+          out.add(
+            NudgeCandidate(
+              '日记',
+              '你刚记了一篇日记：${d.summary}',
+              mentionKey: 'diary:${d.id}',
+            ),
+          );
         }
       }
     } catch (_) {}
@@ -359,6 +398,8 @@ class NudgeService {
     // 兑现完就把便签清掉，否则下次醒来还会再问一遍同一件事。
     // 只在真发出去之后清——他说「不说」的时候留着，下次再判断。
     if (picked.noteId != null) await SelfNoteStore.remove(picked.noteId!);
+    // 登记「这件事提过了」。只在真发出去之后登记——他说「不说」的时候不算提过。
+    if (picked.mentionKey != null) await _markMentioned(picked.mentionKey!);
     return NudgeRunResult.sent(text);
   }
 
@@ -630,11 +671,22 @@ class NudgeCandidate {
   /// 兑现之后要清掉的便签 id。信和日记没有这个（它们不消耗）。
   final String? noteId;
 
+  /// 「这件事已经提过了」的登记名，比如 `letter:<id>`。
+  ///
+  /// ⚠️ **没读的信是常驻候选**：不像便签说完就撕、也不像日记有时间下限，
+  /// 只要她不读，它就一直在候选列里。原来「刚聊完」那道门槛是 3 小时，
+  /// 几乎撞不上所以没暴露；降到 1 小时之后，同一封信可能每小时被念叨一次。
+  ///
+  /// 而这正是那条规矩说的：**变味的不是那句话，是说第二遍。**
+  /// 去重（[looksRepeated]）只按字面挡，换个说法就滑过去了——按来源登记才挡得住。
+  final String? mentionKey;
+
   const NudgeCandidate(
     this.kind,
     this.what, {
     this.conversationId = '',
     this.noteId,
+    this.mentionKey,
   });
 }
 

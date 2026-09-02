@@ -94,18 +94,21 @@ void main() {
     });
 
     // 刚聊完就弹一条，读起来像它没听见你刚说的话。
-    test('刚聊完不推', () {
+    test('话音刚落不推', () {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        lastChatAt: at(14),
+        lastChatAt: at(15).subtract(const Duration(minutes: 20)),
       );
       expect(d.reason, NudgeBlock.tooSoonAfterChat);
     });
 
-    test('聊完过了三小时可以推', () {
+    // ⚠️ 这个数从 3 小时降到 1 小时是有原因的：她一天聊一百多轮，**根本攒不出
+    // 连续三小时不碰 App 的空档**，信和日记那两类候选于是永远推不出来。
+    // 真正防打扰的是间隔和静默时段那两道，这条只保证「不是话音刚落就插一句」。
+    test('聊完过了一小时就可以推', () {
       final d = decideNudge(
-        now: at(18),
+        now: at(15),
         prefs: _on,
         lastChatAt: at(14),
       );
