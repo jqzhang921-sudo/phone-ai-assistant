@@ -62,6 +62,7 @@ class NudgeService {
   static const _kCountDay = 'nudge_count_day';
   static const _kCount = 'nudge_count';
   static const _kRecent = 'nudge_recent';
+  static const _kLastRun = 'nudge_last_run';
 
   /// 拿多少条历史去比重复。太少挡不住轮流复读，太多会把正常的相似话题也误杀。
   static const _recentKeep = 6;
@@ -141,6 +142,48 @@ class NudgeService {
   static Future<DateTime?> _lastNudgeAt(SharedPreferences sp) async {
     final ms = sp.getInt(_kLastAt);
     return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  /// 上一次唤醒干了什么，给设置页显示。
+  ///
+  /// ## 为什么非要有这个
+  ///
+  /// 后台唤醒跑在独立 isolate 里，release 包又拿不到 logcat（国产 ROM 对非调试
+  /// 包封了日志）。于是「它没说话」这件事完全是个黑盒：是没醒？醒了但没到点？
+  /// 到点了但它自己决定不说？三种情况的下一步动作完全不同。
+  ///
+  /// 更糟的是**聊天里那个模型看不到后台**，你问它「刚才收到唤醒没」，
+  /// 它会顺着话编一个原因出来——听着有理，实际没有任何依据。
+  ///
+  /// 所以把每次的结果落到磁盘上。一行字，但它是这个功能唯一的证据。
+  static Future<void> _recordRun(String outcome) async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(
+        _kLastRun,
+        jsonEncode({
+          'at': DateTime.now().toIso8601String(),
+          'outcome': outcome,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  /// (什么时候, 结果)。从来没跑过就返回 null。
+  static Future<(DateTime, String)?> lastRun() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString(_kLastRun);
+      if (raw == null) return null;
+      final m = jsonDecode(raw);
+      if (m is! Map) return null;
+      final at = DateTime.tryParse(m['at'] as String? ?? '');
+      final outcome = m['outcome'] as String?;
+      if (at == null || outcome == null) return null;
+      return (at, outcome);
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<List<String>> _recent(SharedPreferences sp) async =>
@@ -223,7 +266,24 @@ class NudgeService {
   /// 手动点也不该凭空造一条出来，否则试出来的东西和真实行为对不上。
   /// [notify] = false 时只把话写进对话，不弹通知。
   /// App 正开着的时候用这个：为一条已经在屏幕上的消息再弹一条通知是噪音。
+  ///
+  /// 无论走哪条分支都会记一笔（见 [_recordRun]）——这是这个功能唯一的证据，
+  /// 后台那条路既看不到日志，也问不出真话。
   static Future<NudgeRunResult> run({
+    required AiClient aiClient,
+    bool force = false,
+    bool notify = true,
+  }) async {
+    final r = await _runInner(
+      aiClient: aiClient,
+      force: force,
+      notify: notify,
+    );
+    await _recordRun(r.sent ? '说了：${r.text}' : r.message);
+    return r;
+  }
+
+  static Future<NudgeRunResult> _runInner({
     required AiClient aiClient,
     bool force = false,
     bool notify = true,

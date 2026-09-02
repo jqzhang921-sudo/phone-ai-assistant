@@ -176,6 +176,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _nudgeResult;
   bool _nudgeBusy = false;
 
+  /// 「上次醒来 14:02 · 这会儿他手上没有事」。见 `NudgeService.lastRun`。
+  String? _nudgeLastRun;
+
   @override
   void initState() {
     super.initState();
@@ -749,6 +752,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Widget> _secNudge(ThemeData theme, StateSetter set) {
     final scheme = theme.colorScheme;
 
+    // 每次重建这一页都重读一次：后台可能在她没看的时候跑过好几轮。
+    // 只在内容真变了时才 set，否则会自己触发自己。
+    NudgeService.lastRun().then((r) {
+      if (r == null || !mounted) return;
+      final (at, outcome) = r;
+      final t =
+          '${at.hour.toString().padLeft(2, '0')}:'
+          '${at.minute.toString().padLeft(2, '0')}';
+      final next = '$t · $outcome';
+      if (_nudgeLastRun != next) set(() => _nudgeLastRun = next);
+    });
+
     Future<void> save(NudgePrefs next) async {
       _nudgePrefs = next;
       await NudgeService.savePrefs(next);
@@ -864,6 +879,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   });
                 },
       ),
+      // 后台那条路看不到日志（国产 ROM 封了非调试包的 logcat），而聊天里那个
+      // 模型看不到后台、你问它它会顺着话编一个原因。所以这一行是这个功能
+      // 唯一的证据：它上次醒来到底干了什么。
+      if (_nudgeLastRun != null) ...[
+        const SizedBox(height: 16),
+        Text('上次醒来', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 6),
+        Text(
+          _nudgeLastRun!,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ],
       if (_nudgeResult != null) ...[
         const SizedBox(height: 10),
         Container(
