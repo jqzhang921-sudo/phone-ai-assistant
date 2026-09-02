@@ -73,6 +73,13 @@ List<ChatMessage> _sanitizeToolCallHistory(List<ChatMessage> messages) {
   return result;
 }
 
+/// 一次回复最多生成多少 token。
+///
+/// 原来是 4096。推理模型把**思考也算进输出**，4096 经常在它还没想完的时候
+/// 就被砍断——症状是话说到一半没了，或者干脆只出思考不出正文。
+/// 8192 是各家普遍都接受的上限，再往上有的端点会直接报错。
+const _maxOutputTokens = 8192;
+
 /// 系统级提示：时间戳只是元数据，模型不应复述。
 const _timeMetaInstruction =
     '注意：消息内容中可能带有 [time: ...] 前缀，这是系统自动注入的发送时间元数据，'
@@ -290,7 +297,7 @@ class AiClient {
       'model': model,
       'messages': cleaned,
       'stream': true,
-      'max_tokens': 4096,
+      'max_tokens': _maxOutputTokens,
     };
 
     if (tools != null && tools!.isNotEmpty) {
@@ -413,6 +420,14 @@ class AiClient {
         final delta = json['choices']?[0]?['delta'];
 
         if (delta == null) continue;
+
+        // 推理模型把思考放在 reasoning_content 里，跟 content 是两个字段。
+        // 只读 content 的话，它想了半天你这边一个字都不出——看着像卡死。
+        // 字段名各家不统一（reasoning_content / reasoning），两个都认。
+        final reasoning = delta['reasoning_content'] ?? delta['reasoning'];
+        if (reasoning is String && reasoning.isNotEmpty) {
+          yield AiStreamEvent.thinking(reasoning);
+        }
 
         if (delta['content'] != null) {
           contentBuffer = (contentBuffer ?? '') + delta['content'];
@@ -572,7 +587,7 @@ class AiClient {
 
     final body = <String, dynamic>{
       'model': model,
-      'max_tokens': 4096,
+      'max_tokens': _maxOutputTokens,
       'messages': apiMessages,
       'stream': true,
     };
@@ -633,6 +648,10 @@ class AiClient {
             if (delta?['type'] == 'text_delta') {
               contentBuffer += delta['text'];
               yield AiStreamEvent.token(delta['text']);
+            } else if (delta?['type'] == 'thinking_delta') {
+              // Anthropic 那边叫 thinking_delta，走同一个出口。
+              final t = delta['thinking'];
+              if (t is String && t.isNotEmpty) yield AiStreamEvent.thinking(t);
             }
           } else if (type == 'content_block_start') {
             final block = json['content_block'];
@@ -776,6 +795,14 @@ class AiStreamEvent {
   factory AiStreamEvent.token(String text) =>
       AiStreamEvent._(type: AiEventType.token, text: text);
 
+  /// 模型的思考过程，和正文分开走。
+  ///
+  /// 单独一个事件类型、而不是混进 [token]，是因为这两段的去处不一样：正文要
+  /// 进气泡、要存进历史、要发回给服务端当上文；思考只给人看一眼，不参与后续
+  /// 请求。混在一起的话，下一轮就会把它当成自己说过的话喂回去。
+  factory AiStreamEvent.thinking(String text) =>
+      AiStreamEvent._(type: AiEventType.thinking, text: text);
+
   factory AiStreamEvent.toolCalls(List<ToolCallInfo> calls) =>
       AiStreamEvent._(type: AiEventType.toolCalls, toolCalls: calls);
 
@@ -786,4 +813,4 @@ class AiStreamEvent {
       AiStreamEvent._(type: AiEventType.error, error: error);
 }
 
-enum AiEventType { token, toolCalls, done, error }
+enum AiEventType { token, thinking, toolCalls, done, error }

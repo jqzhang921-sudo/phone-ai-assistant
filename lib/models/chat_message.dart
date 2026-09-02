@@ -17,6 +17,14 @@ class ChatMessage {
   /// 空列表而不是 null：调用方不用到处判空，`isEmpty` 一个说法走到底。
   final List<String> images;
 
+  /// 推理模型的思考过程，只给人看。
+  ///
+  /// 和 [content] 分开存，是因为它俩的去处不一样：正文要发回给服务端当上文，
+  /// 思考不发——把它并进 content，下一轮就等于把草稿当成说过的话喂回去了。
+  ///
+  /// null 和空串都当没有。老数据里没这个字段，读出来就是 null。
+  final String? thinking;
+
   ChatMessage({
     required this.id,
     required this.role,
@@ -26,6 +34,7 @@ class ChatMessage {
     this.toolCallId,
     this.metadata,
     List<String>? images,
+    this.thinking,
   }) : images = List.unmodifiable(images ?? const []),
        timestamp = timestamp ?? DateTime.now();
 
@@ -37,6 +46,7 @@ class ChatMessage {
     'toolCalls': toolCalls?.map((t) => t.toJson()).toList(),
     'toolCallId': toolCallId,
     if (images.isNotEmpty) 'images': images,
+    if (thinking != null && thinking!.isNotEmpty) 'thinking': thinking,
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -49,6 +59,7 @@ class ChatMessage {
             ?.map((t) => ToolCallInfo.fromJson(t))
             .toList(),
     toolCallId: json['toolCallId'],
+    thinking: json['thinking'] as String?,
     // 兼容单图老数据：以前存的是 imageData（单个字符串）。
     // 聊天记录是用户最不能丢的东西，读不出来就等于把历史里的图弄没了。
     images:

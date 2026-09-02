@@ -159,6 +159,11 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           systemPrompt: _conversation.systemPrompt,
         )) {
           switch (event.type) {
+            // 读书讨论这边不展示思考过程，收到就丢。留着这个 case 是为了让
+            // switch 保持穷尽——不然以后再加事件类型，这里会静悄悄地漏掉。
+            case AiEventType.thinking:
+              break;
+
             case AiEventType.token:
               fullResponse = (fullResponse ?? '') + (event.text ?? '');
               _updateAssistantMessage(fullResponse);

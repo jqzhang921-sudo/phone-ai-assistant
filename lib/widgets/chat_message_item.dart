@@ -92,8 +92,14 @@ List<ChatDisplayItem> _groupMessages(List<ChatMessage> messages) {
   while (i < messages.length) {
     final m = messages[i];
     if (!_isToolNoise(m)) {
-      // 流式的第一个分片常常是 content:""，真正的文字还在路上，先什么都不画
-      if (m.role == MessageRole.assistant && m.content.trim().isEmpty) {
+      // 流式的第一个分片常常是 content:""，真正的文字还在路上，先什么都不画。
+      //
+      // 但推理模型是**先想完再开口**的：那段时间里 content 一直是空的，只有
+      // thinking 在长。这里要是照旧跳过，屏幕上就几十秒什么都没有——所以有
+      // 思考就得画出来，正文晚点到没关系。
+      if (m.role == MessageRole.assistant &&
+          m.content.trim().isEmpty &&
+          (m.thinking?.trim().isEmpty ?? true)) {
         i++;
         continue;
       }

@@ -704,6 +704,8 @@ class _ChatScreenState extends State<ChatScreen> {
       maxRounds--;
 
       String? fullResponse;
+      // 思考单独攒。它不进 fullResponse——那个要发回给服务端当上文。
+      String? thinkingBuffer;
 
       try {
         // 切片放在循环里算，不能提到外面：工具轮次会往 messages 末尾追加，
@@ -715,6 +717,16 @@ class _ChatScreenState extends State<ChatScreen> {
           historySummary: _conversation.summary,
         )) {
           switch (event.type) {
+            case AiEventType.thinking:
+              // 思考先到、正文还没开始，所以这里 fullResponse 通常还是 null：
+              // 传空串让气泡先立起来，人就能看见它在想，而不是干等。
+              thinkingBuffer = (thinkingBuffer ?? '') + (event.text ?? '');
+              _updateAssistantMessage(
+                fullResponse ?? '',
+                thinking: thinkingBuffer,
+              );
+              break;
+
             case AiEventType.token:
               fullResponse = (fullResponse ?? '') + (event.text ?? '');
               _updateAssistantMessage(fullResponse);
@@ -874,9 +886,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// [thinking] 传 null 表示「这次没有新的思考」，不是「把已有的清掉」——
+  /// 正文每来一个 token 就重建一次这条消息，不保留的话思考会被后面的正文冲掉。
   void _updateAssistantMessage(
     String content, {
     List<ToolCallInfo>? toolCalls,
+    String? thinking,
   }) {
     // 过滤模型可能复读出来的 [time: ...] 标记（系统注入的时间戳元数据）
     final cleaned =
@@ -893,6 +908,7 @@ class _ChatScreenState extends State<ChatScreen> {
           role: MessageRole.assistant,
           content: cleaned,
           toolCalls: toolCalls,
+          thinking: thinking ?? _conversation.messages.last.thinking,
         );
       } else {
         _conversation.messages.add(
@@ -901,6 +917,7 @@ class _ChatScreenState extends State<ChatScreen> {
             role: MessageRole.assistant,
             content: cleaned,
             toolCalls: toolCalls,
+            thinking: thinking,
           ),
         );
       }
@@ -919,6 +936,7 @@ class _ChatScreenState extends State<ChatScreen> {
           role: MessageRole.assistant,
           content: old.content,
           toolCalls: old.toolCalls,
+          thinking: old.thinking,
         );
       }
     });

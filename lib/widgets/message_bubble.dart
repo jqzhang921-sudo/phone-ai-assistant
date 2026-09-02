@@ -209,6 +209,15 @@ class MessageBubble extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (isAssistant &&
+                            (message.thinking?.trim().isNotEmpty ?? false))
+                          _ThinkingBlock(
+                            text: message.thinking!,
+                            color: textColor,
+                            // 正文还没来 = 它还在想，这时候默认摊开，
+                            // 不然屏幕上只有一个空气泡，看着像卡住了。
+                            startExpanded: message.content.trim().isEmpty,
+                          ),
                         if (message.images.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 6),
@@ -562,6 +571,80 @@ class _FlowerButtonState extends State<_FlowerButton>
             color: widget.favorited ? scheme.primary : scheme.onSurfaceVariant,
           ),
         ),
+      ),
+    );
+  }
+}
+
+
+/// 气泡里那一小块思考过程。
+///
+/// 默认收起来，只留一行「想了想」。摊开是灰的、比正文小一号——它是草稿，
+/// 不该跟说出口的话抢注意力。
+class _ThinkingBlock extends StatefulWidget {
+  const _ThinkingBlock({
+    required this.text,
+    required this.color,
+    this.startExpanded = false,
+  });
+
+  final String text;
+  final Color color;
+  final bool startExpanded;
+
+  @override
+  State<_ThinkingBlock> createState() => _ThinkingBlockState();
+}
+
+class _ThinkingBlockState extends State<_ThinkingBlock> {
+  bool? _override;
+
+  /// 用户点过就听用户的；没点过就跟着 [startExpanded] 走——这样思考还在流的
+  /// 时候是摊开的，正文一到自动收起，而一旦她自己点开，就不再被收回去。
+  bool get _expanded => _override ?? widget.startExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dim = widget.color.withValues(alpha: 0.55);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _override = !_expanded),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _expanded
+                      ? PhosphorIcons.caretDown()
+                      : PhosphorIcons.caretRight(),
+                  size: 12,
+                  color: dim,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '想了想',
+                  style: theme.textTheme.labelSmall?.copyWith(color: dim),
+                ),
+              ],
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 16),
+              child: Text(
+                widget.text.trim(),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: dim,
+                  height: 1.45,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
