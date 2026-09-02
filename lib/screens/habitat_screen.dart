@@ -6,6 +6,7 @@ import '../config/settings.dart';
 import '../models/chat_message.dart';
 import '../services/app_providers.dart';
 import '../services/letter_schedule.dart';
+import '../services/self_notes.dart';
 import '../widgets/app_surface.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
@@ -36,6 +37,14 @@ class _HabitatScreenState extends State<HabitatScreen> {
   bool _writingLetter = false;
   String _letterStatus = '';
 
+  /// 它给自己留的便签。
+  ///
+  /// ⚠️ 措辞上有个分寸：规矩里明写了「不用告诉 TA 你会回来问，那样等于先许一个
+  /// 承诺」。贴出来看似跟这条打架，其实不冲突——**这不是它给你的承诺，
+  /// 是它给自己的便条，你碰巧看得见**。所以标题写「它记着的事」，
+  /// 不写「它会问你的事」；到点了也不催，只是纸条还在那儿。
+  List<SelfNote> _notes = const [];
+
   /// 设置里填的「TA 叫什么」。填了就用名字，不填就把句子改写成不需要代词的。
   ///
   /// 原来文案里到处是「它」——中文的「它」指向物件或动物，读起来像在说一个
@@ -56,6 +65,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final letterStatus = await LetterSchedule.statusLine();
     final settings = await AppSettings.load();
     final now = DateTime.now();
+    final notes = await SelfNoteStore.pending(now);
     final midnight = DateTime(now.year, now.month, now.day);
     var today = 0;
     var total = 0;
@@ -83,6 +93,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         _letterCount = letters.length;
         _unreadLetters = letters.where((l) => l.isFromAi && !l.read).length;
         _letterStatus = letterStatus;
+        _notes = notes;
         _aiName = settings.aiName;
       });
     }
@@ -187,6 +198,12 @@ class _HabitatScreenState extends State<HabitatScreen> {
           const SizedBox(height: 20),
           _letterEntry(theme),
           const SizedBox(height: 16),
+          // 便签排在信下面、归档那组上面：它和信一样是「它那边」的东西，
+          // 而下面三条是你存进去的。没有便签时整块不出现。
+          if (_notes.isNotEmpty) ...[
+            _noteBoard(theme),
+            const SizedBox(height: 16),
+          ],
           // 其余三项压成一组紧凑的行。
           //
           // 原来五张等高卡片竖着码，一屏只放得下两张半，而且每张的正文和右下角
@@ -565,6 +582,129 @@ class _HabitatScreenState extends State<HabitatScreen> {
         ),
       ),
     );
+  }
+
+  /// 它给自己贴的便签。一张都没有时整块不出现——空状态在这一页是噪音，
+  /// 而且「它现在没记着什么事」不需要一个卡片来说。
+  Widget _noteBoard(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final tone = AppTone.of(context);
+
+    return AppSurface(
+      borderRadius: AppRadius.lgAll,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  PhosphorIconsRegular.pushPin,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  // 不写「它会问你的事」——那是承诺。这是它给自己的便条。
+                  '它记着的事',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (var i = 0; i < _notes.length; i++)
+                  _noteSlip(theme, tone, _notes[i], i),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '长按可以撕掉',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 11,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 一张纸条。
+  ///
+  /// 歪一点点是故意的：正着码成一列就成了待办清单，那是任务的样子。
+  /// 角度按 index 交替，很小（±1.2°）——大了就成了装饰。
+  Widget _noteSlip(ThemeData theme, AppTone tone, SelfNote n, int index) {
+    final scheme = theme.colorScheme;
+    // 纸条底色写死一个暖色再过 tone.shift：跟着主题转，默认棕下不变。
+    // 不用 scheme 里的现成色，是因为它们都是「界面」的颜色，
+    // 而这里要的是一张纸压在界面上。
+    final paper = tone.shift(const Color(0xFFF3E7CE));
+    final ink = tone.shift(const Color(0xFF3D3529));
+    final due = n.isDue(DateTime.now());
+
+    return Transform.rotate(
+      angle: (index.isEven ? 1.2 : -1.2) * 3.1415926 / 180,
+      child: GestureDetector(
+        onLongPress: () async {
+          await SelfNoteStore.remove(n.id);
+          if (mounted) _load();
+        },
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 200),
+          padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+          decoration: BoxDecoration(
+            color: paper,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: scheme.shadow.withValues(alpha: 0.16),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                n.about,
+                style: TextStyle(
+                  fontFamily: 'NotoSerifSC',
+                  fontSize: 13,
+                  height: 1.5,
+                  color: ink,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                // 到点了也不催，只说纸条还在。催是索取，这一页不做那件事。
+                due ? '就这会儿' : _untilText(n.dueAt),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: ink.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _untilText(DateTime due) {
+    final d = due.difference(DateTime.now());
+    if (d.inMinutes < 60) return '${d.inMinutes} 分钟后';
+    if (d.inHours < 24) return '${d.inHours} 小时后';
+    return '明天';
   }
 
   Widget _rowGroup(ThemeData theme, List<_RowSpec> specs) {

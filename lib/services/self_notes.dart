@@ -153,6 +153,16 @@ class SelfNoteStore {
     await _save(notes.where((n) => n.id != id).toList());
   }
 
+  /// 还活着的那些，按该问的时间排。给栖息页贴出来用。
+  ///
+  /// 包括还没到点的——**便签的意义就在于「它记着」，不是「它该问了」**。
+  /// 只显示到点的，那就成了待办列表。
+  static Future<List<SelfNote>> pending(DateTime now) async {
+    final live = (await list()).where((n) => !n.isStale(now)).toList();
+    live.sort((a, b) => a.dueAt.compareTo(b.dueAt));
+    return live;
+  }
+
   /// 到点了、还没过期的那些；顺手把过期的从存储里清掉。
   static Future<List<SelfNote>> due(DateTime now) async {
     final all = await list();
