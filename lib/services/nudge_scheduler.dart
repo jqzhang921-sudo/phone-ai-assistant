@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'app_providers.dart';
+import 'letter_schedule.dart';
 import 'nudge_service.dart';
 
 /// 后台唤醒。让「主动说话」在 App 关着的时候也有机会发生。
@@ -23,7 +24,7 @@ import 'nudge_service.dart';
 ///
 /// - **内容那层必须能独立成立**——不能依赖「一定会在某个点被唤醒」
 /// - 唤醒失败的后果只是「这条晚点再说」，不能是数据不一致
-/// - 开着 App 的时候也走一遍（见 [runOnResume]），后台被杀了至少还有这条路
+/// - 开着 App 的时候也走一遍（见 [runOnStartup]），后台被杀了至少还有这条路
 class NudgeScheduler {
   static const _unique = 'nudge_periodic';
   static const _name = 'nudge';
@@ -94,6 +95,11 @@ void nudgeCallbackDispatcher() {
 
       final client = await buildStoredAiClient();
       if (client == null) return true;
+
+      // 排在推送前面：到点的信在这一轮就写出来，紧接着它自己就成了候选。
+      // 「我刚写完一封信」这句话第一次能在真的刚写完的时候说出口——
+      // 前提就是写这个动作发生在她不看手机的时候。
+      await LetterSchedule.writeIfDue(aiClient: client);
 
       await NudgeService.run(aiClient: client);
     } catch (e) {

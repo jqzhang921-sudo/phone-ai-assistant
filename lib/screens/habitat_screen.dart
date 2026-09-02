@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_tab.dart';
 import '../config/settings.dart';
 import '../models/chat_message.dart';
-import '../models/letter.dart';
 import '../services/app_providers.dart';
-import '../services/letter_generator.dart';
+import '../services/letter_schedule.dart';
 import '../widgets/app_surface.dart';
 import '../services/storage_service.dart';
 import 'diary_screen.dart';
@@ -28,7 +26,6 @@ class HabitatScreen extends StatefulWidget {
 }
 
 class _HabitatScreenState extends State<HabitatScreen> {
-  final _uuid = const Uuid();
   int _todayMessages = 0;
   int _totalMessages = 0;
   int _readingCount = 0;
@@ -56,7 +53,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final diaries = await StorageService.listDiaryEntries();
     final musings = await StorageService.listFavoritedMusings();
     final letters = await StorageService.listLetters();
-    final letterStatus = await letterTriggerStatus();
+    final letterStatus = await LetterSchedule.statusLine();
     final settings = await AppSettings.load();
     final now = DateTime.now();
     final midnight = DateTime(now.year, now.month, now.day);
@@ -93,29 +90,28 @@ class _HabitatScreenState extends State<HabitatScreen> {
     await _maybeWriteLetter();
   }
 
-  /// 素材够了、也过了冷却期，就让它写一封。
+  /// 素材够了就**排一封**，到点了才真写。
   ///
-  /// 检查放在进栖息页时，不做后台任务：信箱就在这一页，用户来这儿本来就是
-  /// 看这类东西的，而且生成要联网，人在前台。国产 ROM 的后台限制也让定时
-  /// 生成不可能可靠。
+  /// 原来是进这一页当场生成。改成延时有两个理由，第二个更实际：
+  ///
+  /// 1. 当场出信像自动售货机——按一下掉一封
+  /// 2. **「我刚写完一封信」这句话永远说不出口**：信是在她用 App 的时候生成
+  ///    的，那会儿主动说话的门槛（离上次聊天满三小时）必然挡着；等能说了，
+  ///    「刚写完」早就不成立了
+  ///
+  /// 真正写的动作在 [LetterSchedule.writeIfDue]，前台后台共用：后台醒了后台写，
+  /// 后台被 ROM 掐了就等她下次进这一页补上。谁先到谁写，另一边再调是空跑。
   Future<void> _maybeWriteLetter() async {
     if (_writingLetter) return;
     // context 的读取放在任何 await 之前——await 之后这个 State 可能已经销毁。
     final aiClient = context.read<AiClientProvider>().currentClient;
     if (aiClient == null) return;
-    if (!await shouldWriteLetter()) return;
-    if (!mounted) return;
+
+    await LetterSchedule.scheduleIfReady();
 
     setState(() => _writingLetter = true);
     try {
-      final content = await generateLetter(aiClient: aiClient);
-      // 无论写没写成都记一次尝试。不记的话素材一直堆着，每次进这一页
-      // 都会重新触发，白烧 token。
-      await StorageService.setLastLetterAttempt(DateTime.now());
-      if (content != null) {
-        await StorageService.addLetter(
-          Letter(id: _uuid.v4(), author: LetterAuthor.ai, content: content),
-        );
+      if (await LetterSchedule.writeIfDue(aiClient: aiClient)) {
         final letters = await StorageService.listLetters();
         if (mounted) {
           setState(() {
@@ -124,8 +120,6 @@ class _HabitatScreenState extends State<HabitatScreen> {
           });
         }
       }
-    } catch (_) {
-      // 写信失败不打扰，下次进来再说（这次不记 attempt，素材留着）
     } finally {
       if (mounted) setState(() => _writingLetter = false);
     }
