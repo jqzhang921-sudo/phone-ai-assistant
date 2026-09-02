@@ -607,7 +607,11 @@ class _HabitatScreenState extends State<HabitatScreen> {
                 const SizedBox(width: 6),
                 Text(
                   // 不写「它会问你的事」——那是承诺。这是它给自己的便条。
-                  '它记着的事',
+                  //
+                  // 有名字就用名字。中文的「它」指向物件，「它记着的事」读起来
+                  // 像个功能模块在记录；「沐记着的事」才是有人在惦记。
+                  // 这一页别处（`_aiName`）早就是这么处理的。
+                  _aiName.isEmpty ? '记着的事' : '$_aiName 记着的事',
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -615,13 +619,27 @@ class _HabitatScreenState extends State<HabitatScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (var i = 0; i < _notes.length; i++)
-                  _noteSlip(theme, tone, _notes[i], i),
-              ],
+            // 固定两列，不按内容自然换行。
+            //
+            // 原来是 Wrap + maxWidth 200：文字一长就各占一整行，两张便签就吃掉
+            // 三分之一屏，四张会把下面的入口全推下去。两列之后同样四张封顶
+            // 只有两行，高度减半——而这一块的作用是「扫一眼知道它记着什么」，
+            // 不是让人细读，占屏比读全更要紧。
+            LayoutBuilder(
+              builder: (context, c) {
+                final w = (c.maxWidth - 10) / 2;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (var i = 0; i < _notes.length; i++)
+                      SizedBox(
+                        width: w,
+                        child: _noteSlip(theme, tone, _notes[i], i),
+                      ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 8),
             Text(
@@ -637,16 +655,36 @@ class _HabitatScreenState extends State<HabitatScreen> {
     );
   }
 
+  /// 几种纸色。
+  ///
+  /// 都压在很低的彩度上（明度 0.93 上下）：这是纸，不是标签。饱和的便利贴色
+  /// 会把这一块从「他随手记的」变成「一个提醒功能」，而且四张凑在一起会喧宾
+  /// 夺主——这一页的主角是那封信。
+  ///
+  /// ⚠️ 颜色在这里**不承载含义**，只是不让四张纸看着像复印的。
+  /// 以后要是把用户的待办也贴上来，「谁写的」得靠**形状**区分（比如带勾选框），
+  /// 不能靠颜色——颜色已经被用掉了，而且色盲和深色模式下都不可靠。
+  static const _paperTones = [
+    Color(0xFFF3E7CE), // 米
+    Color(0xFFEFE4DC), // 灰粉
+    Color(0xFFE4EAE0), // 灰绿
+    Color(0xFFE6E7EF), // 灰蓝
+  ];
+
   /// 一张纸条。
   ///
   /// 歪一点点是故意的：正着码成一列就成了待办清单，那是任务的样子。
   /// 角度按 index 交替，很小（±1.2°）——大了就成了装饰。
   Widget _noteSlip(ThemeData theme, AppTone tone, SelfNote n, int index) {
     final scheme = theme.colorScheme;
-    // 纸条底色写死一个暖色再过 tone.shift：跟着主题转，默认棕下不变。
+    // 纸条底色写死再过 tone.shift：跟着主题转，默认棕下不变。
     // 不用 scheme 里的现成色，是因为它们都是「界面」的颜色，
     // 而这里要的是一张纸压在界面上。
-    final paper = tone.shift(const Color(0xFFF3E7CE));
+    //
+    // 四种纸色轮着来。**按 id 的哈希取，不按 index**——按 index 的话，
+    // 撕掉一张，剩下几张的颜色会集体跳一格，像是它把便签重写了一遍。
+    // 认哪张纸是靠颜色的，颜色跟着 id 走才稳。
+    final paper = tone.shift(_paperTones[n.id.hashCode.abs() % _paperTones.length]);
     final ink = tone.shift(const Color(0xFF3D3529));
     final due = n.isDue(DateTime.now());
 
@@ -658,8 +696,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
           if (mounted) _load();
         },
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 200),
-          padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
           decoration: BoxDecoration(
             color: paper,
             borderRadius: BorderRadius.circular(4),
@@ -677,10 +714,15 @@ class _HabitatScreenState extends State<HabitatScreen> {
             children: [
               Text(
                 n.about,
+                // 截到四行。它写便签是写给自己看的，有时会带一整句来龙去脉
+                // （「她说吃完饭歇会儿再去，拖延着还没去」），全展开就把这一块
+                // 撑成一屏。四行足够认出是哪件事，认不出来的那部分不重要。
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: 'NotoSerifSC',
-                  fontSize: 13,
-                  height: 1.5,
+                  fontSize: 12.5,
+                  height: 1.45,
                   color: ink,
                 ),
               ),

@@ -45,17 +45,29 @@ class NudgePrefs {
   final int quietEndHour;
 
   /// 两条推送之间至少隔多久。
+  ///
+  /// 从 4 小时降到 1 小时：4 小时是配额那版的遗留——那会儿每次唤醒都问模型
+  /// 「你想说点什么吗」，它每次都想说，所以必须有个东西压着。现在压频率的是
+  /// 「有没有事情发生」，这条只剩防连环触发的作用，1 小时够了。
   final Duration minGapBetweenNudges;
 
+  /// 便签到点时用的间隔。
+  ///
+  /// 两张便签可能只差二十分钟到点（她说完「我去做饭」又说「等会儿要出门」）。
+  /// 拿一小时去卡，第二张必然过期——而那两件事是分开的，都值得问。
+  final Duration minGapAfterFollowUp;
+
   /// 最后一次聊天之后至少静默多久才考虑推。
-  /// 刚聊完就弹一条，读起来像它没听见你刚说的话。
+  ///
+  /// ⚠️ **便签不受这条约束**，见 [decideNudge]。
   final Duration minSilenceAfterChat;
 
   const NudgePrefs({
     this.enabled = false,
     this.quietStartHour = 23,
     this.quietEndHour = 8,
-    this.minGapBetweenNudges = const Duration(hours: 4),
+    this.minGapBetweenNudges = const Duration(hours: 1),
+    this.minGapAfterFollowUp = const Duration(minutes: 20),
     this.minSilenceAfterChat = const Duration(hours: 3),
   });
 
@@ -68,6 +80,7 @@ class NudgePrefs {
     quietStartHour: quietStartHour ?? this.quietStartHour,
     quietEndHour: quietEndHour ?? this.quietEndHour,
     minGapBetweenNudges: minGapBetweenNudges,
+    minGapAfterFollowUp: minGapAfterFollowUp,
     minSilenceAfterChat: minSilenceAfterChat,
   );
 
@@ -116,10 +129,23 @@ class NudgeDecision {
 }
 
 /// 现在这个时刻能不能推。纯函数：所有输入都从参数进来，方便测也方便复算。
+///
+/// [isFollowUp] = 这条是便签到点了。**便签的时间是它自己在对话里定的**，
+/// 所以两条规矩要松开：
+///
+/// - **不管「刚聊完」**。「我去做饭了」四十分钟后问「做好了吗」，接的就是刚才
+///   那场对话——拿一个三小时的静默去否决它，等于把这个功能整个废掉。实测过：
+///   常聊天的人根本等不到三小时安静，便签全都过期作废。
+/// - **间隔用更短的那个**。两张便签可能只差二十分钟到点，那是两件事，
+///   都值得问。
+///
+/// 其余三条（开关、静默时段、保险丝）对谁都一样：那三条护的是她，
+/// 不是频率。
 NudgeDecision decideNudge({
   required DateTime now,
   required NudgePrefs prefs,
   required int sentToday,
+  bool isFollowUp = false,
   DateTime? lastChatAt,
   DateTime? lastNudgeAt,
 }) {
@@ -133,12 +159,14 @@ NudgeDecision decideNudge({
     return const NudgeDecision(false, NudgeBlock.runaway);
   }
 
-  if (lastNudgeAt != null &&
-      now.difference(lastNudgeAt) < prefs.minGapBetweenNudges) {
+  final gap =
+      isFollowUp ? prefs.minGapAfterFollowUp : prefs.minGapBetweenNudges;
+  if (lastNudgeAt != null && now.difference(lastNudgeAt) < gap) {
     return const NudgeDecision(false, NudgeBlock.tooSoonAfterNudge);
   }
 
-  if (lastChatAt != null &&
+  if (!isFollowUp &&
+      lastChatAt != null &&
       now.difference(lastChatAt) < prefs.minSilenceAfterChat) {
     return const NudgeDecision(false, NudgeBlock.tooSoonAfterChat);
   }

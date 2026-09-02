@@ -79,7 +79,8 @@ void main() {
         now: at(15),
         prefs: _on,
         sentToday: 1,
-        lastNudgeAt: at(13), // 才 2 小时，默认要 4
+        // 差 30 分钟，默认间隔 1 小时
+        lastNudgeAt: at(15).subtract(const Duration(minutes: 30)),
       );
       expect(d.reason, NudgeBlock.tooSoonAfterNudge);
     });
@@ -89,7 +90,7 @@ void main() {
         now: at(18),
         prefs: _on,
         sentToday: 1,
-        lastNudgeAt: at(13),
+        lastNudgeAt: at(15),
       );
       expect(d.allowed, isTrue);
     });
@@ -139,6 +140,73 @@ void main() {
       expect(longGone.allowed, isTrue);
       expect(recent.allowed, isTrue);
       expect(longGone.reason, recent.reason); // 两种情况一视同仁
+    });
+
+    // ⚠️ 这一组钉的是一个真实踩过的坑：常聊天的人（一天一百多轮）永远等不到
+    // 三小时安静，于是所有便签都过期作废——功能等于没做。
+    // 便签的时间是它自己在对话里定的，「刚聊完」这条不该反过来否决它。
+    test('便签到点：刚聊完也照样放行', () {
+      final d = decideNudge(
+        now: at(15),
+        prefs: _on,
+        sentToday: 0,
+        isFollowUp: true,
+        lastChatAt: at(15).subtract(const Duration(minutes: 40)),
+      );
+      expect(d.allowed, isTrue);
+    });
+
+    test('同样的时刻，不是便签就还是拦', () {
+      final d = decideNudge(
+        now: at(15),
+        prefs: _on,
+        sentToday: 0,
+        lastChatAt: at(15).subtract(const Duration(minutes: 40)),
+      );
+      expect(d.reason, NudgeBlock.tooSoonAfterChat);
+    });
+
+    test('便签之间用更短的间隔：差 25 分钟就能连着推两条', () {
+      final d = decideNudge(
+        now: at(15),
+        prefs: _on,
+        sentToday: 1,
+        isFollowUp: true,
+        lastNudgeAt: at(15).subtract(const Duration(minutes: 25)),
+      );
+      expect(d.allowed, isTrue);
+    });
+
+    test('但便签也不能连着弹：差 10 分钟还是拦', () {
+      final d = decideNudge(
+        now: at(15),
+        prefs: _on,
+        sentToday: 1,
+        isFollowUp: true,
+        lastNudgeAt: at(15).subtract(const Duration(minutes: 10)),
+      );
+      expect(d.reason, NudgeBlock.tooSoonAfterNudge);
+    });
+
+    test('便签也照样受静默时段和保险丝管', () {
+      expect(
+        decideNudge(
+          now: at(2),
+          prefs: _on,
+          sentToday: 0,
+          isFollowUp: true,
+        ).reason,
+        NudgeBlock.quietHours,
+      );
+      expect(
+        decideNudge(
+          now: at(15),
+          prefs: _on,
+          sentToday: kRunawayPerDay,
+          isFollowUp: true,
+        ).reason,
+        NudgeBlock.runaway,
+      );
     });
 
     test('从来没聊过、从来没推过也不该崩', () {

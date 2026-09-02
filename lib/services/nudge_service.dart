@@ -233,17 +233,14 @@ class NudgeService {
     final prefs = await loadPrefs();
     final lastNudge = await _lastNudgeAt(sp);
 
-    if (!force) {
-      final decision = decideNudge(
-        now: now,
-        prefs: prefs,
-        sentToday: await _sentToday(sp, now),
-        lastChatAt: await lastChatAt(),
-        lastNudgeAt: lastNudge,
-      );
-      if (!decision.allowed) return NudgeRunResult.blocked(decision.reason);
-    }
-
+    // ⚠️ 候选在门槛**前面**收，顺序不能反。
+    //
+    // 门槛里有两条对便签是松的（见 decideNudge 的 isFollowUp），而「是不是
+    // 便签」只有收完候选才知道。原来先过门槛，于是常聊天的人永远等不到那三
+    // 小时安静，便签全部过期作废——功能等于没做。
+    //
+    // 换顺序不亏：收候选全是本地读，和门槛一样便宜。真正贵的是模型那一步，
+    // 它仍然排在两者之后。
     final candidates = await collectCandidates(since: lastNudge);
     if (candidates.isEmpty) return NudgeRunResult.nothingHappened();
 
@@ -253,6 +250,18 @@ class NudgeService {
     // 话也不知道该推回哪段对话。挑的规矩写在 [_pick] 里，很浅；
     // 真正的判断（这会儿值不值得打扰她）仍然在他那边。
     final picked = _pick(candidates);
+
+    if (!force) {
+      final decision = decideNudge(
+        now: now,
+        prefs: prefs,
+        sentToday: await _sentToday(sp, now),
+        isFollowUp: picked.noteId != null,
+        lastChatAt: await lastChatAt(),
+        lastNudgeAt: lastNudge,
+      );
+      if (!decision.allowed) return NudgeRunResult.blocked(decision.reason);
+    }
 
     final String? text;
     try {
