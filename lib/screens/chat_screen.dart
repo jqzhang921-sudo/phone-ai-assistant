@@ -19,6 +19,7 @@ import '../config/app_tab.dart';
 import '../services/ai_client.dart';
 import '../services/app_providers.dart';
 import '../config/persona.dart';
+import '../services/chat_events.dart';
 import '../services/mcp_server.dart';
 import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
@@ -105,6 +106,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadConversations();
     _loadMusing();
     _loadUserName();
+    // 时间线上那几条灰字（写了信、记了日记）。附加信息，读失败也不影响聊天。
+    _loadChatEvents();
   }
 
   Future<void> _loadUserName() async {
@@ -159,6 +162,19 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     await _refreshMusing();
+  }
+
+  /// 在别处发生、要插进这条时间线的事（它写了信、记了日记）。
+  ///
+  /// 只取**这段对话开始之后**的：更早的事对这段对话没有意义，
+  /// 全塞进来会在开头堆一片跟当下无关的灰条。
+  List<ChatEvent> _chatEvents = const [];
+
+  Future<void> _loadChatEvents() async {
+    if (_conversation.messages.isEmpty) return;
+    final since = _conversation.messages.first.timestamp;
+    final events = await ChatEvents.since(since, aiName: _aiName);
+    if (mounted) setState(() => _chatEvents = events);
   }
 
   /// 今天的「我想说」还欠着，等 AI 客户端就绪补生成。
@@ -232,7 +248,10 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoading = false;
       _textController.clear();
       _chatMode = true;
+      // 换了对话，上一段的事件行不能留着——它们的时间落在这一段之外。
+      _chatEvents = const [];
     });
+    _loadChatEvents();
     widget.onChatModeChanged?.call(true);
     _scrollToBottom();
   }
@@ -1392,6 +1411,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               // 逐条判断——单条消息看不出后面还有没有
                               final items = groupChatItems(
                                 _conversation.messages,
+                                events: _chatEvents,
                               );
                               final typing = _showTyping;
                               return MarkBackdrop(

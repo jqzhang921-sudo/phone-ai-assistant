@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 import '../config/app_shape.dart';
+import '../services/chat_events.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'message_bubble.dart';
 import 'tool_call_card.dart';
 
-/// 列表里实际渲染的一项：一条普通消息，或者一整段连续的工具调用。
+/// 列表里实际渲染的一项：一条普通消息、一整段连续的工具调用，或者一行事件。
 class ChatDisplayItem {
   /// 普通消息（渲染成气泡）
   final ChatMessage? message;
@@ -12,13 +14,25 @@ class ChatDisplayItem {
   /// 一段连续的工具消息（调用 + 结果，折成一行）
   final List<ChatMessage>? toolRun;
 
-  const ChatDisplayItem.message(ChatMessage this.message) : toolRun = null;
+  /// 在别处发生的事（写了信、记了日记），渲染成一行小字。
+  final ChatEvent? event;
+
+  const ChatDisplayItem.message(ChatMessage this.message)
+    : toolRun = null,
+      event = null;
   const ChatDisplayItem.toolRun(List<ChatMessage> this.toolRun)
-    : message = null;
+    : message = null,
+      event = null;
+  const ChatDisplayItem.event(ChatEvent this.event)
+    : message = null,
+      toolRun = null;
 
   /// ListView 的 key 用它，避免重建时状态错位
   String get key =>
-      message?.id ?? 'run_${toolRun!.first.id}_${toolRun!.length}';
+      message?.id ??
+      (event != null
+          ? 'ev_${event!.kind}_${event!.at.millisecondsSinceEpoch}'
+          : 'run_${toolRun!.first.id}_${toolRun!.length}');
 }
 
 /// 这条消息是不是「工具过程」而非「说的话」。
@@ -43,7 +57,36 @@ bool _isToolNoise(ChatMessage m) {
 /// 为什么要跨消息分组：模型连着调三轮工具，原来界面上就是六行「🔧 web_search /
 /// ✓ 完成」交替，把真正的回复挤出屏幕。工具调用是过程信息，不该比结论还占地方。
 /// 单条消息自己看不出「后面还有没有」，所以分组只能在这一层做。
-List<ChatDisplayItem> groupChatItems(List<ChatMessage> messages) {
+/// [events] 是在别处发生、要按时间插进这条时间线的事（写了信、记了日记）。
+/// 按时间穿插，不改变消息本身的顺序。
+List<ChatDisplayItem> groupChatItems(
+  List<ChatMessage> messages, {
+  List<ChatEvent> events = const [],
+}) {
+  final grouped = _groupMessages(messages);
+  if (events.isEmpty) return grouped;
+
+  // 事件按时间插进去。**只插到消息之间**，不在最前面堆一片——
+  // 那会让人以为是新消息。
+  final out = <ChatDisplayItem>[];
+  var e = 0;
+  for (final item in grouped) {
+    final t = _itemTime(item);
+    while (e < events.length && t != null && !events[e].at.isAfter(t)) {
+      out.add(ChatDisplayItem.event(events[e]));
+      e++;
+    }
+    out.add(item);
+  }
+  // 比最后一条消息还新的，落在末尾——「刚刚写了封信」就是这一类，
+  // 而且它恰好是最该被看见的那种。
+  for (; e < events.length; e++) {
+    out.add(ChatDisplayItem.event(events[e]));
+  }
+  return out;
+}
+
+List<ChatDisplayItem> _groupMessages(List<ChatMessage> messages) {
   final items = <ChatDisplayItem>[];
   var i = 0;
   while (i < messages.length) {
@@ -88,7 +131,7 @@ bool _shouldShowTimestamp(List<ChatDisplayItem> items, int index) {
 }
 
 DateTime? _itemTime(ChatDisplayItem item) =>
-    item.message?.timestamp ?? item.toolRun?.first.timestamp;
+    item.message?.timestamp ?? item.toolRun?.first.timestamp ?? item.event?.at;
 
 /// 这一项是不是新的一天的头一条。
 bool _startsNewDay(List<ChatDisplayItem> items, int index) {
@@ -107,19 +150,67 @@ Widget chatDisplayItem(
   String? conversationId,
 }) {
   final item = items[index];
-  final body =
-      item.toolRun != null
-          ? ToolRunCard(messages: item.toolRun!)
-          : MessageBubble(
-            message: item.message!,
-            showTimestamp: _shouldShowTimestamp(items, index),
-            conversationId: conversationId,
-          );
+  final Widget body;
+  if (item.event != null) {
+    body = _EventLine(item.event!);
+  } else if (item.toolRun != null) {
+    body = ToolRunCard(messages: item.toolRun!);
+  } else {
+    body = MessageBubble(
+      message: item.message!,
+      showTimestamp: _shouldShowTimestamp(items, index),
+      conversationId: conversationId,
+    );
+  }
   if (!_startsNewDay(items, index)) return body;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [_DateDivider(_itemTime(item)!), body],
   );
+}
+
+/// 在别处发生的事，在时间线上留的一行。
+///
+/// 样式**故意和日期分割线一样**：居中、小、灰。它不是谁在说话，是时间线上
+/// 发生过一件事——和「今天」那条胶囊是同一类东西，就该长得像。
+///
+/// 做成气泡是错的：那等于它开了口，可它并没有，只是做了件事。
+class _EventLine extends StatelessWidget {
+  final ChatEvent event;
+
+  const _EventLine(this.event);
+
+  IconData get _icon => switch (event.kind) {
+    'letter' => PhosphorIconsRegular.envelopeSimple,
+    'diary' => PhosphorIconsRegular.waves,
+    _ => PhosphorIconsRegular.circle,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 2, bottom: 14),
+        padding: const EdgeInsets.fromLTRB(10, 5, 12, 5),
+        decoration: BoxDecoration(
+          color: scheme.onSurface.withValues(alpha: 0.045),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_icon, size: 11, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 5),
+            Text(
+              event.text,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 跨天时插在中间的那条小胶囊。
