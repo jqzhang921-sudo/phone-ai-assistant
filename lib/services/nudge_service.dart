@@ -156,6 +156,13 @@ class NudgeService {
   /// 它会顺着话编一个原因出来——听着有理，实际没有任何依据。
   ///
   /// 所以把每次的结果落到磁盘上。一行字，但它是这个功能唯一的证据。
+  /// 给 `nudge_scheduler` 记它自己那两条早退路径用。
+  ///
+  /// ⚠️ 没有这个的话诊断有个洞：唤醒后要是**拿不到模型配置**（密钥在 keystore
+  /// 里，后台 isolate 能不能读到不一定），`run()` 压根没被调到，于是什么都不会
+  /// 记——而那恰好是最可疑的一条路。「没有记录」和「没醒过」看起来一模一样。
+  static Future<void> noteRun(String outcome) => _recordRun(outcome);
+
   static Future<void> _recordRun(String outcome) async {
     try {
       final sp = await SharedPreferences.getInstance();

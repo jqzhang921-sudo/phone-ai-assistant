@@ -91,10 +91,18 @@ void nudgeCallbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
       final prefs = await NudgeService.loadPrefs();
-      if (!prefs.enabled) return true;
+      if (!prefs.enabled) {
+        await NudgeService.noteRun('醒了，但主动说话是关着的');
+        return true;
+      }
 
       final client = await buildStoredAiClient();
-      if (client == null) return true;
+      if (client == null) {
+        // 最可疑的一条：密钥存在 keystore（flutter_secure_storage）里，
+        // 后台 isolate 读不读得到不一定。读不到就等于没配模型。
+        await NudgeService.noteRun('醒了，但读不到模型配置（后台拿不到密钥？）');
+        return true;
+      }
 
       // 排在推送前面：到点的信在这一轮就写出来，紧接着它自己就成了候选。
       // 「我刚写完一封信」这句话第一次能在真的刚写完的时候说出口——
@@ -104,7 +112,10 @@ void nudgeCallbackDispatcher() {
       await NudgeService.run(aiClient: client);
     } catch (e) {
       // 后台里抛出去没人接得住，而且会被系统记成任务失败触发重试。
+      // debugPrint 在这里是白写的：国产 ROM 封了非调试包的 logcat，
+      // 所以异常也要落到那行记录上，否则又是一次「什么都看不见」。
       debugPrint('[nudge] 后台这次没跑成：$e');
+      await NudgeService.noteRun('醒了，但出错了：$e');
     }
     return true;
   });

@@ -48,11 +48,25 @@ class StorageService {
   static String get _convDir => '${_dir.path}/conversations';
   static String get _trashDir => '${_dir.path}/conversations_trash';
 
+  /// ⚠️ **先写临时文件再 rename，不能直接往目标文件上写。**
+  ///
+  /// 症状是「对话一会消失一会又回来」。原来是 `writeAsString` 直接覆盖目标：
+  /// 一段一千多条消息的对话 JSON 将近一兆，写它要花时间，而这期间主页正好去
+  /// 列对话，读到的是**半个文件** → `jsonDecode` 抛 → [loadConversation] 返回
+  /// null → [listConversations] 把它跳过。写完再刷新，它又出现了。
+  ///
+  /// 今天起还多了一个写者：后台 isolate 也会往对话里追加主动说的话，
+  /// 撞车的窗口比原来更宽。
+  ///
+  /// `rename` 在同一分区上是原子的：读的人要么看到旧的完整文件，要么看到新的
+  /// 完整文件，不存在中间态。写到一半崩了也只是留下一个 .tmp，原文件没动。
   static Future<void> saveConversation(Conversation conv) async {
     final dir = Directory(_convDir);
     if (!await dir.exists()) await dir.create(recursive: true);
-    final file = File('$_convDir/${conv.id}.json');
-    await file.writeAsString(jsonEncode(conv.toJson()));
+    final target = '$_convDir/${conv.id}.json';
+    final tmp = File('$target.tmp');
+    await tmp.writeAsString(jsonEncode(conv.toJson()), flush: true);
+    await tmp.rename(target);
   }
 
   static Future<Conversation?> loadConversation(String id) async {
@@ -66,22 +80,46 @@ class StorageService {
     }
   }
 
+  /// 上一次 [listConversations] 有几个文件读不出来。
+  ///
+  /// 原来读失败是**无声跳过**的：那段对话直接从列表里消失，没有报错也没有痕迹，
+  /// 用户看到的就是「它突然不见了」——而文件其实还在磁盘上。
+  /// 有了原子写之后这个数应该恒为 0；不为 0 就是真出事了，得看得见。
+  static int lastListFailures = 0;
+
   static Future<List<Conversation>> listConversations() async {
     final dir = Directory(_convDir);
     if (!await dir.exists()) return [];
     final files = await dir.list().toList();
+
+    // 清掉崩溃留下的临时文件。它们不参与列表（下面只收 .json），
+    // 但留着会越攒越多。
+    for (final f in files) {
+      if (f.path.endsWith('.json.tmp')) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
     files.sort(
       (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
     );
     final convs = <Conversation>[];
+    var failed = 0;
     for (final file in files) {
       if (file.path.endsWith('.json')) {
         final conv = await loadConversation(
           file.uri.pathSegments.last.replaceAll('.json', ''),
         );
-        if (conv != null) convs.add(conv);
+        if (conv != null) {
+          convs.add(conv);
+        } else {
+          // 文件在、但读不出来。以前这里什么都不做，那段对话就无声消失了。
+          failed++;
+        }
       }
     }
+    lastListFailures = failed;
     // 置顶的排最前，其余按更新时间倒序
     convs.sort((a, b) {
       if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
