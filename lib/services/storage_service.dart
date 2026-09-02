@@ -63,6 +63,22 @@ class StorageService {
   static Future<void> saveConversation(Conversation conv) async {
     final dir = Directory(_convDir);
     if (!await dir.exists()) await dir.create(recursive: true);
+
+    // ⚠️ `updatedAt` 以前**从来没人更新过**——全项目只有构造函数设过一次，
+    // 加消息不动它，存盘也不动它。于是它实际上是「创建时间」，而所有按
+    // 「最近」排序的地方都在拿它当依据：
+    //
+    // - 首页「最近对话」按它倒序 → 每天都在聊的那段沉在下面，
+    //   显示的日期还是几周前
+    // - 主动说的话要落进「最近动过的那段」 → 落进了一段八月底建的、
+    //   早就不聊了的对话里（真机上就是这么错的）
+    //
+    // 在这里收口，所有调用方自动受益。取最后一条消息的时间而不是 now()：
+    // 那才是「最后一次有来有往」，切换对话时的空存盘不该把它顶上去。
+    final lastMsg = conv.messages.isEmpty ? null : conv.messages.last.timestamp;
+    if (lastMsg != null && lastMsg.isAfter(conv.updatedAt)) {
+      conv.updatedAt = lastMsg;
+    }
     final target = '$_convDir/${conv.id}.json';
     final tmp = File('$target.tmp');
     // ⚠️ **不要加 `flush: true`。** 原子性靠的是 rename，跟 fsync 没关系：
@@ -78,7 +94,15 @@ class StorageService {
       final file = File('$_convDir/$id.json');
       if (!await file.exists()) return null;
       final data = await file.readAsString();
-      return Conversation.fromJson(jsonDecode(data));
+      final conv = Conversation.fromJson(jsonDecode(data));
+      // 存量数据里 `updatedAt` 全是创建时间（见 saveConversation 的注释）。
+      // 读出来就地纠正，不写盘：排序立刻就对了，而下次真存盘时会落到磁盘上。
+      final lastMsg =
+          conv.messages.isEmpty ? null : conv.messages.last.timestamp;
+      if (lastMsg != null && lastMsg.isAfter(conv.updatedAt)) {
+        conv.updatedAt = lastMsg;
+      }
+      return conv;
     } catch (_) {
       return null;
     }

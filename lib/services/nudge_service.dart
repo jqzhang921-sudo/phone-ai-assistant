@@ -407,7 +407,8 @@ class NudgeService {
           metadata: const {'nudge': true},
         ),
       );
-      conv.updatedAt = DateTime.now();
+      // updatedAt 不在这儿动：saveConversation 会按最后一条消息的时间收口，
+      // 两处各写各的迟早会打架。
       await StorageService.saveConversation(conv);
     } catch (_) {
       // 写不进去也别让通知发不出来——话到了总比什么都没有强。
