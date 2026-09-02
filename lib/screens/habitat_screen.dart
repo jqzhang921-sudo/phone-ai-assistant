@@ -11,6 +11,7 @@ import '../services/self_notes.dart';
 import '../services/small_things.dart';
 import '../widgets/app_surface.dart';
 import '../services/storage_service.dart';
+import 'days_screen.dart';
 import 'diary_screen.dart';
 import 'letter_screen.dart';
 import 'memory_screen.dart';
@@ -256,6 +257,18 @@ class _HabitatScreenState extends State<HabitatScreen> {
                 await Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const MemoryScreen()));
+                _load();
+              },
+            ),
+            // 「日子」是时间轴：上面四条按类别看存下的东西，这条按天翻——
+            // 日记、信、消息、一隅全摊在一张月历上。
+            _RowSpec(
+              icon: PhosphorIcons.calendarBlank(PhosphorIconsStyle.regular),
+              title: '日子',
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DaysScreen()),
+                );
                 _load();
               },
             ),

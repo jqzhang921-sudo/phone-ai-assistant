@@ -36,6 +36,14 @@ class Letter {
 
   bool get isFromAi => author == LetterAuthor.ai;
 
+  /// 按天分桶的键，与 DiaryEntry.dateKey 同契约（零填充 `YYYY-MM-DD`）。
+  /// 信没有单独的 date 字段，用落笔的那一刻。
+  String get dateKey {
+    return '${createdAt.year.toString().padLeft(4, '0')}-'
+        '${createdAt.month.toString().padLeft(2, '0')}-'
+        '${createdAt.day.toString().padLeft(2, '0')}';
+  }
+
   /// 列表页预览用
   String get summary {
     final oneLine = content.replaceAll(RegExp(r'\s+'), ' ').trim();
