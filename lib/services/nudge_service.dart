@@ -125,15 +125,6 @@ class NudgeService {
     await sp.setString(_kPrefs, jsonEncode(prefs.toJson()));
   }
 
-  /// 今天已经推了几条。跨天自动归零——存了「哪一天」才能判断，
-  /// 只存计数的话隔夜就永远是满的。
-  static Future<int> _sentToday(SharedPreferences sp, DateTime now) async {
-    final day = sp.getString(_kCountDay);
-    final today = '${now.year}-${now.month}-${now.day}';
-    if (day != today) return 0;
-    return sp.getInt(_kCount) ?? 0;
-  }
-
   /// [notified] = 这次真弹了通知。
   ///
   /// ⚠️ **静默的那次不能算进保险丝。** 保险丝防的是「一天弹太多通知」，而
@@ -342,7 +333,6 @@ class NudgeService {
       final decision = decideNudge(
         now: now,
         prefs: prefs,
-        sentToday: await _sentToday(sp, now),
         isFollowUp: picked.noteId != null,
         lastChatAt: await lastChatAt(),
         lastNudgeAt: lastNudge,

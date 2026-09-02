@@ -41,35 +41,35 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: const NudgePrefs(), // enabled 默认 false
-        sentToday: 0,
       );
       expect(d.allowed, isFalse);
       expect(d.reason, NudgeBlock.disabled);
     });
 
     test('什么都不挡的时候放行', () {
-      final d = decideNudge(now: at(15), prefs: _on, sentToday: 0);
+      final d = decideNudge(now: at(15), prefs: _on);
       expect(d.allowed, isTrue);
       expect(d.reason, NudgeBlock.none);
     });
 
     test('半夜不推', () {
-      final d = decideNudge(now: at(2), prefs: _on, sentToday: 0);
+      final d = decideNudge(now: at(2), prefs: _on);
       expect(d.reason, NudgeBlock.quietHours);
     });
 
-    // 保险丝，不是配额：正常路径永远碰不到（频率由「有没有事发生」决定）。
-    // 碰到了基本等于有 bug 在连环触发。
-    test('保险丝：一天推到上限就断', () {
-      final d = decideNudge(now: at(15), prefs: _on, sentToday: kRunawayPerDay);
-      expect(d.reason, NudgeBlock.runaway);
-    });
-
-    test('没到保险丝就不该拦', () {
+    // ⚠️ 这里**没有**「一天几条」的用例，是因为那道闸拆掉了。
+    //
+    // 它本来防「某个 bug 连环推送」，可间隔那道已经把这件事做了——一小时一条，
+    // 加上静默时段，一天上限本来就只有十几条。两道闸防同一件事，多的那道
+    // 只会误伤：真机上静默写入也在计数，一天装九次包就把额度耗光，
+    // 真该弹通知时反而被自己拦下。
+    //
+    // 下面这条钉的就是拆掉之后的行为：连着推很多次，只要间隔够，就不该拦。
+    test('推过很多次也不拦，只看间隔', () {
       final d = decideNudge(
-        now: at(15),
+        now: at(20),
         prefs: _on,
-        sentToday: kRunawayPerDay - 1,
+        lastNudgeAt: at(18),
       );
       expect(d.allowed, isTrue);
     });
@@ -78,7 +78,6 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 1,
         // 差 30 分钟，默认间隔 1 小时
         lastNudgeAt: at(15).subtract(const Duration(minutes: 30)),
       );
@@ -89,7 +88,6 @@ void main() {
       final d = decideNudge(
         now: at(18),
         prefs: _on,
-        sentToday: 1,
         lastNudgeAt: at(15),
       );
       expect(d.allowed, isTrue);
@@ -100,7 +98,6 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 0,
         lastChatAt: at(14),
       );
       expect(d.reason, NudgeBlock.tooSoonAfterChat);
@@ -110,7 +107,6 @@ void main() {
       final d = decideNudge(
         now: at(18),
         prefs: _on,
-        sentToday: 0,
         lastChatAt: at(14),
       );
       expect(d.allowed, isTrue);
@@ -127,13 +123,11 @@ void main() {
       final longGone = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 0,
         lastChatAt: aMonthAgo,
       );
       final recent = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 0,
         lastChatAt: justEnough,
       );
 
@@ -149,7 +143,6 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 0,
         isFollowUp: true,
         lastChatAt: at(15).subtract(const Duration(minutes: 40)),
       );
@@ -160,7 +153,6 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 0,
         lastChatAt: at(15).subtract(const Duration(minutes: 40)),
       );
       expect(d.reason, NudgeBlock.tooSoonAfterChat);
@@ -170,7 +162,6 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 1,
         isFollowUp: true,
         lastNudgeAt: at(15).subtract(const Duration(minutes: 25)),
       );
@@ -181,36 +172,25 @@ void main() {
       final d = decideNudge(
         now: at(15),
         prefs: _on,
-        sentToday: 1,
         isFollowUp: true,
         lastNudgeAt: at(15).subtract(const Duration(minutes: 10)),
       );
       expect(d.reason, NudgeBlock.tooSoonAfterNudge);
     });
 
-    test('便签也照样受静默时段和保险丝管', () {
+    test('便签也照样受静默时段管', () {
       expect(
         decideNudge(
           now: at(2),
           prefs: _on,
-          sentToday: 0,
           isFollowUp: true,
         ).reason,
         NudgeBlock.quietHours,
       );
-      expect(
-        decideNudge(
-          now: at(15),
-          prefs: _on,
-          sentToday: kRunawayPerDay,
-          isFollowUp: true,
-        ).reason,
-        NudgeBlock.runaway,
-      );
     });
 
     test('从来没聊过、从来没推过也不该崩', () {
-      final d = decideNudge(now: at(15), prefs: _on, sentToday: 0);
+      final d = decideNudge(now: at(15), prefs: _on);
       expect(d.allowed, isTrue);
     });
   });

@@ -29,9 +29,15 @@ library;
 /// 他写完一封信、记了一篇日记，那才是他想开口的时候。没发生就没有，
 /// 不需要一个数字来限制。
 ///
-/// [kRunawayPerDay] 是保险丝不是配额：只防止某个 bug 导致连环推送，
-/// 正常路径永远碰不到它，所以也不进设置页。
-const int kRunawayPerDay = 4;
+/// ⚠️ 这里也**没有一天几条的上限**了，2026-09-02 删掉的。
+///
+/// 它本来是「防某个 bug 连环推送」的保险丝，可 [NudgePrefs.minGapBetweenNudges]
+/// 已经把这件事做了：一小时一条，加上静默时段，一天上限本来就只有十几条，
+/// 而真实候选一天也就一两个。两道闸防同一件事，多的那道只会误伤。
+///
+/// 实际就误伤了：静默写入（`runOnStartup`）当时也在计数，一天装九次包就把
+/// 四条额度耗光，真该弹通知的时候保险丝已经断了。计数那个 bug 单独修了，
+/// 但这道闸本身也该拆——**它拦得住的东西，间隔那道全都拦得住**。
 
 /// 用户能调的东西。只剩两样，因为只有这两样是**你的**偏好，
 /// 其余都该由「发生了什么」决定。
@@ -105,8 +111,6 @@ enum NudgeBlock {
   none,
   disabled,
   quietHours,
-  /// 保险丝断了。正常路径碰不到，看到它基本等于有 bug。
-  runaway,
   tooSoonAfterNudge,
   tooSoonAfterChat,
 }
@@ -116,7 +120,6 @@ extension NudgeBlockLabel on NudgeBlock {
     NudgeBlock.none => '可以推',
     NudgeBlock.disabled => '主动说话没开',
     NudgeBlock.quietHours => '在你设的不打扰时段里',
-    NudgeBlock.runaway => '一天推了太多次，保险丝断了（这不正常，八成是 bug）',
     NudgeBlock.tooSoonAfterNudge => '离上一条太近',
     NudgeBlock.tooSoonAfterChat => '刚聊完，先让它待一会儿',
   };
@@ -144,7 +147,6 @@ class NudgeDecision {
 NudgeDecision decideNudge({
   required DateTime now,
   required NudgePrefs prefs,
-  required int sentToday,
   bool isFollowUp = false,
   DateTime? lastChatAt,
   DateTime? lastNudgeAt,
@@ -153,10 +155,6 @@ NudgeDecision decideNudge({
 
   if (inQuietHours(now.hour, prefs)) {
     return const NudgeDecision(false, NudgeBlock.quietHours);
-  }
-
-  if (sentToday >= kRunawayPerDay) {
-    return const NudgeDecision(false, NudgeBlock.runaway);
   }
 
   final gap =
