@@ -117,6 +117,20 @@ TA 说了一件**有下文的事**——去做一件要花时间的事、等一�
 class SelfNoteStore {
   static const _key = 'self_notes';
 
+  /// 过期作废的便签留在这儿，最近几张。
+  ///
+  /// ## 为什么值得单独存一份
+  ///
+  /// 过期是**静默删除**：清掉、存盘、什么都不说。而在她那边，「便签过期了」
+  /// 和「压根没触发」长得一模一样——都是贴了便条然后什么都没发生。
+  /// `nudge_last_run` 只记推送那一步，记不到这里。
+  ///
+  /// 窗口是真的很窄：宽限 = clamp(等待时长, 30分, 3小时)，一张等 20 分钟的
+  /// 便签活命窗口只有第 20 到第 50 分钟。ColorOS 把两次唤醒攒到一起，
+  /// 这半小时就整个错过了——而这种失败以前不留任何痕迹。
+  static const _kExpired = 'self_notes_expired';
+  static const _expiredKeep = 5;
+
   /// 同时挂着的便签上限。
   ///
   /// 不是怕存不下，是怕他把每句话都记成待办：一次醒来发现五件事要问，
@@ -145,11 +159,63 @@ class SelfNoteStore {
     await sp.setString(_key, jsonEncode(notes.map((n) => n.toJson()).toList()));
   }
 
+  /// 把过期的挑出来：存盘留活的，作废的记一笔。返回还活着的。
+  ///
+  /// 清理原来散在 [add] 和 [due] 两处各写一遍，两边都不记账。收口到这里。
+  static Future<List<SelfNote>> _pruneStale(DateTime now) async {
+    final all = await list();
+    final live = <SelfNote>[];
+    final gone = <SelfNote>[];
+    for (final n in all) {
+      (n.isStale(now) ? gone : live).add(n);
+    }
+    if (gone.isEmpty) return live;
+    await _save(live);
+    await _recordExpired(gone, now);
+    return live;
+  }
+
+  static Future<void> _recordExpired(List<SelfNote> gone, DateTime now) async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final list = <String>[
+        ...(sp.getStringList(_kExpired) ?? const <String>[]),
+        for (final n in gone)
+          jsonEncode({'at': now.toIso8601String(), 'about': n.about}),
+      ];
+      await sp.setStringList(
+        _kExpired,
+        list.length <= _expiredKeep
+            ? list
+            : list.sublist(list.length - _expiredKeep),
+      );
+    } catch (_) {
+      // 记账失败不该连累正事：便签该清还是得清。
+    }
+  }
+
+  /// 最近作废的几张，新的在后。给设置页显示。
+  static Future<List<(DateTime, String)>> recentlyExpired() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final out = <(DateTime, String)>[];
+      for (final raw in sp.getStringList(_kExpired) ?? const <String>[]) {
+        final m = jsonDecode(raw);
+        if (m is! Map) continue;
+        final at = DateTime.tryParse(m['at'] as String? ?? '');
+        final about = m['about'] as String?;
+        if (at != null && about != null) out.add((at, about));
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// 返回 false = 已经挂了太多，这次没留下。
   static Future<bool> add(SelfNote note) async {
-    final now = DateTime.now();
     // 顺手把过期的清掉，否则一堆早就作废的便签会一直占着名额。
-    final live = (await list()).where((n) => !n.isStale(now)).toList();
+    final live = await _pruneStale(DateTime.now());
     if (live.length >= maxPending) return false;
     live.add(note);
     await _save(live);
@@ -171,11 +237,9 @@ class SelfNoteStore {
     return live;
   }
 
-  /// 到点了、还没过期的那些；顺手把过期的从存储里清掉。
+  /// 到点了、还没过期的那些；顺手把过期的从存储里清掉并记一笔。
   static Future<List<SelfNote>> due(DateTime now) async {
-    final all = await list();
-    final live = all.where((n) => !n.isStale(now)).toList();
-    if (live.length != all.length) await _save(live);
+    final live = await _pruneStale(now);
     return live.where((n) => n.isDue(now)).toList();
   }
 }

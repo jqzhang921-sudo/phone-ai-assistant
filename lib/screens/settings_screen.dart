@@ -15,6 +15,7 @@ import '../config/build_info.dart';
 import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
+import '../services/self_notes.dart';
 import '../services/tts_service.dart';
 import '../services/vision_service.dart';
 import '../services/weread_service.dart';
@@ -178,6 +179,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 「上次醒来 14:02 · 这会儿他手上没有事」。见 `NudgeService.lastRun`。
   String? _nudgeLastRun;
+
+  /// 最近作废的便签。**过期是静默删除**，不摆出来的话，「过期了」和
+  /// 「压根没触发」在她那边长得一模一样。
+  List<String> _nudgeExpired = const [];
 
   @override
   void initState() {
@@ -764,6 +769,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_nudgeLastRun != next) set(() => _nudgeLastRun = next);
     });
 
+    SelfNoteStore.recentlyExpired().then((rows) {
+      if (!mounted) return;
+      final next = [
+        for (final (at, about) in rows)
+          '${at.month}/${at.day} '
+              '${at.hour.toString().padLeft(2, '0')}:'
+              '${at.minute.toString().padLeft(2, '0')} · $about',
+      ];
+      if (_nudgeExpired.join('|') != next.join('|')) {
+        set(() => _nudgeExpired = next);
+      }
+    });
+
     Future<void> save(NudgePrefs next) async {
       _nudgePrefs = next;
       await NudgeService.savePrefs(next);
@@ -891,6 +909,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _nudgeLastRun!,
           style: theme.textTheme.bodySmall?.copyWith(
             color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+      // 到点了没人来取，便签就作废了——这条路以前不留任何痕迹，
+      // 于是「过期了」和「压根没醒过」看起来一模一样。
+      if (_nudgeExpired.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text('没等到就作废的便签', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 6),
+        Text(
+          _nudgeExpired.reversed.join('\n'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '这些是它记下来、到点却没赶上说出口的。'
+          '偶尔一条正常；老是这样就是后台被系统掐得太狠了。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
           ),
         ),
       ],
