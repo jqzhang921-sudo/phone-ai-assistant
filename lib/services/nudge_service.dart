@@ -456,7 +456,7 @@ class NudgeService {
     }
     // 先落进对话，再弹通知。反过来的话，通知先到、她点开发现聊天里什么都没有。
     await _appendToChat(text, conversationId: picked.conversationId);
-    if (notify) await _show(text);
+    if (notify) await _show(text, prefs);
     await _bumpCount(sp, now, notified: notify);
     await _remember(sp, text);
     // 兑现完就把便签清掉，否则下次醒来还会再问一遍同一件事。
@@ -566,7 +566,10 @@ class NudgeService {
     return '${d.inDays} 天前';
   }
 
-  static Future<void> _show(String text) async {
+  /// ⚠️ [NudgePrefs.hideContent] 只换掉这一行字。**话照常写进对话**
+  /// （[_appendToChat] 在这之前就跑完了），去重、间隔、便签撕掉全都照旧——
+  /// 藏起来的是锁屏上的展示，不是它说过的话。
+  static Future<void> _show(String text, NudgePrefs prefs) async {
     await init();
     var name = '';
     try {
@@ -575,7 +578,7 @@ class NudgeService {
     await _plugin.show(
       _channelId.hashCode,
       name.isEmpty ? '它说' : name,
-      text,
+      prefs.hideContent ? '说了句话' : text,
       const NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,

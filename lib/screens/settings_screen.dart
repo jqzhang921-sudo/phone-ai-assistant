@@ -851,6 +851,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
 
+      const SizedBox(height: 16),
+      // 上面那些管的是「要不要打扰你」，这条管的是「别人会不会看见」。
+      _switchRow(
+        theme,
+        icon: PhosphorIconsRegular.eyeSlash,
+        title: '通知里不显示内容',
+        subtitle: '锁屏上只写「说了句话」。话本身照常在对话里，一个字不少',
+        value: _nudgePrefs.hideContent,
+        onChanged: (v) => save(_nudgePrefs.copyWith(hideContent: v)),
+      ),
+
       const SizedBox(height: 24),
       Text('试一次', style: theme.textTheme.labelLarge),
       const SizedBox(height: 6),

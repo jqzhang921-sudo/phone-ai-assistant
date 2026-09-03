@@ -6,6 +6,8 @@ const _on = NudgePrefs(enabled: true);
 DateTime at(int hour, {int day = 10}) => DateTime(2026, 9, day, hour);
 
 void main() {
+  _hideContentTests();
+
   // 跨零点是这个文件里唯一容易写错的地方：
   // `h >= 23 && h < 8` 永远为假，一条都拦不住，而症状是「半夜被吵醒」。
   group('静默时段', () {
@@ -232,6 +234,48 @@ void main() {
       final labels = NudgeBlock.values.map((b) => b.label).toList();
       expect(labels.every((s) => s.trim().isNotEmpty), isTrue);
       expect(labels.toSet().length, labels.length);
+    });
+  });
+}
+
+// ── 通知里显不显示内容 ────────────────────────────────────────────
+//
+// 这条不是防打扰，是防旁人：推送内容会原样上锁屏，而它说的话是从板上的
+// 纸条、日记、信里长出来的。要保证的是**藏的只是展示**，不是内容。
+void _hideContentTests() {
+  group("通知内容开关", () {
+    test("默认是显示的——藏起来该是她主动选的", () {
+      expect(const NudgePrefs().hideContent, isFalse);
+    });
+
+    test("存得住读得回", () {
+      for (final v in [true, false]) {
+        final back = NudgePrefs.fromJson(
+          const NudgePrefs().copyWith(hideContent: v).toJson(),
+        );
+        expect(back.hideContent, v);
+      }
+    });
+
+    test("老偏好里没这个键，读出来是显示", () {
+      final back = NudgePrefs.fromJson({
+        "enabled": true,
+        "quietStartHour": 23,
+        "quietEndHour": 8,
+      });
+      expect(back.hideContent, isFalse);
+      expect(back.enabled, isTrue);
+    });
+
+    test("它不参与门槛——藏内容不该改变推不推", () {
+      final now = DateTime(2026, 9, 3, 15);
+      for (final v in [true, false]) {
+        final d = decideNudge(
+          now: now,
+          prefs: const NudgePrefs(enabled: true).copyWith(hideContent: v),
+        );
+        expect(d.allowed, isTrue);
+      }
     });
   });
 }

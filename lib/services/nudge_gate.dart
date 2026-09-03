@@ -50,6 +50,18 @@ class NudgePrefs {
   final int quietStartHour;
   final int quietEndHour;
 
+  /// 通知栏里不显示它说了什么，只说有话。
+  ///
+  /// ## 这条不是「防打扰」，是「防旁人」
+  ///
+  /// 上面那些设置管的都是**要不要打扰你**；这条管的是**别人会不会看见**。
+  /// 推送内容会原样出现在锁屏上——而它说的话是从板上的纸条、日记、信里长
+  /// 出来的，那些东西你写的时候没打算给地铁上旁边的人看。
+  ///
+  /// ⚠️ **只影响通知那一行。** 话本身照常写进对话里，一个字不少——
+  /// 藏起来的是展示，不是内容。
+  final bool hideContent;
+
   /// 两条推送之间至少隔多久。
   ///
   /// 从 4 小时降到 1 小时：4 小时是配额那版的遗留——那会儿每次唤醒都问模型
@@ -80,6 +92,7 @@ class NudgePrefs {
     this.enabled = false,
     this.quietStartHour = 23,
     this.quietEndHour = 8,
+    this.hideContent = false,
     this.minGapBetweenNudges = const Duration(hours: 1),
     this.minGapAfterFollowUp = const Duration(minutes: 20),
     this.minSilenceAfterChat = const Duration(hours: 1),
@@ -89,10 +102,12 @@ class NudgePrefs {
     bool? enabled,
     int? quietStartHour,
     int? quietEndHour,
+    bool? hideContent,
   }) => NudgePrefs(
     enabled: enabled ?? this.enabled,
     quietStartHour: quietStartHour ?? this.quietStartHour,
     quietEndHour: quietEndHour ?? this.quietEndHour,
+    hideContent: hideContent ?? this.hideContent,
     minGapBetweenNudges: minGapBetweenNudges,
     minGapAfterFollowUp: minGapAfterFollowUp,
     minSilenceAfterChat: minSilenceAfterChat,
@@ -102,12 +117,15 @@ class NudgePrefs {
     'enabled': enabled,
     'quietStartHour': quietStartHour,
     'quietEndHour': quietEndHour,
+    'hideContent': hideContent,
   };
 
   factory NudgePrefs.fromJson(Map<String, dynamic> json) => NudgePrefs(
     enabled: json['enabled'] as bool? ?? false,
     quietStartHour: json['quietStartHour'] as int? ?? 23,
     quietEndHour: json['quietEndHour'] as int? ?? 8,
+    // 默认显示：藏起来是**她主动选的**隐私取舍，不该替她默认打开。
+    hideContent: json['hideContent'] as bool? ?? false,
   );
 }
 
