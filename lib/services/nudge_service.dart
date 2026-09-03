@@ -10,6 +10,7 @@ import '../config/persona.dart';
 import 'memory_context.dart';
 import 'self_notes.dart';
 import 'nudge_gate.dart';
+import 'small_things.dart';
 import 'storage_service.dart';
 
 /// 主动推送：他想开口的时候，给他一个出口。
@@ -74,6 +75,19 @@ class NudgeService {
 
   /// 拿多少条历史去比重复。太少挡不住轮流复读，太多会把正常的相似话题也误杀。
   static const _recentKeep = 6;
+
+  /// 一张纸条贴上多久之后，才够格当作「他想起了这一条」。
+  ///
+  /// 要挡的只有一件事：**刚贴完手机还在手里那阵子**。这会儿说「我看到你贴了 X」
+  /// 是复读不是想起，刚写的东西被原样念回来比不说还差。
+  ///
+  /// 但拖太久就走到另一头去了——**隔半天才提，那不像想起，像延迟**。
+  /// 两小时是「你已经放下手机干别的去了，但这条还在今天里」。
+  ///
+  /// ⚠️ 只有**她手动贴**的纸条要靠这条挡。它自己用 `add_small_thing` 贴的那些
+  /// 是在对话里发生的，会写进对话文件，已经被门槛里的
+  /// [NudgePrefs.minSilenceAfterChat] 管着了。
+  static const _smallThingSettle = Duration(hours: 2);
 
   static const _channelId = 'nudge';
   static const _channelName = '它主动说的话';
@@ -255,8 +269,15 @@ class NudgeService {
   /// **这一层决定频率**，而不是某个配额。没有事情发生就没有冲动——
   /// 这时候连模型都不问：问了它只会凑一句出来，而凑出来的正是最假的那种推送。
   ///
-  /// 现在的来源都是他自己产出的东西。用户收藏的「一隅」不算——那是她挑的，
-  /// 不是他想说的。
+  /// 来源有两种：**他自己产出的**（便签、信、日记），和**板上那些纸条**。
+  ///
+  /// 后一种是 2026-09-03 加的。原来只收前一种，实测由头太稀缺——信有 5 天
+  /// 冷却，日记和便签又都要模型自己主动记，算下来一周只有一两次开口机会，
+  /// 整个功能几乎不发生。而板上贴的很多本来就是「想说的话」而不是待办，
+  /// 拿来当话头正合适。
+  ///
+  /// 收藏的「一隅」仍然不算：那是她挑的**别人**的话，不是她自己写的；
+  /// 而且量大，接进来这一层就从「有没有事发生」变成「有没有东西可翻」。
   static Future<List<NudgeCandidate>> collectCandidates({
     DateTime? since,
   }) async {
@@ -309,6 +330,49 @@ class NudgeService {
             ),
           );
         }
+      }
+    } catch (_) {}
+
+    // 板上那些纸条。**这块板从来没分过你我**——SmallThing 里根本没有作者
+    // 字段，它替她贴的和她自己贴的进的是同一个列表。所以这里也不分。
+    //
+    // 为什么她贴的也能当由头：板上贴的不一定是待办，很多就是**想说的话**。
+    // 「周五交房租」提起来是催，「今天云很好看」提起来是接话——分界线在
+    // 「这是事还是话」，不在谁贴的。代码分不出来，模型分得出来，而
+    // [_composePrompt] 第三条自检（读完不回会不会觉得欠了你什么）正好是
+    // 这把尺子：房租过不了，云过得了。
+    try {
+      for (final t in await SmallThingStore.pending()) {
+        // 填了截止时间的不当由头。**这个标记是她贴的时候自己打的**：
+        // 填了 = 要做的事，没填 = 一张纸条。不用我们猜。
+        if (t.dueAt != null) continue;
+        // 刚贴上的不算，见 [_smallThingSettle]。
+        if (now.difference(t.createdAt) < _smallThingSettle) continue;
+        if (mentioned.contains('thing:${t.id}')) continue;
+        // ⚠️ **它自己贴的那些也放行**，只是说清楚手上拿的是什么。
+        //
+        // 这里一度写成硬排除，理由是 `add_small_thing` 的用法写死了是「TA 要做
+        // 的事」，所以它贴的必然是待办、提了就是催。那条规矩太绝对了，而且
+        // 之前已经被驳回过一次：「你那个快递还没去拿吧」听着就是正常人说话。
+        //
+        // 结论那次就定了——**变味的不是那句话，是说第二遍**。而「说第二遍」
+        // 由 [NudgeCandidate.mentionKey] 挡着，不需要再加一道硬闸。
+        //
+        // 所以判断交回给它自己：[_composePrompt] 第三条自检（读完不回会不会
+        // 觉得欠了你什么）本来就是这把尺子，前提是它知道手上这张是谁贴的。
+        out.add(
+          NudgeCandidate(
+            '板上的纸条',
+            switch (t.author) {
+              SmallThingAuthor.user =>
+                'TA ${_ago(t.createdAt)}自己贴在板上的一张纸条：${t.text}',
+              SmallThingAuthor.ai =>
+                '${_ago(t.createdAt)}你替 TA 记在板上的一件事：${t.text}',
+              null => '板上贴着一张${_ago(t.createdAt)}的纸条：${t.text}',
+            },
+            mentionKey: 'thing:${t.id}',
+          ),
+        );
       }
     } catch (_) {}
 
@@ -671,7 +735,7 @@ class NudgeCandidate {
   /// 兑现之后要清掉的便签 id。信和日记没有这个（它们不消耗）。
   final String? noteId;
 
-  /// 「这件事已经提过了」的登记名，比如 `letter:<id>`。
+  /// 「这件事已经提过了」的登记名，比如 `letter:<id>` / `thing:<id>`。
   ///
   /// ⚠️ **没读的信是常驻候选**：不像便签说完就撕、也不像日记有时间下限，
   /// 只要她不读，它就一直在候选列里。原来「刚聊完」那道门槛是 3 小时，
@@ -708,7 +772,8 @@ class NudgeRunResult {
       NudgeRunResult._(false, reason.label);
   factory NudgeRunResult.nothingHappened() => const NudgeRunResult._(
     false,
-    '这会儿他手上没有事——没写信、没记日记。没有由头就不说话，这是对的',
+    '这会儿他手上没有事——没写信、没记日记，板上也没什么可说的。'
+        '没有由头就不说话，这是对的',
   );
   factory NudgeRunResult.nothingToSay() =>
       const NudgeRunResult._(false, '有由头，但他自己觉得这会儿不值得打扰你');

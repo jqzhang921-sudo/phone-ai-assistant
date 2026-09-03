@@ -799,8 +799,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // 这里**故意没有「一天最多几条」**。配额会倒过来变成产出指标：
       // 今天还剩两条没用，就凑两条出来。频率该由「有没有事情发生」决定。
       Text(
-        '他写完一封信、记了一篇日记，那才是他想说话的时候。'
-        '没有这样的事，就什么都不会发生——所以这里没有「一天几条」可以调。',
+        '他写完一封信、记了一篇日记，或者翻到板上你贴的一张纸条，'
+        '那才是他想说话的时候。没有这样的事，就什么都不会发生——'
+        '所以这里没有「一天几条」可以调。',
         style: theme.textTheme.bodySmall?.copyWith(
           color: scheme.onSurfaceVariant,
         ),

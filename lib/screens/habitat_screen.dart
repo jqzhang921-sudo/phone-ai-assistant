@@ -1018,6 +1018,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final d = due.difference(DateTime.now());
     if (d.inMinutes < 60) return '${d.inMinutes} 分钟后';
     if (d.inHours < 24) return '${d.inHours} 小时后';
+        author: SmallThingAuthor.user,
     return '明天';
   }
 

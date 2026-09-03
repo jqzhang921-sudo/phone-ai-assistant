@@ -241,14 +241,26 @@ Future<void> _appendSmallThings(StringBuffer buf) async {
   buf.writeln('### TA 板上贴着的小事（${items.length} 件）');
   for (final s in items) {
     final due = s.dueAt == null ? '' : '（${_dueLabel(s.dueAt!)}）';
-    buf.writeln('- ${s.text}$due');
+    buf.writeln('- ${_stuckBy(s.author)}${s.text}$due');
   }
   buf.writeln(
-    '这些是 TA 自己要做的事，你替 TA 记着而已。'
+    '板上贴的**不一定都是待办**——有些就是随手写的一句话。'
     '**看得见不等于该提**——她提起来你接得上就行，别主动清点，'
     '更别问做了没有。',
   );
 }
+
+/// 谁贴的，写进上下文那一行的前缀。
+///
+/// ⚠️ 这个区分**只活在文本里**：板上不显示谁贴的（纸条上多一行标签既占地方，
+/// 她本来也知道哪张是自己写的）。给模型的是文本，画给她的是纸条，两条路分开走。
+///
+/// 作者不明的（`author` 字段之前存下来的老纸条）就不加前缀——猜错比不说更糟。
+String _stuckBy(SmallThingAuthor? a) => switch (a) {
+  SmallThingAuthor.user => 'TA 贴的：',
+  SmallThingAuthor.ai => '你替 TA 贴的：',
+  null => '',
+};
 
 String _dueLabel(DateTime due) {
   final now = DateTime.now();

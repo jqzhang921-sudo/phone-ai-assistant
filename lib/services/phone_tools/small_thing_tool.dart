@@ -63,6 +63,7 @@ class SmallThingTool {
         text: text,
         createdAt: DateTime.now(),
         dueAt: due,
+        author: SmallThingAuthor.ai,
       ),
     );
 

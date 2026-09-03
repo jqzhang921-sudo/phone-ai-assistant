@@ -15,6 +15,8 @@ SmallThing thing({
 );
 
 void main() {
+  _authorTests();
+
   group('存和读', () {
     test('不设截止也能存', () {
       final back = SmallThing.fromJson(thing().toJson());
@@ -57,6 +59,60 @@ void main() {
     test('撤销勾选要能真的撤回来', () {
       final done = thing().copyWith(doneAt: DateTime(2026, 9, 2, 12));
       expect(done.copyWith(clearDone: true).isDone, isFalse);
+    });
+  });
+}
+
+// ── 谁贴的 ────────────────────────────────────────────────────────
+//
+// 这个字段是给**模型**读的，板上不显示（见 SmallThingAuthor 的注释）。
+// 所以它唯一要保证的就是：存得住、读得回、老数据不崩。
+void _authorTests() {
+  group('谁贴的', () {
+    test('存得住读得回', () {
+      for (final a in SmallThingAuthor.values) {
+        final back = SmallThing.fromJson(
+          SmallThing(
+            id: 'x',
+            text: '今天云很好看',
+            createdAt: DateTime(2026, 9, 3),
+            author: a,
+          ).toJson(),
+        );
+        expect(back!.author, a);
+      }
+    });
+
+    test('老纸条没这个字段，读出来是 null，不是崩', () {
+      final back = SmallThing.fromJson({
+        'id': 'old',
+        'text': '把冬天的被子拿去洗',
+        'createdAt': '2026-08-20T10:00:00.000',
+      });
+      expect(back, isNotNull);
+      expect(back!.author, isNull);
+    });
+
+    test('认不出来的值当没有', () {
+      final back = SmallThing.fromJson({
+        'id': 'weird',
+        'text': '去拿快递',
+        'createdAt': '2026-08-20T10:00:00.000',
+        'author': 'cat',
+      });
+      expect(back, isNotNull);
+      expect(back!.author, isNull);
+    });
+
+    test('勾掉之后作者还在', () {
+      final t = SmallThing(
+        id: 'x',
+        text: '去拿快递',
+        createdAt: DateTime(2026, 9, 3),
+        author: SmallThingAuthor.ai,
+      ).copyWith(doneAt: DateTime(2026, 9, 4));
+      expect(t.author, SmallThingAuthor.ai);
+      expect(t.isDone, isTrue);
     });
   });
 }

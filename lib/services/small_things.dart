@@ -22,6 +22,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// 勾了只是记一个 [doneAt]，板面不再显示，但东西还在磁盘上留一周。
 /// 误触一下就永久丢一件事，代价和收益完全不成比例。
+/// 这张纸条是谁贴上去的。
+///
+/// ⚠️ **这是给模型读的，不是画在纸上的。** 板上不显示谁贴的——纸条上多一行
+/// 「她贴的」既占地方又像标签，而她本来就知道哪张是自己写的。
+///
+/// 模型那边完全是另一条路：拼进上下文的是**文本**（见 `memory_context` 和
+/// `NudgeService.collectCandidates`），在那段文本里写清楚就行。字段是数据，
+/// 纸条是渲染，两边不用互相迁就。
+enum SmallThingAuthor {
+  /// 她自己在板上点「加一件」贴的。
+  user,
+
+  /// 它在对话里用 add_small_thing 替她贴的。
+  ai,
+}
+
 class SmallThing {
   final String id;
   final String text;
@@ -33,12 +49,18 @@ class SmallThing {
   /// 勾掉的时间。null = 还没做。
   final DateTime? doneAt;
 
+  /// 谁贴的。**null = 这个字段之前存下来的老纸条**，那会儿没记，
+  /// 事后猜不出来，所以就让它是 null——用到的地方都要能接住「不知道」，
+  /// 而不是默认算在谁头上。
+  final SmallThingAuthor? author;
+
   const SmallThing({
     required this.id,
     required this.text,
     required this.createdAt,
     this.dueAt,
     this.doneAt,
+    this.author,
   });
 
   bool get isDone => doneAt != null;
@@ -49,6 +71,7 @@ class SmallThing {
     createdAt: createdAt,
     dueAt: dueAt,
     doneAt: clearDone ? null : (doneAt ?? this.doneAt),
+    author: author,
   );
 
   Map<String, dynamic> toJson() => {
@@ -57,6 +80,7 @@ class SmallThing {
     'createdAt': createdAt.toIso8601String(),
     if (dueAt != null) 'dueAt': dueAt!.toIso8601String(),
     if (doneAt != null) 'doneAt': doneAt!.toIso8601String(),
+    if (author != null) 'author': author!.name,
   };
 
   static SmallThing? fromJson(Map<String, dynamic> j) {
@@ -64,12 +88,19 @@ class SmallThing {
     final text = j['text'] as String?;
     final created = DateTime.tryParse(j['createdAt'] as String? ?? '');
     if (id == null || text == null || created == null) return null;
+    final rawAuthor = j['author'] as String?;
     return SmallThing(
       id: id,
       text: text,
       createdAt: created,
       dueAt: DateTime.tryParse(j['dueAt'] as String? ?? ''),
       doneAt: DateTime.tryParse(j['doneAt'] as String? ?? ''),
+      // 认不出来的值当没有，别抛——一个字段读坏了不该让整块板消失。
+      author: switch (rawAuthor) {
+        'user' => SmallThingAuthor.user,
+        'ai' => SmallThingAuthor.ai,
+        _ => null,
+      },
     );
   }
 }
