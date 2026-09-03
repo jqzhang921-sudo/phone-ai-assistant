@@ -68,7 +68,8 @@ class PhoneAiApp extends StatefulWidget {
   State<PhoneAiApp> createState() => _PhoneAiAppState();
 }
 
-class _PhoneAiAppState extends State<PhoneAiApp> {
+class _PhoneAiAppState extends State<PhoneAiApp>
+    with WidgetsBindingObserver {
   late Future<AppSettings> _settingsFuture;
 
   @override
@@ -77,10 +78,30 @@ class _PhoneAiAppState extends State<PhoneAiApp> {
     _settingsFuture = AppSettings.load();
     _loadSavedApiKeys();
     _connectExternalMcpServers();
+    WidgetsBinding.instance.addObserver(this);
     // 后台被系统掐掉时的兜底：攒下的事在她打开 App 时补上。
     // 不弹通知——人已经在 App 里了。门槛照走，所以不会变吵。
     NudgeScheduler.runOnStartup();
     _autoStartMcpServer();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// ⚠️ 上面那句 `runOnStartup` **只在冷启动时跑**：它在 initState 里，
+  /// 而 Android 不会因为她切走就杀进程。连着用一整天的话，那条兜底一次都
+  /// 不会再跑，期间唯一的检查点只剩后台周期任务——而那个在国产 ROM 上
+  /// 被攒到二三十分钟一次、还会整轮跳过。
+  ///
+  /// 所以切回前台也走一遍。防抖在 [NudgeScheduler.shouldRunLocally] 里。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      NudgeScheduler.runOnResume();
+    }
   }
 
   Future<void> _autoStartMcpServer() async {

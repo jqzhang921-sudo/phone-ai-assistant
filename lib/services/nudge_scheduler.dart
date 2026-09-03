@@ -53,20 +53,53 @@ class NudgeScheduler {
     await Workmanager().cancelByUniqueName(_unique);
   }
 
-  /// App 起来的时候走一遍。
+  /// 进程启动时走一遍。
   ///
-  /// 后台被 ROM 杀掉时这是唯一还活着的路：她打开 App，攒下的那件事就有机会
+  /// 后台被 ROM 杀掉时这是还活着的路：她打开 App，攒下的那件事就有机会
   /// 说出口。门槛照走，所以不会因为多了这个入口就变吵。
   ///
+  /// ⚠️ 这条**只在冷启动时跑**——它挂在根 widget 的 initState 上，那是
+  /// 进程启动才走一次。Android 不会因为切走就杀进程，所以她连着用一整天的
+  /// 话，这条兜底一次都不会再跑。切回前台那条见 [runOnResume]。
+  static Future<void> runOnStartup() =>
+      _runLocal(settle: const Duration(seconds: 3));
+
+  /// 切回前台时走一遍。
+  ///
+  /// 补的是这个洞：进程活了一整天，期间**唯一的检查点只有后台周期任务**，
+  /// 而那个在国产 ROM 上被攒到二三十分钟一次、还会整轮跳过。
+  ///
+  /// 延时比冷启动短得多：这会儿没有首屏要画，只需要躲开切回来那一下的动画。
+  static Future<void> runOnResume() =>
+      _runLocal(settle: const Duration(milliseconds: 600));
+
+  /// 上一次在前台跑是什么时候。**进程内的，重启就忘**——冷启动本来就会跑一次，
+  /// 忘掉正好对上。
+  static DateTime? _lastLocalRun;
+
+  /// 两次前台检查之间至少隔多久。
+  ///
+  /// 不是怕它话多（门槛管那个），是怕**掉帧**：每次都要读信、日记、对话列表，
+  /// 全在主 isolate 上。而她复制个验证码切出去再回来就是一次 resumed，
+  /// 一天几十次——没有这道闸，那就是几十次文件遍历。
+  static const _localGap = Duration(minutes: 30);
+
+  /// 纯的，好测：[last] 是上次跑的时间，null = 没跑过。
+  static bool shouldRunLocally(DateTime now, DateTime? last) =>
+      last == null || now.difference(last) >= _localGap;
+
   /// **不弹通知**（`notify: false`）：人已经在 App 里了，为一条马上就能看到的
   /// 消息再弹一条通知是噪音。话照样落进对话，她翻到就看见。
-  static Future<void> runOnStartup() async {
+  static Future<void> _runLocal({required Duration settle}) async {
+    final now = DateTime.now();
+    if (!shouldRunLocally(now, _lastLocalRun)) return;
+    _lastLocalRun = now;
     try {
-      // ⚠️ 让开头几帧先画完。
+      // ⚠️ 让界面先画完。
       //
       // 这条路要读文件、可能还要调模型，全在主 isolate 上。跟首屏抢会直接掉帧，
       // 而它一点都不急——攒下的事晚几秒说没有任何区别。
-      await Future.delayed(const Duration(seconds: 3));
+      await Future.delayed(settle);
 
       final prefs = await NudgeService.loadPrefs();
       if (!prefs.enabled) return;
