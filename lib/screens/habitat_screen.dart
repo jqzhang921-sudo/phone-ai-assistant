@@ -730,6 +730,25 @@ class _HabitatScreenState extends State<HabitatScreen> {
     Color(0xFFE6E7EF), // 灰蓝
   ];
 
+  /// 板上纸条正文的字。
+  ///
+  /// 行书，手写感。正文那套宋体（NotoSerifSC）看着像**印上去的**，
+  /// 不像贴上去的——而这块板整个是在模拟「手写了贴上去」这件事。
+  ///
+  /// 便签和小事是同一块板上的同一种纸，字当然也是同一种，所以收在一处：
+  /// 两边分开写迟早会走岔。
+  ///
+  /// ⚠️ 字号 14 而不是原来的 12.5。**行书笔画比宋体细**，12.5 下会糊成一团——
+  /// 换了字体，原来那个数就不成立了，这不是顺手放大一点。
+  ///
+  /// 截止时间那行小字（10.5px）**不换**：那个尺寸下行书完全读不出来。
+  static TextStyle _slipTextStyle(Color ink) => TextStyle(
+    fontFamily: 'ZhiMangXing',
+    fontSize: 14,
+    height: 1.45,
+    color: ink,
+  );
+
   /// 一张纸条。
   ///
   /// 歪一点点是故意的：正着码成一列就成了待办清单，那是任务的样子。
@@ -778,12 +797,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
                 // 撑成一屏。四行足够认出是哪件事，认不出来的那部分不重要。
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'NotoSerifSC',
-                  fontSize: 12.5,
-                  height: 1.45,
-                  color: ink,
-                ),
+                style: _slipTextStyle(ink),
               ),
               const SizedBox(height: 5),
               Text(
@@ -869,12 +883,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
                       s.text,
                       maxLines: 4,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'NotoSerifSC',
-                        fontSize: 12.5,
-                        height: 1.45,
-                        color: ink,
-                      ),
+                      style: _slipTextStyle(ink),
                     ),
                     if (s.dueAt != null) ...[
                       const SizedBox(height: 5),
@@ -1009,6 +1018,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
         text: text,
         createdAt: DateTime.now(),
         dueAt: due,
+        author: SmallThingAuthor.user,
       ),
     );
     if (mounted) _load();
@@ -1018,7 +1028,6 @@ class _HabitatScreenState extends State<HabitatScreen> {
     final d = due.difference(DateTime.now());
     if (d.inMinutes < 60) return '${d.inMinutes} 分钟后';
     if (d.inHours < 24) return '${d.inHours} 小时后';
-        author: SmallThingAuthor.user,
     return '明天';
   }
 

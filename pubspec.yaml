@@ -79,3 +79,9 @@ flutter:
     - family: NotoSerifSC
       fonts:
         - asset: assets/fonts/NotoSerifSC.otf
+    # 板上纸条的正文。行书，手写感——正文那套宋体看着像「印上去的」，
+    # 不像贴上去的。3.86MB，GB2312 全集（6763 字），不用再子集化。
+    # SIL OFL 1.1，可商用。
+    - family: ZhiMangXing
+      fonts:
+        - asset: assets/fonts/ZhiMangXing.ttf
