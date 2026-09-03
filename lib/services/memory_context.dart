@@ -27,6 +27,7 @@ import '../models/book.dart';
 import '../models/diary_entry.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
+import 'self_notes.dart';
 import 'storage_service.dart';
 import 'small_things.dart';
 // ─────────────────────────────────────────────────────────────
@@ -214,6 +215,7 @@ Future<String> buildMemoryContext({
   await _appendBooks(buf, maxBooks);
   await _appendLetterStatus(buf);
   await _appendSmallThings(buf);
+  await _appendSelfNotes(buf);
 
   return buf.toString();
 }
@@ -261,6 +263,54 @@ String _stuckBy(SmallThingAuthor? a) => switch (a) {
   SmallThingAuthor.ai => '你替 TA 贴的：',
   null => '',
 };
+
+/// 它自己挂着的便签。
+///
+/// ## 为什么非得有这一段
+///
+/// 之前**整个项目里，便签只有推送那条路读得到**（`SelfNoteStore` 一共 6 个
+/// 使用点：推送取用、工具写入、栖息页显示和撕掉）。聊天里的它看得见她板上的
+/// 小事，却看不见自己记的便签——正好反了。
+///
+/// 不放这一段的后果不是「少点信息」，是三条规矩直接失效：
+///
+/// 1. `follow_up_later` 的描述写着「同一件事已经留过便签了就别再留」——
+///    它看不见挂着哪几张，**这条遵守不了**
+/// 2. [SelfNoteStore.maxPending] 满了，它只能靠撞一次错误才知道
+/// 3. **到点了但推送被门槛拦下**（静默时段、离上一条太近），它在聊天里也
+///    不知道这件事到点了——那张便签就只能干等到过期
+///
+/// ## ⚠️ 和小事那段的分寸不一样
+///
+/// 小事是她的，判据是「别主动清点」。便签是它自己记的，问一句本来就是本意——
+/// 但**没到点的别拿出来说**，那等于提前交代「我等会儿要问你」，
+/// 而 `selfNoteRules` 里写明了留便签是件安静的事。
+Future<void> _appendSelfNotes(StringBuffer buf) async {
+  final now = DateTime.now();
+  final notes = await SelfNoteStore.pending(now);
+  if (notes.isEmpty) return;
+
+  buf.writeln();
+  buf.writeln('### 你给自己留的便签（${notes.length} 张）');
+  for (final n in notes) {
+    final when = n.isDue(now) ? '到点了' : _afterLabel(n.dueAt, now);
+    buf.writeln('- ${n.about}（$when）');
+  }
+  buf.writeln(
+    '这些是**你自己**记着要回来问的事，不是 TA 的待办。'
+    '标了「到点了」的，这会儿接得上就问一句，接不上就留着——不用交代，'
+    '也不用说明你记过。没到点的一张都别提。',
+  );
+}
+
+/// 「还有 40 分钟」这种。便签的粒度得到分钟：等四十分钟的事说成「今天之内」
+/// 就没意义了。
+String _afterLabel(DateTime due, DateTime now) {
+  final d = due.difference(now);
+  if (d.inMinutes < 60) return '还有 ${d.inMinutes} 分钟';
+  if (d.inHours < 24) return '还有 ${d.inHours} 小时';
+  return '还有 ${d.inDays} 天';
+}
 
 String _dueLabel(DateTime due) {
   final now = DateTime.now();
