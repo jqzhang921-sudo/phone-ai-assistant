@@ -52,3 +52,34 @@ String weekdayLabel(DateTime d) {
   const names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
   return names[d.weekday - 1];
 }
+
+/// 「我想说」的一天从几点算起。
+///
+/// ## 为什么不是零点
+///
+/// 原来用的是自然日历日：零点一过，缓存键就换，下次打开 App 就重新生成一段。
+/// 而那恰好是它**手上素材最少的一刻**——「今天的对话」是空的，走的是
+/// `musing_generator` 里那句「今天你和 TA 还没聊过」的兜底。
+///
+/// 更糟的是反过来那半：她聊到一两点，零点这一刀正好把刚攒了一晚上的话
+/// 切在了外面，新的那段反而什么都拿不到。
+///
+/// 挪到凌晨 5 点，深夜那段就还算在前一天里。
+const musingDayStartHour = 5;
+
+/// [now] 落在哪个「我想说」日，返回那一天的起点。
+///
+/// ⚠️ **缓存键和取素材的窗口必须用同一个边界**，所以这个函数收在这里，
+/// 让 `storage_service`（存）和 `musing_generator`（取）都走它。
+/// 两边各写一遍迟早会错开半天。
+///
+/// 顺带：这个边界**只管「我想说」**。`storage_service._todayKey()` 照旧是
+/// 自然日历日——收藏的一隅按那个分桶，两个数据集的契约不一样，跟着挪会在
+/// 边界上错位。
+DateTime musingDayStart(DateTime now) {
+  final shifted = now.subtract(const Duration(hours: musingDayStartHour));
+  return DateTime(shifted.year, shifted.month, shifted.day, musingDayStartHour);
+}
+
+/// 这一刻属于哪个「我想说」日，`YYYY-MM-DD`。
+String musingDayKey(DateTime now) => dateKeyOf(musingDayStart(now));

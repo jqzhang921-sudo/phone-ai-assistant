@@ -8,6 +8,7 @@ import '../models/diary_entry.dart';
 import '../models/letter.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
+import '../utils/dates.dart';
 
 class StorageService {
   static late Directory _dir;
@@ -299,23 +300,31 @@ class StorageService {
         '${now.day.toString().padLeft(2, '0')}';
   }
 
-  /// 读取今天缓存的"我想说"，格式 {date, content, favorited}。
-  /// 如果缓存不是今天的（跨天了），返回 null。
+  /// 读取这个「我想说」日缓存的内容，格式 {date, content, favorited}。
+  /// 跨天了就返回 null，由调用方重新生成。
+  ///
+  /// ⚠️ 用 [musingDayKey] 而不是 [_todayKey]：一天从凌晨 5 点算起，
+  /// 深夜那段还算前一天。理由见 `dates.dart` 里 [musingDayStartHour] 的注释。
+  /// 键的字符串格式没变，所以已经存着的那条照样认得。
   static Future<Map<String, dynamic>?> getTodayMusing() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kTodayMusingKey);
     if (raw == null) return null;
     final data = jsonDecode(raw) as Map<String, dynamic>;
-    if (data['date'] != _todayKey()) return null;
+    if (data['date'] != musingDayKey(DateTime.now())) return null;
     return data;
   }
 
-  /// 缓存今天新生成的"我想说"（覆盖旧的，用于手动刷新）。
+  /// 缓存新生成的"我想说"（覆盖旧的，用于手动刷新）。
   static Future<void> setTodayMusing(String content) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _kTodayMusingKey,
-      jsonEncode({'date': _todayKey(), 'content': content, 'favorited': false}),
+      jsonEncode({
+        'date': musingDayKey(DateTime.now()),
+        'content': content,
+        'favorited': false,
+      }),
     );
   }
 

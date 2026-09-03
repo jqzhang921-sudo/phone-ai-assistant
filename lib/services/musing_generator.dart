@@ -1,20 +1,28 @@
 import '../models/chat_message.dart';
 import '../services/ai_client.dart';
 import '../services/storage_service.dart';
+import '../utils/dates.dart';
 
 /// 生成一段 AI 自己的、随意的"我想说"——可以是吐槽、观察、随手一提的想法，
 /// 不一定要围绕对话内容，也不强求有主题。
 Future<String?> generateDailyMusing({required AiClient aiClient}) async {
   final convs = await StorageService.listConversations();
-  final now = DateTime.now();
+
+  // ⚠️ 素材取的是**刚过去的那一整天**，不是「今天到现在为止」。
+  //
+  // 生成的触发点是跨天之后第一次打开——那一刻「今天」是空的，于是它每天都在
+  // 手上素材最少的时候开口，走的是下面那句「还没聊过」的兜底。
+  // 那个兜底分支本来就不是边角情况，它是每天早上都会走的那条路。
+  //
+  // 窗口 [起点-24h, 起点) 配上 5 点的边界，深夜那段也收得进来。
+  final dayStart = musingDayStart(DateTime.now());
+  final from = dayStart.subtract(const Duration(days: 1));
 
   final buf = StringBuffer();
   for (final conv in convs) {
     for (final m in conv.messages) {
       final t = m.timestamp.toLocal();
-      final isToday =
-          t.year == now.year && t.month == now.month && t.day == now.day;
-      if (!isToday) continue;
+      if (t.isBefore(from) || !t.isBefore(dayStart)) continue;
       if (m.role != MessageRole.user && m.role != MessageRole.assistant) {
         continue;
       }
@@ -36,8 +44,9 @@ Future<String?> generateDailyMusing({required AiClient aiClient}) async {
 
   final contextPart =
       todayText.trim().isEmpty
-          ? '今天你和 TA 还没聊过，没有具体话题可以聊。'
-          : '今天你和 TA 的对话（「你」是你自己说的，「TA」是用户说的）：\n$todayText';
+          ? '刚过去的这一天你们没怎么说话。'
+          : '刚过去的这一天你和 TA 的对话（「你」是你自己说的，'
+              '「TA」是用户说的）：\n$todayText';
 
   final prompt =
       '写一段50~100字的"我想说"，用你自己的口吻，随便说点什么都行——'
