@@ -376,6 +376,38 @@ class NudgeService {
       }
     } catch (_) {}
 
+    // 她在收藏上写的那句备注。
+    //
+    // 上面那条注释说「收藏的『一隅』仍然不算」，那句话现在只管**被收的内容**：
+    // 那是她挑的别人的话，量还大，接进来这一层就从「有没有事发生」变成
+    // 「有没有东西可翻」。**但备注不是被收的内容，是她自己写下的字**，而且只有
+    // 她动手写过的那几条才有——量小，也确实是一件刚发生的事。
+    //
+    // 为什么单独把它拎出来：它自己许的愿就是这个——「当你在我看不到的地方
+    // 写下关于我的字，我能第一时间感觉到」。日记那条已经通了，差的是这条。
+    //
+    // 这里**不设沉淀期**（板上的纸条有 2 小时）。那条是怕刚贴上就被念出来
+    // 显得盯人，而这条要的正好是「当时就接着」，压一段时间等于把愿望本身
+    // 抹掉。防打扰交给门槛那层：刚聊完的静默、静默时段、两条之间的间隔。
+    try {
+      for (final m in await StorageService.listFavoritedMusings()) {
+        final note = m.note?.trim();
+        if (note == null || note.isEmpty) continue;
+        // 没有 noteAt 的是老数据，不知道什么时候写的，一律不当由头——
+        // 否则第一次跑就会把历年备注全翻出来。
+        final at = m.noteAt;
+        if (at == null || !at.isAfter(floor)) continue;
+        if (mentioned.contains('note:${m.id}')) continue;
+        out.add(
+          NudgeCandidate(
+            '她写下的一句',
+            'TA ${_ago(at)}在收藏的一句话下面写了：$note',
+            mentionKey: 'note:${m.id}',
+          ),
+        );
+      }
+    } catch (_) {}
+
     return out;
   }
 
