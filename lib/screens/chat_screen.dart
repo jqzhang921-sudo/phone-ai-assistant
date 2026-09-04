@@ -24,6 +24,7 @@ import '../services/mcp_server.dart';
 import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
 import '../services/small_things.dart';
+import '../services/tool_tiers.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
 import '../config/settings.dart';
@@ -626,7 +627,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final mcpTools = mcpServer.registeredTools.map((r) => r.tool).toList();
     final externalTools = context.read<ExternalMcpProvider>().allExternalTools;
     final allTools = [...mcpTools, ...externalTools];
-    final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
+
+    // 分两层：常驻的几个直接声明，其余的收进索引，用 find_tools 现取。
+    // 实际的 tools 数组在下面的工具循环里逐轮算，理由见那儿。
+    ToolTiers.begin(_conversation.id, allTools);
 
     // 身份（名字 + 性格）抽到了 config/persona.dart：主动说话那条路要用
     // **同一份**，否则它开口时不是它。三层优先级和取名字的理由都写在那儿。
@@ -677,12 +681,17 @@ class _ChatScreenState extends State<ChatScreen> {
     //
     // 两段规矩都在身份外面：自定义了性格的对话会整段替掉人设，
     // 记不记东西、怎么读记录，不该被「用什么口吻说话」连坐。
+    // 收着的那些工具的一行索引。排在 const 规矩之后、摘要之前：
+    // 它只有连上/断开外部服务器时才变，比摘要还稳，但不是 const。
+    final toolIndex = ToolTiers.buildIndex(allTools);
+
     final systemPrompt = [
       identity,
       memoryReadingRules,
       memoryWritingRules,
       selfNoteRules,
       smallThingRules,
+      if (toolIndex.isNotEmpty) toolIndex,
       if (digest.isNotEmpty) digest,
     ].join('\n\n');
 
@@ -706,6 +715,22 @@ class _ChatScreenState extends State<ChatScreen> {
       String? fullResponse;
       // 思考单独攒。它不进 fullResponse——那个要发回给服务端当上文。
       String? thinkingBuffer;
+
+      // ⚠️ 工具列表和 _visibleHistory() 一样，必须放在循环里算。
+      //
+      // find_tools 是在**工具轮次里**执行的，它取出来的工具要到下一轮才能
+      // 出现在 tools 数组里。提到循环外面就是个过期快照——它搜到了工具，
+      // 却调不了，而 find_tools 的返回值还告诉它「这一轮就能直接调」。
+      //
+      // ⚠️ 这里**只能给 active()，不能给 allTools**：tools 数组在 prompt
+      // 缓存的前缀里，给全量等于分层白做。active() 在一段对话里只增不减，
+      // 所以取一次工具赔一次缓存，之后前缀重新稳定，不是每轮都赔。
+      //
+      // AiClient 只有两个 final 字段、没有连接状态，每轮新建不花什么。
+      final clientWithTools = AiClient(
+        config: aiClient.config,
+        tools: ToolTiers.active(allTools),
+      );
 
       try {
         // 切片放在循环里算，不能提到外面：工具轮次会往 messages 末尾追加，

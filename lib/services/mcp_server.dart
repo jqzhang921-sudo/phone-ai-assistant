@@ -14,6 +14,7 @@ import 'phone_tools/sensors_tool.dart';
 import 'phone_tools/search_tool.dart';
 import 'phone_tools/self_note_tool.dart';
 import 'phone_tools/small_thing_tool.dart';
+import 'tool_tiers.dart';
 import 'phone_tools/weather_tool.dart';
 import 'phone_tools/weread_tool.dart';
 
@@ -65,6 +66,8 @@ class McpServer {
     // 记忆答的是「她是谁」，便签答的是「这件事还没完」——前者常驻，
     // 后者到点兑现完就没了。
     _registerTool(SelfNoteTool.definition, SelfNoteTool.execute);
+    // 延迟层的入口。必须常驻——它要是也收起来，延迟层等于不存在。
+    _registerTool(ToolFinder.definition, ToolFinder.execute);
     _registerTool(SmallThingTool.definition, SmallThingTool.execute);
     _registerTool(AlarmTool.definition, AlarmTool.execute);
     _registerTool(TimerTool.definition, TimerTool.execute);
