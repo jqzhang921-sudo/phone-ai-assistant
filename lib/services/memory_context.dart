@@ -27,6 +27,8 @@ import '../models/book.dart';
 import '../models/diary_entry.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
+import 'period_forecast.dart';
+import 'period_log.dart';
 import 'self_notes.dart';
 import 'storage_service.dart';
 import 'small_things.dart';
@@ -216,6 +218,7 @@ Future<String> buildMemoryContext({
   await _appendLetterStatus(buf);
   await _appendSmallThings(buf);
   await _appendSelfNotes(buf);
+  await _appendPeriod(buf);
 
   return buf.toString();
 }
@@ -263,6 +266,80 @@ String _stuckBy(SmallThingAuthor? a) => switch (a) {
   SmallThingAuthor.ai => '你替 TA 贴的：',
   null => '',
 };
+
+/// 她的经期，**只有开关打开时才有这一段**。
+///
+/// ## ⚠️ 为什么它在这个函数里，而不在 buildMemoryDigest 里
+///
+/// 这不是分类问题，是**一条隐私边界**，而这条缝本来就在：
+///
+/// | | 喂给谁 |
+/// |---|---|
+/// | [buildMemoryContext]（这儿） | 只喂聊天 |
+/// | [buildMemoryDigest] | 聊天 **+ 写推送通知那一步** |
+///
+/// 主动推送那句话是模型现写的，**原样进通知栏、原样上锁屏**
+/// （见 `NudgeService._show`），而「通知里不显示内容」那个开关默认是关的。
+/// 所以只要写通知的时候它手上有这个数据，「这几天不舒服吧」就可能出现在
+/// 地铁上旁人能瞄见的地方。
+///
+/// 靠提示词写一句「别在通知里提」是不够的——提示词是软的，这个项目已经
+/// 证过两次（记忆工具注册了不用、follow_up_later 说「别留两张」却看不见
+/// 挂着哪几张）。**隐私不该押在软规矩上：它写通知时手上没有，就漏不了。**
+///
+/// ⚠️ 还剩一条间接的路没堵：它要是写了篇日记提到这事，日记摘要是会进
+/// 写通知那一步的。那是日记本身的性质（日记可能写任何事），不是这里能解的。
+///
+/// ## 只在正当口那几天出现
+///
+/// 不在经期就整段不出现，也不写「上次是什么时候」。知道「她此刻不舒服」
+/// 是为了说话有分寸；知道「她上次是三周前」就只剩监视了。
+Future<void> _appendPeriod(StringBuffer buf) async {
+  if (!await PeriodLog.sharedWithAi()) return;
+
+  const manners =
+      '这是她自己记下来的，不是你查到的。**别主动提起**——'
+      '你知道这件事是为了说话的时候心里有数，不是为了表现出你记得。'
+      '也不用给建议，多喝热水早点睡这类她自己都知道。'
+      '她自己说起来的时候，接住就行。';
+
+  final day = await PeriodLog.currentDay();
+  if (day != null) {
+    buf.writeln();
+    buf.writeln('### 她这几天来例假了（第 $day 天）');
+    buf.writeln(manners);
+    return;
+  }
+
+  // 快到了。**两个条件都得满足**：预测那个开关单独开着（见 PeriodLog），
+  // 而且真的就在这几天里——再往前就不是分寸，是它拿着一份关于她身体的日程表。
+  if (!await PeriodLog.forecastSharedWithAi()) return;
+  final f = forecastFrom(await PeriodLog.list());
+  if (!f.hasWindow) return;
+  final days = f.from!.difference(_today()).inDays;
+  if (days < 0 || days > _forecastHeadsUpDays) return;
+
+  buf.writeln();
+  buf.writeln(
+    days == 0 ? '### 按她的记录，这两天可能要来例假' : '### 按她的记录，大概 $days 天后要来例假',
+  );
+  buf.writeln(
+    '这是**算出来的，不是确定的**，真实周期本来就会晃。'
+    '$manners'
+    '尤其别拿这个当话头开口问她是不是快来了。',
+  );
+}
+
+/// 提前多少天算「快到了」。
+///
+/// 三天是「这几天」，再往前就成了日程表——它知道她两周后的身体安排，
+/// 这不是分寸，是监视。
+const _forecastHeadsUpDays = 3;
+
+DateTime _today() {
+  final n = DateTime.now();
+  return DateTime(n.year, n.month, n.day);
+}
 
 /// 它自己挂着的便签。
 ///

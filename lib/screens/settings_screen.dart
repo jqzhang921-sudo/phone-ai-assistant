@@ -15,6 +15,8 @@ import '../config/build_info.dart';
 import '../services/ai_client.dart';
 import '../services/external_mcp_service.dart';
 import '../services/phone_tools/search_tool.dart';
+import '../services/period_forecast.dart';
+import '../services/period_log.dart';
 import '../services/self_notes.dart';
 import '../services/tts_service.dart';
 import '../services/vision_service.dart';
@@ -180,6 +182,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 「上次醒来 14:02 · 这会儿他手上没有事」。见 `NudgeService.lastRun`。
   String? _nudgeLastRun;
 
+  /// 经期记录给不给它看。默认关着，见 [PeriodLog]。
+  bool _periodShared = false;
+
+  /// **预测**给不给它看。和上面那个是两件事，也默认关着。
+  bool _periodForecastShared = false;
+
+  /// 算出来的那份预测，给设置页显示。
+  PeriodForecast _periodForecast = const PeriodForecast();
+
   /// 最近作废的便签。**过期是静默删除**，不摆出来的话，「过期了」和
   /// 「压根没触发」在她那边长得一模一样。
   List<String> _nudgeExpired = const [];
@@ -231,6 +242,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _aiNameController.text = _settings.aiName;
     _externalServers = await ExternalMcpServerService.load();
     _nudgePrefs = await NudgeService.loadPrefs();
+    _periodShared = await PeriodLog.sharedWithAi();
+    _periodForecastShared = await PeriodLog.forecastSharedWithAi();
+    _periodForecast = forecastFrom(await PeriodLog.list());
 
     // 只在首次打开时自动选中一个配置（避免每次保存后被跳走）
     if (_selectedProvider == null && _configs.isNotEmpty) {
@@ -432,6 +446,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: _nudgePrefs.enabled ? '开着' : '关着',
               onTap:
                   () => _openDetail('主动说话', (t, set) => _secNudge(t, set)),
+            ),
+            _row(
+              theme,
+              icon: PhosphorIconsRegular.drop,
+              title: '经期记录',
+              subtitle: '记在日子那一页上，长按某天标记',
+              value:
+                  !_periodShared
+                      ? '只有你看得到'
+                      : _periodForecastShared
+                      ? '它知道，也知道快到了'
+                      : '它知道',
+              onTap: () => _openDetail('经期记录', _secPeriod),
             ),
             _themePicker(theme),
             _row(
@@ -754,6 +781,138 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 这一版**没有接后台唤醒**，只有开关、几个数、和一个「现在试一次」。
   /// 顺序是故意的：先在手动触发下把内容和分寸调顺，再谈让它自己跑——
   /// ColorOS 上后台本来就不保证准时，内容这层必须能独立成立。
+  /// 经期那一页只有一个开关：给不给它看。**记录本身在日子那一页上做**——
+  /// 设置管开关，页面管操作，这个分工全项目一致。
+  List<Widget> _secPeriod(ThemeData theme, StateSetter set) {
+    final scheme = theme.colorScheme;
+    return [
+      Text(
+        '在「日子」那一页长按某天，标记这天来了或者结束了。'
+        '记完那几天的格子上会有个印子。第一版只记不测——'
+        '周期规律要三四个月才看得出来，这之前的预测基本是瞎猜，'
+        '而瞎猜的日期画在日历上比不画更烦。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 20),
+      Text('下次大概什么时候', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 6),
+      Text(
+        _forecastLine(),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        '日历上那几天画成**空心圈**，和实际记录的实底色分得开——'
+        '实心是发生过的，空心是算出来的。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+        ),
+      ),
+      const SizedBox(height: 20),
+      _switchRow(
+        theme,
+        icon: PhosphorIconsRegular.chatCircle,
+        title: '让它知道',
+        subtitle: '只在正当口那几天，只在聊天里',
+        value: _periodShared,
+        onChanged: (v) async {
+          await PeriodLog.setSharedWithAi(v);
+          if (!v) await PeriodLog.setForecastSharedWithAi(false);
+          set(() {
+            _periodShared = v;
+            if (!v) _periodForecastShared = false;
+          });
+        },
+      ),
+      // 单独一个开关，不跟着上面那个一起开：「她这几天不舒服」和
+      // 「她还有三天要来」是两个量级——后者是它拿着一份关于她身体的日程表。
+      _switchRow(
+        theme,
+        icon: PhosphorIconsRegular.calendarDots,
+        title: '也让它知道快到了',
+        subtitle:
+            _periodShared ? '只提前三天，再往前就是日程表了' : '要先打开上面那个',
+        value: _periodForecastShared,
+        onChanged:
+            !_periodShared
+                ? (_) {}
+                : (v) async {
+                  await PeriodLog.setForecastSharedWithAi(v);
+                  set(() => _periodForecastShared = v);
+                },
+      ),
+      const SizedBox(height: 10),
+      Text(
+        '开着的时候，它在聊天里知道你这几天不舒服，说话的分寸会软一点。'
+        '不在经期的日子它什么都看不到，也看不到「上次是什么时候」。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 12),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Text(
+          '⚠️ 这件事**不会进通知**。主动推送那句话是它现写的，原样上锁屏——'
+          '所以写通知的时候它手上根本没有这个数据，漏不了。'
+          '这是代码里切开的，不是叮嘱它别说。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Text(
+        '备份里带着这些记录（换手机不至于从头记），但**开关不带**——'
+        '恢复之后默认是关的，要不要给它看，换台机器就重新决定一次。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+        ),
+      ),
+    ];
+  }
+
+  /// 预测那一行说什么。**每种情况都要说得清为什么**——
+  /// 「没算出来」和「算出来了但估不准」是两回事，下一步动作也不一样。
+  String _forecastLine() {
+    final f = _periodForecast;
+    if (f.notEnough) {
+      return '记满三个周期才开始估——两次之间只有一个间隔，'
+          '看不出你晃不晃，而晃的幅度恰恰是这里最有用的那个数。';
+    }
+    if (f.irregular) {
+      return '最近几次的间隔差得比较多（中位数 ${f.medianCycle} 天），'
+          '推出来的区间已经宽到没什么用，就不画了。'
+          '这是在说这份数据没法推，不是在说你怎么了。';
+    }
+    if (f.stale) {
+      return '上一次记录之后已经过了预计的那几天了。'
+          '是漏记了还是这次晚了，这儿分不出来——记一下就接着算。';
+    }
+    if (!f.hasWindow) return '还没有可以推的记录。';
+
+    final a = f.from!;
+    final b = f.to!;
+    final range =
+        a == b
+            ? '${a.month} 月 ${a.day} 日'
+            : a.month == b.month
+                ? '${a.month} 月 ${a.day}–${b.day} 日'
+                : '${a.month} 月 ${a.day} 日 到 ${b.month} 月 ${b.day} 日';
+    final len = f.medianLength == null ? '' : '，一次大概 ${f.medianLength} 天';
+    return '大概 $range。周期中位数 ${f.medianCycle} 天$len'
+        '（按最近 ${f.cycles.length} 次算的）。';
+  }
+
   List<Widget> _secNudge(ThemeData theme, StateSetter set) {
     final scheme = theme.colorScheme;
 

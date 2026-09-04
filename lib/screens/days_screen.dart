@@ -1,3 +1,6 @@
+import 'package:uuid/uuid.dart';
+import '../services/period_forecast.dart';
+import '../services/period_log.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
@@ -13,9 +16,6 @@ import '../utils/dates.dart' as dates;
 ///
 /// 日历自绘（项目没有任何日历组件，为这一个页面引库不划算），
 /// 数据一次全量加载后按天索引（见 [DayStatsIndex]，复用现有 storage API）。
-class DaysScreen extends StatefulWidget {
-  const DaysScreen({super.key});
-
 /// 横滑一下该翻到哪个月：-1 上一个月，1 下一个月，0 力道不够、不算数。
 ///
 /// ## ⚠️ 方向别再拧反了
@@ -34,6 +34,9 @@ int monthDeltaFromSwipe(double velocity) {
   return 0;
 }
 
+class DaysScreen extends StatefulWidget {
+  const DaysScreen({super.key});
+
   @override
   State<DaysScreen> createState() => _DaysScreenState();
 }
@@ -41,6 +44,14 @@ int monthDeltaFromSwipe(double velocity) {
 class _DaysScreenState extends State<DaysScreen> {
   DayStatsIndex? _index;
   bool _loading = true;
+
+  /// 这个月哪几天在经期里，值是「第几天」。整月一次算完——
+  /// 逐格去问要读三十遍存储，那是每次翻月都白付一次的代价。
+  Map<String, int> _period = const {};
+
+  /// 下次大概什么时候。估不出来时 [PeriodForecast.hasWindow] 是 false，
+  /// 那时候日历上一格都不画——见 `period_forecast.dart` 的注释。
+  PeriodForecast _forecast = const PeriodForecast();
 
   /// 当前展示的月份，恒为月初 `DateTime(y, m, 1)`，跨月由构造自动归位。
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month, 1);
@@ -63,25 +74,48 @@ class _DaysScreenState extends State<DaysScreen> {
   Future<void> _load() async {
     final index = await DayStatsIndex.collect();
     final settings = await AppSettings.load();
+    final period = await _loadPeriod();
+    final forecast = forecastFrom(await PeriodLog.list());
     if (!mounted) return;
     setState(() {
       _index = index;
       _aiName = settings.aiName.trim();
+      _period = period;
+      _forecast = forecast;
       _loading = false;
     });
   }
 
-  void _shiftMonth(int delta) {
+  Future<Map<String, int>> _loadPeriod() => PeriodLog.indexForRange(
+    _month,
+    DateTime(_month.year, _month.month + 1, 0),
+  );
+
+  Future<void> _reloadPeriod() async {
+    final period = await _loadPeriod();
+    // 记录一改，预测跟着变——它整个是从记录算出来的，没有独立状态。
+    final forecast = forecastFrom(await PeriodLog.list());
+    if (!mounted) return;
     setState(() {
-      final next = DateTime(_month.year, _month.month + delta, 1);
-      // 不允许翻进未来——下一格是今天这格「之后」的事，不是「日子」
-      if (next.isAfter(_nowMonth)) return;
-      _month = next;
+      _period = period;
+      _forecast = forecast;
     });
   }
 
-  void _gotoCurrentMonth() {
-    setState(() => _month = _nowMonth);
+  void _shiftMonth(int delta) {
+    final next = DateTime(_month.year, _month.month + delta, 1);
+    // 不允许翻进未来——下一格是今天这格「之后」的事，不是「日子」
+    if (next.isAfter(_nowMonth)) return;
+    _showMonth(next);
+  }
+
+  void _gotoCurrentMonth() => _showMonth(_nowMonth);
+
+  /// 换月。**涂色是按月取的**，换完必须重算，否则新月份挂着上个月的结果。
+  /// 两个入口都走这儿，省得哪天加了第三个入口又漏一次。
+  void _showMonth(DateTime month) {
+    setState(() => _month = month);
+    _reloadPeriod();
   }
 
   /// 当前展示月里，有记录的（有活动的）天数。
@@ -95,6 +129,73 @@ class _DaysScreenState extends State<DaysScreen> {
       if (index.statsFor(key)?.hasActivity ?? false) n++;
     }
     return n;
+  }
+
+  /// 长按某天：记经期。
+  ///
+  /// 为什么是长按而不是点：**点开是看这天发生了什么**，那是这一页的主业。
+  /// 记录是偶尔为之的动作，不该抢主手势——和板上纸条「长按撕掉」同一套分工。
+  ///
+  /// 面板只给当下说得通的那一两个动作，不摆一排让人挑：
+  /// 这天已经在某一段里 → 只能「这天结束了」或者删掉整段；
+  /// 不在 → 只能「这天来了」。
+  Future<void> _markPeriod(DateTime day) async {
+    final inSpan = _period[dates.dateKeyOf(day)];
+    final label = '${day.month} 月 ${day.day} 日';
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) {
+        final t = Theme.of(ctx);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+                child: Text(
+                  inSpan == null ? label : '$label · 第 $inSpan 天',
+                  style: t.textTheme.titleMedium,
+                ),
+              ),
+              if (inSpan == null)
+                ListTile(
+                  leading: const Icon(PhosphorIconsRegular.drop),
+                  title: const Text('这天来了'),
+                  onTap: () => Navigator.pop(ctx, 'start'),
+                )
+              else ...[
+                ListTile(
+                  leading: const Icon(PhosphorIconsRegular.check),
+                  title: const Text('这天结束了'),
+                  onTap: () => Navigator.pop(ctx, 'end'),
+                ),
+                ListTile(
+                  leading: const Icon(PhosphorIconsRegular.trashSimple),
+                  title: const Text('删掉这次记录'),
+                  onTap: () => Navigator.pop(ctx, 'remove'),
+                ),
+              ],
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    if (action == null) return;
+
+    if (action == 'start') {
+      await PeriodLog.start(day, id: const Uuid().v4());
+    } else if (action == 'end') {
+      await PeriodLog.end(day);
+    } else if (action == 'remove') {
+      final hit = (await PeriodLog.list()).where(
+        (s) => s.covers(day, DateTime.now()),
+      );
+      if (hit.isNotEmpty) await PeriodLog.remove(hit.first.id);
+    }
+    await _reloadPeriod();
   }
 
   void _openDay(DateTime day) {
@@ -246,6 +347,10 @@ class _DaysScreenState extends State<DaysScreen> {
       );
     }
     final hasActivity = _index?.statsFor(dates.dateKeyOf(day))?.hasActivity ?? false;
+    final periodDay = _period[dates.dateKeyOf(day)];
+    // 预计的那几天只画在未来：过去那几天要么真发生了（已经有 periodDay），
+    // 要么没发生——两种情况下再画一个「预计」都只是噪音。
+    final predicted = periodDay == null && isFuture && _forecast.covers(day);
     final label = Text(
       '${day.day}',
       style: TextStyle(
@@ -261,11 +366,24 @@ class _DaysScreenState extends State<DaysScreen> {
 
     return InkWell(
       onTap: isFuture ? null : () => _openDay(day),
+      onLongPress: isFuture ? null : () => _markPeriod(day),
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // 经期那几天：数字底下一圈很淡的底。
+            //
+            // ⚠️ 用底色而不是再加一个点。点那一行是「这天发生了什么」——
+            // 日记、信、一隅都排在那儿，经期挤进去就变成了同一类东西。
+            // 它不是发生在 App 里的事，是发生在她身上的事，该另开一层。
+            //
+            // 今天那个圈优先：今天在不在经期里都得先认得出是今天。
+            // ⚠️ **实心 = 发生过，空心 = 猜的。** 这条区别必须一眼看得出来：
+            // 预计的日子要是画得跟记录的一样实，她会照着它安排事情，
+            // 而那正是预测最容易害人的地方。
+            //
+            // 今天那个圈优先级最高：今天是什么状态，都得先认得出是今天。
             Container(
               width: 34,
               height: 34,
@@ -275,7 +393,20 @@ class _DaysScreenState extends State<DaysScreen> {
                       shape: BoxShape.circle,
                       color: scheme.primary.withValues(alpha: 0.12),
                     )
-                  : null,
+                  : periodDay != null
+                      ? BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: scheme.error.withValues(alpha: 0.10),
+                        )
+                      : predicted
+                          ? BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: scheme.error.withValues(alpha: 0.30),
+                                width: 1,
+                              ),
+                            )
+                          : null,
               child: label,
             ),
             const SizedBox(height: 3),
