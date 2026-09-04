@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:phone_ai_assistant/services/memory_context.dart';
@@ -16,8 +17,25 @@ Map<String, dynamic> _diary(String id, String dateKey, String tag) => {
 };
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    // buildMemoryContext 现在会去问「今天用了哪些 app」。这是个平台通道，
+    // 在 testWidgets 的假时钟里既不会返回、也等不到 timeout 触发——整个测试
+    // 就那么挂着。这里给它一个立刻回空表的桩，把这条支路从这些用例里摘掉：
+    // 它自己的行为由 memory_context_usage_test 覆盖。
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('app_usage'),
+      (call) async => call.method == 'query' ? <dynamic>[] : null,
+    );
+  });
+
+  tearDown(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('app_usage'),
+      null,
+    );
   });
 
   testWidgets('日记只给最近有日记的那一天，更早的不进上下文', (tester) async {

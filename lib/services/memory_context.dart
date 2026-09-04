@@ -31,6 +31,7 @@ import 'period_forecast.dart';
 import 'period_log.dart';
 import 'self_notes.dart';
 import 'storage_service.dart';
+import 'app_usage.dart';
 import 'small_things.dart';
 // ─────────────────────────────────────────────────────────────
 // 一、固定规则：进 system 前缀，从不变
@@ -219,8 +220,54 @@ Future<String> buildMemoryContext({
   await _appendSmallThings(buf);
   await _appendSelfNotes(buf);
   await _appendPeriod(buf);
+  await _appendAppUsage(buf);
 
   return buf.toString();
+}
+
+/// 她今天在手机上用了些什么。
+///
+/// **只有 app 名字和时长，没有内容。** 这条路是替代截屏来的——截屏得把整块屏幕
+/// 传到模型那边才看得懂，等于把微信内容、余额、半夜搜的东西一起传出去。这里
+/// 传出去的就是「小红书 1 小时 47 分」这么多。
+///
+/// ## ⚠️ 这一段最容易变成说教
+///
+/// 它天然长得像一份「今日报告」，模型看见就想念出来：「你今天刷了三小时抖音
+/// 哦」。而那正好撞上人设里明写的两条——别复述 TA 的状态、别说教。所以下面那
+/// 句约束不是客套，是这一段能不能留在上下文里的前提，**别删**。
+///
+/// 它该起的作用是**分寸**：知道她这会儿在打游戏，就别长篇大论；知道她一天没
+/// 碰手机，语气自然会不一样。是背景，不是话题。
+///
+/// ## 为什么只取前几个、还卡了时长
+///
+/// 系统会把每一个前台过的包都列出来，包括划过一眼就退的。全塞进来既占地方
+/// 又没信息量——真正说明「她今天在干嘛」的就是最上面那几条。
+Future<void> _appendAppUsage(StringBuffer buf) async {
+  final now = DateTime.now();
+  // 没开权限、非安卓，query 返回空表，这一段就整个不出现。
+  final all = await AppUsage.query(
+    start: DateTime(now.year, now.month, now.day),
+    end: now,
+  );
+  // 不到 5 分钟的多半是划过一眼，不算「在用」。
+  final items = all
+      .where((e) => e.total.inMinutes >= 5)
+      .take(6)
+      .toList();
+  if (items.isEmpty) return;
+
+  buf.writeln();
+  buf.writeln('### TA 今天用过的 app');
+  for (final e in items) {
+    buf.writeln('- ${e.line}');
+  }
+  buf.writeln(
+    '这些只是名字和时长，你看不到里面的内容。**这不是话题，是分寸**——'
+    '拿它判断这会儿该不该多说、说多长，别把它念出来，'
+    '更别评论她用了多久、该不该用。她自己提起才接。',
+  );
 }
 
 /// 板上贴着的小事。

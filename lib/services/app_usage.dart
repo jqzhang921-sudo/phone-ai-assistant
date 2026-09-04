@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,10 +50,18 @@ class AppUsage {
     final List<dynamic> raw;
     try {
       raw =
-          await _channel.invokeMethod<List<dynamic>>('query', {
-            'start': start.millisecondsSinceEpoch,
-            'end': end.millisecondsSinceEpoch,
-          }) ??
+          await _channel
+              .invokeMethod<List<dynamic>>('query', {
+                'start': start.millisecondsSinceEpoch,
+                'end': end.millisecondsSinceEpoch,
+              })
+              // 这个调用在**发消息的主路上**（记忆上下文每轮都要拼）。平台通道
+              // 卡住的话没有任何东西会把它叫醒，症状是消息发不出去、界面干等，
+              // 而且看不出跟「用了哪个 app」有关系。宁可当作没读到。
+              //
+              // 在没装 TestWidgetsFlutterBinding 的单元测试里，这个调用**真的会
+              // 永远挂着**——不是抛 MissingPluginException，是不返回。
+              .timeout(const Duration(seconds: 3), onTimeout: () => const []) ??
           const [];
     } on PlatformException {
       return const [];
