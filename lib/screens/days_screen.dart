@@ -16,6 +16,24 @@ import '../utils/dates.dart' as dates;
 class DaysScreen extends StatefulWidget {
   const DaysScreen({super.key});
 
+/// 横滑一下该翻到哪个月：-1 上一个月，1 下一个月，0 力道不够、不算数。
+///
+/// ## ⚠️ 方向别再拧反了
+///
+/// `primaryVelocity` **向右为正**。而向右滑的物理直觉是「把纸往右推，
+/// 露出左边那张」——那是**上一个月**，和头顶左边那个箭头指的是同一件事。
+///
+/// 原来两个分支正好写反：向右滑翻到下个月，跟箭头相反。抽成纯函数是为了
+/// 能测——手势藏在 widget 里，反了没人看得出来，只有上手才发现。
+///
+/// 门槛 200：低于这个当作没滑动，避免点一下手指微微一动就翻页。
+int monthDeltaFromSwipe(double velocity) {
+  const threshold = 200.0;
+  if (velocity > threshold) return -1;
+  if (velocity < -threshold) return 1;
+  return 0;
+}
+
   @override
   State<DaysScreen> createState() => _DaysScreenState();
 }
@@ -186,9 +204,8 @@ class _DaysScreenState extends State<DaysScreen> {
     final rows = dates.monthGrid(_month);
     return GestureDetector(
       onHorizontalDragEnd: (d) {
-        final v = d.primaryVelocity ?? 0;
-        if (v > 200) _shiftMonth(1);
-        if (v < -200) _shiftMonth(-1);
+        final delta = monthDeltaFromSwipe(d.primaryVelocity ?? 0);
+        if (delta != 0) _shiftMonth(delta);
       },
       // 列里不用 GridView：它的滚动和高度控制在这里都不合适，
       // 7 列均分 + Expanded 行自然等于正方形格子
