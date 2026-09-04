@@ -75,51 +75,122 @@ class MemoryTools {
     if (t.pinned) 'pinned': true,
   };
 
-  // ---------------- remember ----------------
-
-  static McpTool get rememberDefinition => McpTool(
-    name: 'remember',
+  /// 四个动作合成一个工具。
+  ///
+  /// ## 为什么合并
+  ///
+  /// 不是为了省 token——那部分进 KV 缓存，第二轮起基本不重复付钱。是为了
+  /// **少三个选项**：28 个工具里挑一个，和 8 个里挑一个，模型的表现不一样。
+  /// 这件事在这个项目里被证实过——`remember` 当初注册着、描述也写清楚了，
+  /// 它就是不用，最后是靠往 system 前缀里塞一段 `memoryWritingRules` 才动起来。
+  /// 那是给症状打补丁；病因是选项太多，每个都不显眼。
+  ///
+  /// 而且这四个的描述**互相引用**：remember 说「该补就用 update_memory」、
+  /// update 说「不要另开一条」、forget 说「只是变了就用 update_memory」。
+  /// 那些话本来就是在解释「这四个是一伙的」——合成一个之后全都不用说了。
+  ///
+  /// ⚠️ 动作名沿用原来那四个词，不换新词：它对 remember/open/update/forget
+  /// 是熟的，这次只是把它们从**工具名**挪进了**参数**。
+  static McpTool get definition => McpTool(
+    name: 'memory',
     description:
-        '开一条新的长期记忆，记**关于用户是谁**的事。\n'
-        '一条记忆是一个「话题」：一个名字、一行摘要、若干条细节。'
-        '摘要会一直待在你的上下文里，细节要用 open_memory 才取得到。\n'
+        '长期记忆：**关于用户是谁**的事。\n'
+        '一条记忆是一个「话题」——名字、一行摘要、若干条细节。'
+        '摘要一直待在你上下文里，细节要 open 才取得到。\n\n'
+        'action 四选一：\n'
+        '· open —— 取出一条的细节。**要说到具体内容就先 open**，别照着摘要猜：'
+        '摘要只说这条讲什么，不说讲了什么。\n'
+        '· remember —— 开一条新的。**先看上下文里已有的**，'
+        '能塞进某个已有话题就用 update 加细节，不要另开一条——'
+        '同一件事分散在两条里，你自己以后也对不上。\n'
+        '· update —— 改一条已有的：加细节、改摘要、或整体重写细节。'
+        '事情变了、或者当初记错了，改它，别留着两条互相矛盾的。'
+        '「最近」那一类尤其要盯着：过期了不改，它就变成假话。\n'
+        '· forget —— 整条删掉。只是**变了**就用 update 改，别删了重记，'
+        '改写留得住来龙去脉；只想去掉其中一条细节也用 update 的 set_details。'
+        '用户明确说「别记这个了」时才用这个。\n\n'
         '记什么：怎么称呼 TA、TA 在意什么、最近在经历什么、希望你怎么对 TA。\n'
         '不要记：某天发生的具体事件、某句具体的话——那些写日记或收进一隅，'
-        '要用时 recall_records 翻，不该占常驻位置。\n'
-        '**先看上下文里已有的那些**：能塞进某个已有话题就用 update_memory 加细节，'
-        '不要另开一条。同一件事分散在两条里，你自己以后也对不上。',
+        '要用时 recall_records 翻，不该占常驻位置。',
     inputSchema: {
       'type': 'object',
       'properties': {
+        'action': {
+          'type': 'string',
+          'enum': ['open', 'remember', 'update', 'forget'],
+          'description': '要做哪件事。',
+        },
+        'id': {
+          'type': 'string',
+          'description': 'open / update / forget 要：上下文里那条前面方括号里的编号。',
+        },
         'category': {
           'type': 'string',
           'enum': MemoryCategory.values.map((c) => c.name).toList(),
-          'description': _categoryHelp,
+          'description': 'remember 要；update 只在换分类时才给。\n$_categoryHelp',
         },
         'name': {
           'type': 'string',
-          'description': '话题名，短，像个标题：「怎么称呼」「读书口味」「说话方式」。',
+          'description':
+              '话题名，短，像个标题：「怎么称呼」「读书口味」「说话方式」。'
+              'remember 要；update 不改名就别给。',
         },
         'summary': {
           'type': 'string',
           'description':
               '一行，说清**这条讲什么**，不是内容本身。'
               '这句会一直待在你上下文里，也是你以后判断「要不要打开这条」的唯一依据——'
-              '写砸了这条记忆等于不存在，因为你想不起来该打开它。',
+              '写砸了这条记忆等于不存在，因为你想不起来该打开它。'
+              'remember 要；update 不改就别给。',
         },
         'details': {
           'type': 'array',
           'items': {'type': 'string'},
           'description':
-              '具体内容，一条一件事。写具体的（「不喜欢被反问」），'
+              'remember 用。具体内容，一条一件事。写具体的（「不喜欢被反问」），'
               '不要写性格判断（「是个理性的人」）——那是标签，你会去演它。'
               '尽量带上从哪儿知道的（「TA 自己说的」），以后你和用户都要靠它判断真假。',
         },
+        'add_detail': {
+          'type': 'string',
+          'description': 'update 用：追加一条细节。最常用的就是这个，安全，不动已有内容。',
+        },
+        'set_details': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'description':
+              'update 用：**整体替换**所有细节，不是追加。要删掉或改写某条细节时才用。'
+              '用之前先 open 读出来，把要保留的一起写回去——'
+              '不读就写等于把这条记忆清空重写。',
+        },
       },
-      'required': ['category', 'name', 'summary', 'details'],
+      'required': ['action'],
     },
     category: '手机工具',
   );
+
+  /// 按 action 分发。认不出来就说清楚有哪几个，别猜。
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
+    switch ((args['action'] as String?)?.trim().toLowerCase()) {
+      case 'open':
+        return open(args);
+      case 'remember':
+        return remember(args);
+      case 'update':
+        return update(args);
+      case 'forget':
+        return forget(args);
+      default:
+        return {
+          'success': false,
+          'error':
+              'action 要是 open / remember / update / forget 之一，'
+              "收到的是「${args['action']}」。",
+        };
+    }
+  }
+
+  // ---------------- remember ----------------
 
   static Future<Map<String, dynamic>> remember(
     Map<String, dynamic> args,
@@ -155,7 +226,7 @@ class MemoryTools {
           'success': false,
           'error':
               '「${category.label}」里已经有个叫「$name」的话题了（[${shortTopicId(dup.id)}]）。'
-              '用 open_memory 看看里面写了什么，该补就用 update_memory 加细节，别另开一条。',
+              '先 open 看看里面写了什么，该补就用 update 加细节，别另开一条。',
         };
       }
 
@@ -169,7 +240,7 @@ class MemoryTools {
           'success': false,
           'error':
               '「${category.label}」已经有 ${StorageService.kMaxTopicsPerCategory} 个话题了，'
-              '没有新建。先看看这件事能不能并进下面某一条（用 update_memory 加细节），'
+              '没有新建。先看看这件事能不能并进下面某一条（用 update 加细节），'
               '或者有没有过时的可以 forget：\n$list',
         };
       }
@@ -199,23 +270,6 @@ class MemoryTools {
 
   // ---------------- open_memory ----------------
 
-  static McpTool get openDefinition => McpTool(
-    name: 'open_memory',
-    description:
-        '把一条长期记忆的细节取出来。\n'
-        '你上下文里只有每条的名字和一行摘要，具体内容在这里面。'
-        '**要说到具体内容就先打开**，不要照着摘要猜——摘要只说这条讲什么，'
-        '不说讲了什么。',
-    inputSchema: {
-      'type': 'object',
-      'properties': {
-        'id': {'type': 'string', 'description': '上下文里那条前面方括号里的编号。'},
-      },
-      'required': ['id'],
-    },
-    category: '手机工具',
-  );
-
   static Future<Map<String, dynamic>> open(Map<String, dynamic> args) async {
     try {
       final (topic, error) = await _find(args['id'] as String?);
@@ -227,43 +281,6 @@ class MemoryTools {
   }
 
   // ---------------- update_memory ----------------
-
-  static McpTool get updateDefinition => McpTool(
-    name: 'update_memory',
-    description:
-        '改一条已有的长期记忆：加一条细节、改摘要、或者整体重写细节。\n'
-        '知道了新东西、而它属于某个已有话题，用这个加细节，'
-        '**不要另开一条**——同一件事分散在两条里，你自己以后也对不上。\n'
-        '事情变了、或者当初记错了，改它，别留着两条互相矛盾的。\n'
-        '「最近」那一类尤其要盯着：过期了不改，它就变成假话。',
-    inputSchema: {
-      'type': 'object',
-      'properties': {
-        'id': {'type': 'string', 'description': '上下文里那条前面方括号里的编号。'},
-        'add_detail': {
-          'type': 'string',
-          'description': '追加一条细节。最常用的就是这个，安全，不动已有内容。',
-        },
-        'set_details': {
-          'type': 'array',
-          'items': {'type': 'string'},
-          'description':
-              '**整体替换**所有细节，不是追加。要删掉或改写某条细节时才用。'
-              '用之前先 open_memory 读出来，把要保留的一起写回去——'
-              '不读就写等于把这条记忆清空重写。',
-        },
-        'summary': {'type': 'string', 'description': '新的一行摘要。不改就别给。'},
-        'name': {'type': 'string', 'description': '新的话题名。不改就别给。'},
-        'category': {
-          'type': 'string',
-          'enum': MemoryCategory.values.map((c) => c.name).toList(),
-          'description': '要换分类才给。不换就别给。',
-        },
-      },
-      'required': ['id'],
-    },
-    category: '手机工具',
-  );
 
   static Future<Map<String, dynamic>> update(Map<String, dynamic> args) async {
     try {
@@ -318,7 +335,7 @@ class MemoryTools {
             'success': false,
             'error':
                 '「${topic.name}」的细节已经有 ${StorageService.kMaxDetailsPerTopic} 条了。'
-                '先 open_memory 看看有没有过时的，用 set_details 把该留的写回去。',
+                '先 open 看看有没有过时的，用 set_details 把该留的写回去。',
           };
         }
         details = [...topic.details, addDetail];
@@ -341,23 +358,6 @@ class MemoryTools {
 
   // ---------------- forget ----------------
 
-  static McpTool get forgetDefinition => McpTool(
-    name: 'forget',
-    description:
-        '删掉一整条长期记忆。用在这个话题彻底不成立、改写也没意义的时候。\n'
-        '只是**变了**的话用 update_memory 改，别删了重记——改写留得住来龙去脉。\n'
-        '只想去掉其中一条细节，也用 update_memory 的 set_details，不要整条删。\n'
-        '用户明确说「别记这个了」时用这个。',
-    inputSchema: {
-      'type': 'object',
-      'properties': {
-        'id': {'type': 'string', 'description': '上下文里那条前面方括号里的编号。'},
-      },
-      'required': ['id'],
-    },
-    category: '手机工具',
-  );
-
   static Future<Map<String, dynamic>> forget(Map<String, dynamic> args) async {
     try {
       final (topic, error) = await _find(args['id'] as String?);
@@ -378,7 +378,7 @@ class MemoryTools {
       return {
         'success': true,
         'deleted': _view(topic),
-        'message': '删掉了「${topic.name}」。删错了的话，用 remember 照着上面的内容写回去就行。',
+        'message': '删掉了「${topic.name}」。删错了的话，用 action=remember 照着上面的内容写回去就行。',
       };
     } catch (e) {
       return {'success': false, 'error': '删不了：$e'};

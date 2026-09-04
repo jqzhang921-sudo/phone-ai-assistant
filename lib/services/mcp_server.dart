@@ -14,7 +14,6 @@ import 'phone_tools/sensors_tool.dart';
 import 'phone_tools/search_tool.dart';
 import 'phone_tools/self_note_tool.dart';
 import 'phone_tools/small_thing_tool.dart';
-import 'phone_tools/time_tool.dart';
 import 'phone_tools/weather_tool.dart';
 import 'phone_tools/weread_tool.dart';
 
@@ -54,17 +53,14 @@ class McpServer {
     _registerTool(SearchTool.definition, SearchTool.execute);
     _registerTool(NewsTool.definition, NewsTool.execute);
     _registerTool(WeatherTool.definition, WeatherTool.execute);
-    _registerTool(TimeTool.definition, TimeTool.execute);
     _registerTool(DiaryTool.definition, DiaryTool.execute);
     _registerTool(RecallTool.definition, RecallTool.execute);
     _registerTool(SaveToCornerTool.definition, SaveToCornerTool.execute);
-    // 稳定事实的三个写入口。注册在 recall/save 旁边是有意的：
-    // 这五个合起来才是完整的记忆——常驻的（remember/update/forget）
-    // 和按需翻的（recall_records/save_to_corner）。
-    _registerTool(MemoryTools.rememberDefinition, MemoryTools.remember);
-    _registerTool(MemoryTools.openDefinition, MemoryTools.open);
-    _registerTool(MemoryTools.updateDefinition, MemoryTools.update);
-    _registerTool(MemoryTools.forgetDefinition, MemoryTools.forget);
+    // 记忆。原来是 remember/open_memory/update_memory/forget 四个，
+    // 现在是一个带 action 的——合并的理由见 MemoryTools.definition 的注释。
+    // 注册在 recall/save 旁边是有意的：这三个合起来才是完整的记忆——
+    // 常驻的（memory）和按需翻的（recall_records/save_to_corner）。
+    _registerTool(MemoryTools.definition, MemoryTools.execute);
     // 便签：不是记忆的一种，是「主动说话」的由头。
     // 记忆答的是「她是谁」，便签答的是「这件事还没完」——前者常驻，
     // 后者到点兑现完就没了。
