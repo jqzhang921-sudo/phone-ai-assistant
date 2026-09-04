@@ -86,6 +86,67 @@ List<ChatDisplayItem> groupChatItems(
   return out;
 }
 
+/// 把一条 assistant 消息按空行拆成几段，界面上画成几个气泡。
+///
+/// **只在渲染这一层拆，存的东西一个字没动。** 历史里、发回服务端的，永远是
+/// 完整那一整段——按气泡拆开存的话，下一轮模型看到自己「说了三次话」，会越
+/// 说越碎。人设里那条「想分几条说的时候，两条之间空一行」就是配这里用的。
+///
+/// 第一段**沿用原来的 id**，后面几段才加 `#1`、`#2`。这样以前收藏过、朗读过
+/// 的消息，标记还认得出来——收藏和 TTS 都是按 message.id 存的，全部改 id 会
+/// 让旧记录一夜之间失效。
+///
+/// 思考过程只挂第一段：它是整条回复的草稿，不属于某一句。
+List<ChatMessage> _splitIntoBubbles(ChatMessage m) {
+  if (m.role != MessageRole.assistant) return [m];
+  if (m.toolCalls != null && m.toolCalls!.isNotEmpty) return [m];
+
+  final parts = _splitOnBlankLines(m.content);
+  if (parts.length < 2) return [m];
+
+  return [
+    for (var i = 0; i < parts.length; i++)
+      ChatMessage(
+        id: i == 0 ? m.id : '${m.id}#$i',
+        role: m.role,
+        content: parts[i],
+        timestamp: m.timestamp,
+        metadata: m.metadata,
+        // 图只跟第一段走，不然每个气泡都挂一份。
+        images: i == 0 ? m.images : const [],
+        thinking: i == 0 ? m.thinking : null,
+      ),
+  ];
+}
+
+/// 按空行切，但**代码块里的空行不算**。
+///
+/// 一段带空行的代码被拆成两个气泡，两半都不再是合法代码，而且第二半的 ```
+/// 会把后面的正文一起吃进代码块里。
+List<String> _splitOnBlankLines(String text) {
+  final lines = text.split('\n');
+  final parts = <String>[];
+  final buf = <String>[];
+  var inFence = false;
+
+  void flush() {
+    final joined = buf.join('\n').trim();
+    if (joined.isNotEmpty) parts.add(joined);
+    buf.clear();
+  }
+
+  for (final line in lines) {
+    if (line.trimLeft().startsWith('```')) inFence = !inFence;
+    if (!inFence && line.trim().isEmpty) {
+      flush();
+      continue;
+    }
+    buf.add(line);
+  }
+  flush();
+  return parts;
+}
+
 List<ChatDisplayItem> _groupMessages(List<ChatMessage> messages) {
   final items = <ChatDisplayItem>[];
   var i = 0;
@@ -103,7 +164,9 @@ List<ChatDisplayItem> _groupMessages(List<ChatMessage> messages) {
         i++;
         continue;
       }
-      items.add(ChatDisplayItem.message(m));
+      for (final piece in _splitIntoBubbles(m)) {
+        items.add(ChatDisplayItem.message(piece));
+      }
       i++;
       continue;
     }

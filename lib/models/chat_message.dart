@@ -80,6 +80,7 @@ class ChatMessage {
     toolCallId: toolCallId,
     metadata: metadata,
     images: images ?? this.images,
+    thinking: thinking,
   );
 }
 
