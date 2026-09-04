@@ -47,6 +47,12 @@ class MainActivity : FlutterActivity() {
         calendar = cal
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CalendarChannel.CHANNEL)
             .setMethodCallHandler { call, result -> cal.handle(call, result) }
+
+        // 用 applicationContext 而不是 this：查使用情况不碰界面，也不申请
+        // 运行时权限，没有理由拿着 Activity 的引用多活一会儿。
+        val usage = AppUsageChannel(applicationContext)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AppUsageChannel.CHANNEL)
+            .setMethodCallHandler { call, result -> usage.handle(call, result) }
     }
 
     // 日历权限是异步申请的，结果得转回 CalendarChannel 挂起的那个 result

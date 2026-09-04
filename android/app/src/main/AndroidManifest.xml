@@ -1,5 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:tools="http://schemas.android.com/tools" xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 只读「用了哪个 app、多久」，拿不到内容。不是普通权限：requestPermissions
+         要不来，得用户自己去「设置 → 有权查看使用情况的应用」里开，所以
+         AndroidManifest 里声明了也只是让系统把这个 App 列进那张名单。
+         tools:ignore 是因为 lint 会把它当成不该由普通应用声明的保护级权限。 -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"/>
     <!-- 定闹钟/倒计时交给系统时钟应用（普通权限，装上即有，不弹框） -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>
     <!-- 日历只读。
