@@ -75,6 +75,15 @@
         <intent>
             <action android:name="android.speech.RecognitionService"/>
         </intent>
+        <!-- 使用情况列表要把包名换成看得懂的名字。安卓 11 起 app 默认看不见
+             别的 app，getApplicationInfo 直接抛 NameNotFoundException，于是
+             列表里一半是 com.tencent.mm 这种，只有系统应用碰巧翻得出中文名。
+             声明「能看见有启动图标的应用」就够了，不用 QUERY_ALL_PACKAGES
+             ——那是受限权限，为显示个名字不值当，上架还要额外说明。 -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
         <!-- Android 11+ 需要显式声明才能发现系统 TTS 引擎 -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE"/>

@@ -21,6 +21,7 @@ import '../services/self_notes.dart';
 import '../services/tts_service.dart';
 import '../services/vision_service.dart';
 import '../services/weread_service.dart';
+import 'app_usage_screen.dart';
 import 'tools_screen.dart';
 import 'musing_corner_screen.dart';
 import 'persona_screen.dart';
@@ -558,6 +559,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap:
                   () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const ToolsScreen()),
+                  ),
+            ),
+            _row(
+              theme,
+              icon: PhosphorIconsRegular.hourglassMedium,
+              title: '它能知道你在用什么',
+              subtitle: '只有 app 名字和时长，没有内容',
+              onTap:
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AppUsageScreen()),
                   ),
             ),
             _row(
