@@ -153,19 +153,34 @@ class PeriodLog {
 
   /// 这天来了。
   ///
-  /// 上一段还开着就先把它关掉——两段重叠是记错了，而**这一次的开始
-  /// 比上一次忘了关更可信**：她此刻正在记的是眼前发生的事。
+  /// 上一段**要是还连着**就先把它关掉——两段重叠是记错了，而这一次的开始
+  /// 比上一次忘了关更可信：她此刻正在记的是眼前发生的事。
   /// 关在新的开始前一天，不是同一天（同一天既开始又结束读着很怪）。
+  ///
+  /// ## ⚠️ 但「隔了一个月」的那段不能这么关
+  ///
+  /// 原来是无条件收在前一天，于是：8 月 3 日来了、忘了点结束，9 月 5 日再点
+  /// 「来了」——旧那段就被收成 **8/3 → 9/4，整整 33 天**，日历上从八月初一路
+  /// 涂到九月，看着就是「和上个月连在一起了」。真机上撞到过。
+  ///
+  /// 那不是收口，是**替她编了一个结束日**。而这个文件别处写着的规矩正好相反：
+  /// 忘了记结束就留着开口，不自动关（见 [_countsAsCurrent]）。
+  ///
+  /// 所以只有间隔在 [staleAfter] 以内、真的可能还连着的，才收口；
+  /// 隔得久的原样留着开口——她哪天想起来，长按那段里任意一天点「这天结束了」
+  /// 就能补上，[end] 会找到它。
   static Future<void> start(DateTime day, {required String id}) async {
     final d = _day(day);
     final spans = await list();
     final out = <PeriodSpan>[];
     for (final s in spans) {
-      if (s.isOpen && s.startedAt.isBefore(d)) {
-        out.add(s.closedAt(d.subtract(const Duration(days: 1))));
-      } else {
-        out.add(s);
-      }
+      final stillRunning =
+          s.isOpen &&
+          s.startedAt.isBefore(d) &&
+          d.difference(s.startedAt) <= staleAfter;
+      out.add(
+        stillRunning ? s.closedAt(d.subtract(const Duration(days: 1))) : s,
+      );
     }
     out.add(PeriodSpan(id: id, startedAt: d));
     out.sort((a, b) => a.startedAt.compareTo(b.startedAt));
@@ -216,8 +231,18 @@ class PeriodLog {
     final spans = await list();
     final out = <String, int>{};
     for (final s in spans) {
-      if (!_countsAsCurrent(s, t)) continue;
-      final last = s.endedAt ?? _day(t);
+      // ⚠️ 这里**不用 [_countsAsCurrent] 整段过滤**，那是「她现在是不是在
+      // 经期里」的判据，不是「这天该不该涂」的。
+      //
+      // 一段忘了记结束的旧记录：整段滤掉的话，她明明记过的那个开始日在日历上
+      // 什么都不显示；照 endedAt ?? 今天 来涂又会一路涂到今天。
+      // 两头都不对，所以按 staleAfter 封顶——她记过的那几天看得见，
+      // 忘了记结束的代价止于十二天。
+      final last =
+          s.endedAt ??
+          (_day(t).isBefore(s.startedAt.add(staleAfter))
+              ? _day(t)
+              : s.startedAt.add(staleAfter));
       for (var d = s.startedAt; !d.isAfter(last); d = d.add(const Duration(days: 1))) {
         if (d.isBefore(_day(from)) || d.isAfter(_day(to))) continue;
         out[dateKeyOf(d)] = d.difference(s.startedAt).inDays + 1;

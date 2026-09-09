@@ -213,4 +213,34 @@ void main() {
       expect(f.covers(DateTime(2026, 8, 1)), isFalse);
     });
   });
+
+  /// 那个 bug 会在记录里留下三十多天的「一次」。修掉之后不会再产生新的，
+  /// 但**已经存下来的那几段还在她手机上**，所以算术这边也得挡一道。
+  group('长得离谱的那段不算进「一次大概几天」', () {
+    PeriodSpan sp(String from, String to) => PeriodSpan(
+      id: from,
+      startedAt: DateTime.parse(from),
+      endedAt: DateTime.parse(to),
+    );
+
+    test('33 天的段被剔掉，中位数还是正常值', () {
+      final spans = [
+        sp('2026-05-01', '2026-05-06'), // 6 天
+        sp('2026-06-01', '2026-06-06'), // 6 天
+        sp('2026-07-01', '2026-08-02'), // 33 天，忘了记结束攒出来的
+        sp('2026-08-03', '2026-08-08'), // 6 天
+      ];
+      final f = forecastFrom(spans, now: DateTime(2026, 8, 20));
+      expect(f.medianLength, 6);
+    });
+
+    test('剔的只是算术里的输入，记录本身不动', () {
+      final spans = [
+        sp('2026-05-01', '2026-05-06'),
+        sp('2026-06-01', '2026-07-04'),
+      ];
+      forecastFrom(spans, now: DateTime(2026, 7, 10));
+      expect(spans, hasLength(2), reason: '不该动传进来的记录');
+    });
+  });
 }

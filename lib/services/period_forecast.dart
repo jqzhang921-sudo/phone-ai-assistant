@@ -94,6 +94,14 @@ const _irregularSpread = 9;
 const _sanePlausibleMin = 15;
 const _sanePlausibleMax = 60;
 
+/// 一次经期最多按几天算。
+///
+/// 和上面那两个数是同一套道理：**剔掉的只是算术里的输入，她的记录一条不动。**
+/// 超过半个月的「一次」多半是忘了点结束攒出来的（曾经有个 bug 会造出 33 天
+/// 的段，见 `PeriodLog.start` 的注释）——那种数拿去算「一次大概几天」，
+/// 会把结果整个抬歪。
+const _saneLengthMax = 15;
+
 /// 从记录里算一份预测。纯函数:所有输入都从参数进来,好测也好复算。
 PeriodForecast forecastFrom(List<PeriodSpan> spans, {DateTime? now}) {
   final t = now ?? DateTime.now();
@@ -113,7 +121,9 @@ PeriodForecast forecastFrom(List<PeriodSpan> spans, {DateTime? now}) {
 
   final lengths = <int>[
     for (final s in spans)
-      if (s.endedAt != null) s.endedAt!.difference(s.startedAt).inDays + 1,
+      if (s.endedAt != null)
+        if (s.endedAt!.difference(s.startedAt).inDays + 1 <= _saneLengthMax)
+          s.endedAt!.difference(s.startedAt).inDays + 1,
   ];
   final medianLength = lengths.isEmpty ? null : _median(lengths);
 

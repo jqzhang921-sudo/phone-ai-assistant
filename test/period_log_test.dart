@@ -49,11 +49,13 @@ void main() {
 
   group('忘了记结束', () {
     test('新的一段开始时，把上一段收在前一天', () async {
+      // ⚠️ 只有**还连着**的才这么收。这条原来用的是 9/3 → 10/1（隔 28 天），
+      // 锁的正是那个 bug：把旧段收成一整月。见下面「上个月忘了记结束」那组。
       await PeriodLog.start(d(9, 3), id: 'a');
-      await PeriodLog.start(d(10, 1), id: 'b');
+      await PeriodLog.start(d(9, 10), id: 'b');
       final spans = await PeriodLog.list();
       expect(spans, hasLength(2));
-      expect(spans.first.endedAt, d(9, 30));
+      expect(spans.first.endedAt, d(9, 9));
       expect(spans.last.isOpen, isTrue);
     });
 
@@ -158,6 +160,68 @@ void main() {
       expect(back!.startedAt, d(9, 3));
       expect(back.endedAt, d(9, 7));
       expect(back.isOpen, isFalse);
+    });
+  });
+
+  /// 真机上撞到的：上个月忘了点结束，这个月点「来了」，日历上两段连成一片。
+  ///
+  /// 原因是 start() 无条件把开着的旧段收在「新开始的前一天」——那不是收口，
+  /// 是**替她编了一个结束日**，而且编出来的是一段横跨整月的经期。
+  group('上个月忘了记结束', () {
+    test('不该把两段连成一片', () async {
+      await PeriodLog.start(d(8, 3), id: 'a');
+      await PeriodLog.start(d(9, 5), id: 'b');
+
+      final aug = await PeriodLog.indexForRange(
+        d(8, 1),
+        d(8, 31),
+        now: d(9, 9),
+      );
+      // 8/3 起，最多涂到 staleAfter 封顶，不该涂满整月
+      expect(aug.length, lessThanOrEqualTo(PeriodLog.staleAfter.inDays + 1));
+      expect(aug[dateKeyOf(d(8, 31))], isNull);
+    });
+
+    test('旧那段留着开口——不替她编一个结束日', () async {
+      await PeriodLog.start(d(8, 3), id: 'a');
+      await PeriodLog.start(d(9, 5), id: 'b');
+
+      final old = (await PeriodLog.list()).firstWhere((e) => e.id == 'a');
+      expect(old.isOpen, isTrue, reason: '隔了一个月的那段不该被自动收口');
+    });
+
+    test('但真的还连着的照常收口', () async {
+      // 隔四天再点「来了」，那多半是同一段没点结束
+      await PeriodLog.start(d(9, 1), id: 'a');
+      await PeriodLog.start(d(9, 5), id: 'b');
+
+      final old = (await PeriodLog.list()).firstWhere((e) => e.id == 'a');
+      expect(old.endedAt, d(9, 4));
+    });
+
+    test('忘了记结束的段，涂到 staleAfter 就停，不涂到今天', () async {
+      await PeriodLog.start(d(8, 3), id: 'a');
+      final painted = await PeriodLog.indexForRange(
+        d(8, 1),
+        d(9, 30),
+        now: d(9, 9),
+      );
+      expect(painted[dateKeyOf(d(8, 3))], 1);
+      expect(painted[dateKeyOf(d(8, 15))], 13); // 8/3 + 12 天
+      expect(painted[dateKeyOf(d(8, 16))], isNull);
+      expect(painted[dateKeyOf(d(9, 9))], isNull, reason: '不该一路涂到今天');
+    });
+
+    test('事后长按补记结束，救得回来', () async {
+      await PeriodLog.start(d(8, 3), id: 'a');
+      await PeriodLog.start(d(9, 5), id: 'b');
+      // 长按 8/8 点「这天结束了」
+      expect(await PeriodLog.end(d(8, 8)), isTrue);
+
+      final old = (await PeriodLog.list()).firstWhere((e) => e.id == 'a');
+      expect(old.endedAt, d(8, 8));
+      final aug = await PeriodLog.indexForRange(d(8, 1), d(8, 31), now: d(9, 9));
+      expect(aug.length, 6);
     });
   });
 }
