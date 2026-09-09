@@ -59,11 +59,21 @@ bool _isToolNoise(ChatMessage m) {
 /// 单条消息自己看不出「后面还有没有」，所以分组只能在这一层做。
 /// [events] 是在别处发生、要按时间插进这条时间线的事（写了信、记了日记）。
 /// 按时间穿插，不改变消息本身的顺序。
+/// [splitBubbles] 决定要不要按空行把一条消息拆成几个气泡。
+///
+/// 主 App 要拆：它的人设是「像发微信一样」，短句、多条、有停顿感。
+///
+/// **读书版不拆。** 那边的人设写的是「允许展开」「说清楚一件事比说得短重要」，
+/// 回答里的空行是**段落分隔**（一段铺垫、一段追问）。拆开之后每段都成了独立
+/// 发言，层层推进的感觉就没了，看着像絮叨而不是在讲道理。
+///
+/// 同一个函数两种行为，是因为拆气泡本来就是**人设的一部分**，不是通用排版。
 List<ChatDisplayItem> groupChatItems(
   List<ChatMessage> messages, {
   List<ChatEvent> events = const [],
+  bool splitBubbles = true,
 }) {
-  final grouped = _groupMessages(messages);
+  final grouped = _groupMessages(messages, splitBubbles: splitBubbles);
   if (events.isEmpty) return grouped;
 
   // 事件按时间插进去。**只插到消息之间**，不在最前面堆一片——
@@ -97,9 +107,30 @@ List<ChatDisplayItem> groupChatItems(
 /// 让旧记录一夜之间失效。
 ///
 /// 思考过程只挂第一段：它是整条回复的草稿，不属于某一句。
+/// 整条短于这个字数就不拆，哪怕中间有空行。
+///
+/// 空行是它「我要分条说」的记号，但很短的两句分成两个气泡是过头了——
+///
+/// ```
+/// 好的
+///
+/// 嗯
+/// ```
+///
+/// 这拆开就是两条只有一两个字的气泡，屏幕上一串小方块，读起来比一条还累。
+///
+/// 15 是拍的。一开始定的 30，太狠——「今天怎么样 / 面试顺利吗」这种
+/// 十几个字的一问一答是**真的两拍**，该拆。真正难看的只有「好的 / 嗯」
+/// 那种一两个字的小方块。
+/// 反过来「长的强制拆」没有做，那需要替它断句——空行是它的意图，
+/// 长度只是我们的负担，替作者决定在哪儿喘气，断错一次就把一个完整的意思
+/// 劈成了两半。
+const _minLengthToSplit = 15;
+
 List<ChatMessage> _splitIntoBubbles(ChatMessage m) {
   if (m.role != MessageRole.assistant) return [m];
   if (m.toolCalls != null && m.toolCalls!.isNotEmpty) return [m];
+  if (m.content.trim().runes.length < _minLengthToSplit) return [m];
 
   final parts = _splitOnBlankLines(m.content);
   if (parts.length < 2) return [m];
@@ -147,7 +178,10 @@ List<String> _splitOnBlankLines(String text) {
   return parts;
 }
 
-List<ChatDisplayItem> _groupMessages(List<ChatMessage> messages) {
+List<ChatDisplayItem> _groupMessages(
+  List<ChatMessage> messages, {
+  bool splitBubbles = true,
+}) {
   final items = <ChatDisplayItem>[];
   var i = 0;
   while (i < messages.length) {
@@ -164,8 +198,12 @@ List<ChatDisplayItem> _groupMessages(List<ChatMessage> messages) {
         i++;
         continue;
       }
-      for (final piece in _splitIntoBubbles(m)) {
-        items.add(ChatDisplayItem.message(piece));
+      if (splitBubbles) {
+        for (final piece in _splitIntoBubbles(m)) {
+          items.add(ChatDisplayItem.message(piece));
+        }
+      } else {
+        items.add(ChatDisplayItem.message(m));
       }
       i++;
       continue;
@@ -212,6 +250,35 @@ bool _startsNewDay(List<ChatDisplayItem> items, int index) {
   return t.year != prev.year || t.month != prev.month || t.day != prev.day;
 }
 
+/// 连着多久算「一口气说的」。
+///
+/// 拆气泡分出来的那几段共用一个基础 id，本来就同组；这个窗口是给
+/// 「他连着敲了两句」那种情况用的。
+const _groupGap = Duration(minutes: 2);
+
+/// 拆气泡给后几段加的后缀是 `#1` `#2`（见 [groupChatItems]）。
+/// 去掉它才能看出两条是不是同一次回复拆出来的。
+String _baseId(String id) {
+  final i = id.indexOf('#');
+  return i < 0 ? id : id.substring(0, i);
+}
+
+/// 相邻两条算不算同一组。
+///
+/// 三个条件：**同一个人说的**、中间没夹着别的东西（工具卡、事件行会打断）、
+/// 而且要么是同一条回复拆出来的、要么隔得够近。
+bool _sameGroup(List<ChatDisplayItem> items, int a, int b) {
+  if (a < 0 || b >= items.length) return false;
+  final x = items[a].message;
+  final y = items[b].message;
+  if (x == null || y == null) return false;
+  if (x.role != y.role) return false;
+  // 跨天要断开：日期分割线会插在中间，贴在一起就穿帮了。
+  if (_startsNewDay(items, b)) return false;
+  if (_baseId(x.id) == _baseId(y.id)) return true;
+  return y.timestamp.difference(x.timestamp).abs() <= _groupGap;
+}
+
 /// 渲染一个显示项。
 Widget chatDisplayItem(
   List<ChatDisplayItem> items,
@@ -225,10 +292,16 @@ Widget chatDisplayItem(
   } else if (item.toolRun != null) {
     body = ToolRunCard(messages: item.toolRun!);
   } else {
+    // 成组：连着几条同一个人说的贴在一起，头像和尖角只出现一次。
+    //
+    // 这一层才看得见前后关系，单条气泡自己判断不了——和时间戳、日期分割线
+    // 是同一个道理。
     body = MessageBubble(
       message: item.message!,
       showTimestamp: _shouldShowTimestamp(items, index),
       conversationId: conversationId,
+      isGroupStart: !_sameGroup(items, index - 1, index),
+      isGroupEnd: !_sameGroup(items, index, index + 1),
     );
   }
   if (!_startsNewDay(items, index)) return body;
