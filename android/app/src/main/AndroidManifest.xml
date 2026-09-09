@@ -26,13 +26,19 @@
          13 以下声明了就有，不弹框。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
-        android:label="phone_ai_assistant"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- 禁用 Impeller 渲染器，回退 Skia：修复 OPPO/vivo 等设备上的文字渲染损坏 bug -->
+        <!-- ⚠️ 2026-09-08 试开 Impeller。
+             原来是 false，为的是修 OPPO/vivo 上的文字渲染损坏。
+             但 `ImageFilter.shader`（做折射用的片元着色器）**只在 Impeller 下
+             可用**，Skia 直接抛 UnsupportedError。所以「玻璃要有透镜感」和
+             「关掉 Impeller」是不能同时成立的。
+             那个文字 bug 是早期版本的，Flutter 3.29 的 Impeller 改了很多——
+             先开着看真机上文字还坏不坏。坏了就改回 false。 -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="false" />
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
