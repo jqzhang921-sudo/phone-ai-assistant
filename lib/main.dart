@@ -43,6 +43,27 @@ void main() async {
     debugPrint('[nudge] 后台入口没注册上：$e');
   }
 
+  // ⚠️ 玻璃要的两样东西，必须在 runApp **之前**读出来。
+  //
+  // AppSurface 判断画玻璃还是实心，看的是「玻璃开关」和「有没有背景图」。
+  // 这两个原来都是 runApp 之后才异步填上的——于是第一帧两个都是空，
+  // 整屏先画成实心卡片，等它们到了再重画成玻璃。
+  //
+  // 症状就是 Cleo 说的：「每次重新打开 app 会先是卡片，过一会变成玻璃」。
+  //
+  // 提前读的代价是启动多等一次 SharedPreferences（毫秒级）；换来的是
+  // **第一帧就是对的**。读失败也不能让 App 起不来，所以整段包在 try 里。
+  AppSettings? bootSettings;
+  String? bootBgPath;
+  var bootBgPreset = 'none';
+  try {
+    bootSettings = await AppSettings.load();
+    bootBgPath = await StorageService.getBackgroundImagePath();
+    bootBgPreset = await StorageService.getBackgroundPreset();
+  } catch (e) {
+    debugPrint('[boot] 预读设置/背景失败，第一帧会先画实心：$e');
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -52,8 +73,23 @@ void main() async {
         ),
         ChangeNotifierProvider(create: (_) => ExternalMcpProvider()),
         ChangeNotifierProvider(create: (_) => TtsService()),
-        ChangeNotifierProvider(create: (_) => BackgroundProvider()),
-        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final p = BackgroundProvider();
+            // update() 是异步的，但 `_path` 是在第一个 await 之前就赋上的——
+            // 所以不 await 也能保证第一帧 `path != null`。
+            // 后面那段图像分析（算亮度、busyness）慢慢跑，跑完只是微调 alpha。
+            if (bootBgPath != null) p.update(bootBgPath, bootBgPreset);
+            return p;
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            final p = SettingsProvider();
+            if (bootSettings != null) p.setSettings(bootSettings);
+            return p;
+          },
+        ),
         ChangeNotifierProvider(create: (_) => FavoritesProvider()..load()),
       ],
       child: const PhoneAiApp(),
