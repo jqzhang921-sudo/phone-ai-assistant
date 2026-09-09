@@ -47,6 +47,12 @@ class ChatMessage {
     'toolCallId': toolCallId,
     if (images.isNotEmpty) 'images': images,
     if (thinking != null && thinking!.isNotEmpty) 'thinking': thinking,
+    // ⚠️ metadata 以前不存。
+    //
+    // 于是「它自己想起来的」那个标记（nudge）重启之后就没了——聊天记录还在，
+    // 但看不出哪句是它主动开口说的。语音消息也存在这里，不存等于重启之后
+    // 变成一条读不出来的空消息。
+    if (metadata != null && metadata!.isNotEmpty) 'metadata': metadata,
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -60,6 +66,10 @@ class ChatMessage {
             .toList(),
     toolCallId: json['toolCallId'],
     thinking: json['thinking'] as String?,
+    metadata:
+        json['metadata'] is Map
+            ? Map<String, dynamic>.from(json['metadata'] as Map)
+            : null,
     // 兼容单图老数据：以前存的是 imageData（单个字符串）。
     // 聊天记录是用户最不能丢的东西，读不出来就等于把历史里的图弄没了。
     images:
@@ -71,6 +81,7 @@ class ChatMessage {
     String? content,
     List<ToolCallInfo>? toolCalls,
     List<String>? images,
+    Map<String, dynamic>? metadata,
   }) => ChatMessage(
     id: id,
     role: role,
@@ -78,7 +89,7 @@ class ChatMessage {
     timestamp: timestamp,
     toolCalls: toolCalls ?? this.toolCalls,
     toolCallId: toolCallId,
-    metadata: metadata,
+    metadata: metadata ?? this.metadata,
     images: images ?? this.images,
     thinking: thinking,
   );

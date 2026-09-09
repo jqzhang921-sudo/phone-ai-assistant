@@ -44,6 +44,28 @@ android {
         versionName = flutter.versionName
     }
 
+    // 两个入口（主 App 和读书版）必须是两个独立应用，不然装读书版会把主 App
+    // 顶掉——同一个 applicationId 在安卓看来就是同一个程序，覆盖安装。
+    //
+    // 用 flavor 而不是两个仓库：代码共用一份，只有包名和显示名不同。
+    //   主  App：flutter build apk --release --flavor assistant
+    //   读书版：flutter build apk --release --flavor reading -t lib/main_reading.dart
+    flavorDimensions += "app"
+    productFlavors {
+        // ⚠️ 不能叫 "main"——那是安卓保留的 source set 名，
+        // 会报 "Multiple entries with same key: main=[]"。
+        create("assistant") {
+            dimension = "app"
+            // 不加后缀，保持原来的包名——已经装在她手机上的那个不能变，
+            // 变了等于换了个应用，数据全丢。
+        }
+        create("reading") {
+            dimension = "app"
+            applicationIdSuffix = ".reading"
+            resValue("string", "app_name", "读书讨论")
+        }
+    }
+
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {

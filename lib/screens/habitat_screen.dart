@@ -198,7 +198,8 @@ class _HabitatScreenState extends State<HabitatScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        // 底部 96 是给悬浮导航条让的位（见 HomeShell）。
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 96),
         // 玻璃卡片要 BackdropFilter 采样身后的背景图，而每项默认套的
         // RepaintBoundary 把两者隔进了不同图层，滚动时会「先透明再模糊」。
         addRepaintBoundaries: false,

@@ -7,7 +7,7 @@ import '../config/app_shape.dart';
 import '../services/phone_tools/tool_labels.dart';
 
 /// 一次工具调用连同它的结果。
-class _ToolEntry {
+class ToolEntry {
   final String id;
   final String name;
   final Map<String, dynamic> args;
@@ -16,10 +16,82 @@ class _ToolEntry {
   Map<String, dynamic>? result;
   String? rawResult;
 
-  _ToolEntry({required this.id, required this.name, required this.args});
+  ToolEntry({required this.id, required this.name, required this.args});
 
   bool get pending => rawResult == null;
-  bool get ok => result?['success'] == true;
+
+  /// **只有看得出确实失败，才算失败。**
+  ///
+  /// 原来写的是 `result?['success'] == true`——只认自己那套工具的形状。
+  /// 外部 MCP 返回的是 MCP 规范的 `{content: [...], isError: false}`，
+  /// **压根没有 `success` 这个键**，于是每一次外部工具调用都被标成 failed。
+  ///
+  /// 2026-09-08 的代价：`map_search_places · 4x · 4 failed` 明晃晃的红字，
+  /// 展开却是 `"status":"0","message":"ok"` 加三组真实经纬度。我照着那个
+  /// 红字断定模型在编距离，Cleo 展开一看数据是真的——**一个错误的红标记，
+  /// 让两个人都误判了一次。**
+  ///
+  /// 所以默认反过来：解析不出、或者认不出形状时，一律当成功。
+  /// 少标一次失败没人受伤，多标一次会让人不信任本来对的东西。
+  bool get ok {
+    final r = result;
+    if (r != null) {
+      if (r['success'] == false) return false;
+      // MCP 规范：isError 为 true 才是失败
+      if (r['isError'] == true) return false;
+      if (r['error'] != null) return false;
+      return true;
+    }
+    // JSON 解析不出来（老版本用 Map.toString() 存的结果），只能看原文
+    final raw = rawResult ?? '';
+    if (raw.trimLeft().startsWith('错误')) return false;
+    return !RegExp(
+      r'"?success"?\s*:\s*false|"?isError"?\s*:\s*true',
+    ).hasMatch(raw);
+  }
+}
+
+/// 把一串工具消息整理成「调用 + 结果」的表。
+///
+/// 单拎成顶层函数是为了能不起界面就测——真正会出错的是
+/// [ToolEntry.ok] 那个判定，而它错了一次的代价见那段注释。
+/// 这些工具不给界面看——它们的结果**本身就是一条可见的消息**。
+///
+/// `send_voice` 的产物是那条语音气泡。再画一张工具卡，一来重复，
+/// 二来展开之后会把 `text:` 原样抖出来——**而「语音不显示文字」正是这个
+/// 功能成立的前提**。藏在长按里的东西，不能从旁边的卡片漏出去。
+const _hiddenTools = {'send_voice'};
+
+List<ToolEntry> toolRunEntries(List<ChatMessage> messages) {
+  final entries = <ToolEntry>[];
+  final byId = <String, ToolEntry>{};
+  final hiddenIds = <String>{};
+
+  for (final m in messages) {
+    if (m.toolCalls != null && m.toolCalls!.isNotEmpty) {
+      for (final tc in m.toolCalls!) {
+        if (_hiddenTools.contains(tc.name)) {
+          if (tc.id.isNotEmpty) hiddenIds.add(tc.id);
+          continue;
+        }
+        final e = ToolEntry(id: tc.id, name: tc.name, args: tc.arguments);
+        entries.add(e);
+        if (tc.id.isNotEmpty) byId[tc.id] = e;
+      }
+    } else if (m.role == MessageRole.toolResult) {
+      // 被藏起来的那次调用，它的结果也一起跳过——
+      // 不然会被「挂到最近一个还没结果的调用上」那条兜底规则接错地方。
+      if (hiddenIds.contains(m.toolCallId ?? '')) continue;
+      final e = byId[m.toolCallId ?? ''];
+      // 配不上 id 就挂到最近一个还没结果的调用上，别把结果丢了
+      final target = e ?? entries.reversed.where((x) => x.pending).firstOrNull;
+      if (target != null) {
+        target.rawResult = m.content;
+        target.result = _tryParseMap(m.content);
+      }
+    }
+  }
+  return entries;
 }
 
 /// 一段连续的工具调用，折叠成一行。
@@ -43,30 +115,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
   bool _expanded = false;
 
   /// 按 tool_call_id 把调用和结果配对。
-  List<_ToolEntry> get _entries {
-    final entries = <_ToolEntry>[];
-    final byId = <String, _ToolEntry>{};
-
-    for (final m in widget.messages) {
-      if (m.toolCalls != null && m.toolCalls!.isNotEmpty) {
-        for (final tc in m.toolCalls!) {
-          final e = _ToolEntry(id: tc.id, name: tc.name, args: tc.arguments);
-          entries.add(e);
-          if (tc.id.isNotEmpty) byId[tc.id] = e;
-        }
-      } else if (m.role == MessageRole.toolResult) {
-        final e = byId[m.toolCallId ?? ''];
-        // 配不上 id 就挂到最近一个还没结果的调用上，别把结果丢了
-        final target =
-            e ?? entries.reversed.where((x) => x.pending).firstOrNull;
-        if (target != null) {
-          target.rawResult = m.content;
-          target.result = _tryParseMap(m.content);
-        }
-      }
-    }
-    return entries;
-  }
+  List<ToolEntry> get _entries => toolRunEntries(widget.messages);
 
   @override
   Widget build(BuildContext context) {
@@ -185,7 +234,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
     return buf.toString();
   }
 
-  Widget _entryView(ThemeData theme, _ToolEntry e) {
+  Widget _entryView(ThemeData theme, ToolEntry e) {
     final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -238,7 +287,7 @@ class _ToolRunCardState extends State<ToolRunCard> {
     );
   }
 
-  Widget _resultView(ThemeData theme, _ToolEntry e) {
+  Widget _resultView(ThemeData theme, ToolEntry e) {
     final scheme = theme.colorScheme;
     final map = e.result;
     if (map == null) {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主 App 的显示名。读书版在 build.gradle.kts 的 reading flavor 里用
+         resValue 覆盖成「读书讨论」——两个应用装在同一台手机上，桌面图标
+         得能分得出来。 -->
+    <string name="app_name">phone_ai_assistant</string>
+</resources>

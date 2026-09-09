@@ -1,0 +1,42 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        读书版专有：把自己挂进系统的「分享」面板。
+
+        ## 为什么是这条路，而不是接番茄的接口
+
+        有人问能不能从番茄免费小说导入。番茄没有对外接口，唯一的办法是逆向
+        它的私有协议——抓包、伪造签名、模拟客户端。那种东西**在他们下次发版
+        时就会坏**，坏了还得重来一遍，等于给一个用户背一条永远在漏的管子。
+
+        ACTION_SEND 是安卓的门，不是番茄的门。番茄怎么改版，「分享」这个动作
+        都还在，因为那是系统约定。而且这一条同时接住了起点、知乎、浏览器、
+        备忘录——任何能分享一段文字的地方。
+
+        **不要为一个 App 造接口，要接住所有 App 都会做的那个动作。**
+
+        ## 为什么放在 flavor 里而不是 main
+
+        主 App（assistant）是她自己的助手，不该出现在别人分享文字时的面板上——
+        那一栏本来就挤。这个 filter 只有读书版需要。
+
+        ## ACTION_PROCESS_TEXT 是备胎
+
+        有些阅读器的「分享」是自己画的面板，只有微信 QQ，没有「系统分享」那一项。
+        那种情况下，长按选中文字后系统给的菜单里还能看见我们。两条路互相不依赖，
+        哪条通走哪条。
+    -->
+    <application>
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

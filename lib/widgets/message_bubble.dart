@@ -9,6 +9,8 @@ import '../models/chat_message.dart';
 import '../models/musing_entry.dart';
 import '../services/app_providers.dart';
 import '../services/tts_service.dart';
+import '../services/voice_message.dart';
+import 'voice_bubble.dart';
 import '../config/app_shape.dart';
 import '../config/app_theme.dart';
 
@@ -53,9 +55,7 @@ import '../config/app_theme.dart';
               ? tone.shift(
                 dark ? const Color(0xFFEBD9C4) : const Color(0xFF4A3320),
               )
-              : (dark
-                  ? tone.shift(const Color(0xFFE8DFD4))
-                  : scheme.onSurface),
+              : (dark ? tone.shift(const Color(0xFFE8DFD4)) : scheme.onSurface),
     );
   }
 
@@ -64,7 +64,10 @@ import '../config/app_theme.dart';
   );
   // 0.78 起步是「照片再花也压得住」那一档；花的图再加厚。AI 那侧多 4%，
   // 因为它承载的是长正文。
-  final alpha = (0.78 + busyness * 0.14 + (isUser ? 0.0 : 0.04)).clamp(0.0, 1.0);
+  final alpha = (0.78 + busyness * 0.14 + (isUser ? 0.0 : 0.04)).clamp(
+    0.0,
+    1.0,
+  );
   // 用户那侧掺一点主色，两侧才分得开——只掺 16%，明度基本不动，
   // 上面那条对比度结论不会被它推翻。
   final fill = isUser ? Color.lerp(base, scheme.primary, 0.16)! : base;
@@ -82,6 +85,20 @@ class MessageBubble extends StatelessWidget {
   /// 由 `chatDisplayItem` 算好传进来：单条消息自己看不出跟上一条隔了多久。
   final bool showTimestamp;
 
+  /// 这条是不是一组的头一条。
+  ///
+  /// ## 为什么头像和尖角给的是「头一条」，不是 Telegram 的「最后一条」
+  ///
+  /// Telegram 把头像和尖角放在一组的**底部**——它的头像是贴着气泡下沿的。
+  /// 这里不一样：头像贴的是气泡**顶部**（见下面尖角那段注释），所以同样的
+  /// 「指着说话的人」这个规则，落到这套布局上就是给第一条。
+  ///
+  /// 照抄位置会得到一个指着空气的尖角。借的是规则，不是坐标。
+  final bool isGroupStart;
+
+  /// 这条是不是一组的最后一条。决定下面留 14 还是 3，以及操作按钮出不出现。
+  final bool isGroupEnd;
+
   /// 收藏要记住这句话出自哪个对话，之后才跳得回来
   final String? conversationId;
 
@@ -89,17 +106,33 @@ class MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     this.showTimestamp = true,
+    this.isGroupStart = true,
+    this.isGroupEnd = true,
     this.conversationId,
   });
 
   /// 气泡最大宽度。放开了让它占满一行，长句子会横着铺开、读起来费劲。
   static const double _maxBubbleWidth = 262;
 
+  /// 头像直径。组里后面几条要留同宽的空位来对齐，所以这个数得有名字——
+  /// 两处写 28 迟早会分叉。
+  static const double _avatarSize = 28;
+
+  /// 气泡内的行高。
+  ///
+  /// 主题里 `bodyLarge` 是 **1.75**——那是给随笔、长文、读书讨论那种要一段
+  /// 一段读下去的地方定的，松是对的。但聊天气泡里，15px 的字撑到 26px 行高，
+  /// 两行就把气泡顶得老高，**看起来像文字在气泡里游泳**。
+  ///
+  /// 1.42 是 Telegram 那种贴合度：中文两行仍然分得清，气泡却收回到刚好裹住
+  /// 文字。只在这里覆盖，不动主题——别处的松是有理由的。
+  static const double _bubbleLineHeight = 1.42;
+
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == MessageRole.user;
+    final voice = VoiceMessage.fromMetadata(message.metadata);
     final isAssistant = message.role == MessageRole.assistant;
-    final tts = context.watch<TtsService>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final dark = theme.brightness == Brightness.dark;
@@ -127,16 +160,19 @@ class MessageBubble extends StatelessWidget {
     // 和头像脱节了——它得指着说话的人。
     const full = Radius.circular(AppRadius.md);
     const tail = Radius.circular(6);
+    // 组里第二条起，那个角也补成圆的——尖角是「这一串的开头」的标记，
+    // 每条都带就等于没标。
+    final headCorner = isGroupStart ? tail : full;
     final radius =
         isUser
-            ? const BorderRadius.only(
+            ? BorderRadius.only(
               topLeft: full,
-              topRight: tail,
+              topRight: headCorner,
               bottomLeft: full,
               bottomRight: full,
             )
-            : const BorderRadius.only(
-              topLeft: tail,
+            : BorderRadius.only(
+              topLeft: headCorner,
               topRight: full,
               bottomLeft: full,
               bottomRight: full,
@@ -152,7 +188,9 @@ class MessageBubble extends StatelessWidget {
     final isNudge = message.metadata?['nudge'] == true;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      // 组内 3，组间 14。**这一个数字是「成组」看起来成立的主要原因**——
+      // 三条各隔 14 是三次发言，各隔 3 是一口气说的三句。
+      padding: EdgeInsets.only(bottom: isGroupEnd ? 14 : 3),
       child: Column(
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -190,16 +228,25 @@ class MessageBubble extends StatelessWidget {
                   isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (!isUser) _buildAvatar(theme, isUser: false),
+                // 组里后面几条不再画头像，但要留出同宽的空位，
+                // 否则第二条就会往左挪 36，整串歪掉。
+                if (!isUser)
+                  isGroupStart
+                      ? _buildAvatar(theme, isUser: false)
+                      : const SizedBox(width: _avatarSize),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Container(
                     constraints: const BoxConstraints(
                       maxWidth: _maxBubbleWidth,
                     ),
+                    // 13/8，原来是 16/12。
+                    //
+                    // 竖直方向减得比水平多：气泡「胖」主要胖在上下——左右
+                    // 留白少了，长句子会顶到圆角上，反而挤。
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                      horizontal: 13,
+                      vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: bgColor,
@@ -223,19 +270,35 @@ class MessageBubble extends StatelessWidget {
                             padding: const EdgeInsets.only(bottom: 6),
                             child: _images(message.images),
                           ),
-                        if (isUser)
+                        // 语音消息：只画语音条，**不画文字**。
+                        //
+                        // 文字和语音摆在一起，语音就白发了——眼睛比耳朵快，
+                        // 你会直接读完，不会点播放。而它选择用说的，
+                        // 多半是想让你听见语气。文字在长按菜单里。
+                        if (voice != null)
+                          VoiceBubble(
+                            voice: voice,
+                            messageId: message.id,
+                            textColor: textColor,
+                          )
+                        else if (isUser)
                           Text(
                             message.content,
                             style: theme.textTheme.bodyLarge?.copyWith(
                               color: textColor,
+                              height: _bubbleLineHeight,
                             ),
                           )
                         else
                           MarkdownBody(
                             data: message.content,
                             styleSheet: MarkdownStyleSheet(
+                              // 段落之间也收一点：默认 8 是按文档排的，
+                              // 气泡里两段之间不需要那么远。
+                              blockSpacing: 6,
                               p: theme.textTheme.bodyLarge?.copyWith(
                                 color: textColor,
+                                height: _bubbleLineHeight,
                               ),
                               code: TextStyle(
                                 backgroundColor:
@@ -256,13 +319,23 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
                 if (isUser) const SizedBox(width: 8),
-                if (isUser) _buildAvatar(theme, isUser: true),
+                if (isUser)
+                  isGroupStart
+                      ? _buildAvatar(theme, isUser: true)
+                      : const SizedBox(width: _avatarSize),
               ],
             ),
           ),
-          if (isAssistant && message.content.trim().isNotEmpty)
-            _buildActionRow(context, tts, theme)
-          else if (showTimestamp)
+          // 🔇 气泡下面不再挂那一排「朗读 / 收藏 / 复制」。
+          //
+          // 那三个动作是**偶尔才用**的，却是整页重复度最高的东西——每组回复
+          // 出现一次。微信、Telegram 都不放常驻动作按钮，全在长按里。
+          //
+          // 现在统一收进 [_showCopyMenu]（长按气泡）。那个菜单本来就有收藏和
+          // 复制，只缺朗读，补上就齐了。
+          //
+          // 去掉之后聊天页从「一个 App」变回「一段对话」。
+          if (showTimestamp)
             Padding(
               padding: EdgeInsets.only(
                 left: isUser ? 0 : 36,
@@ -298,6 +371,60 @@ class MessageBubble extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 语音消息的文字藏在这儿——这是看到它说了什么的唯一入口。
+                if (VoiceMessage.fromMetadata(message.metadata) != null &&
+                    message.content.trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(PhosphorIconsRegular.textAa),
+                    title: const Text('转文字'),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      _showTranscript(context);
+                    },
+                  ),
+                // 朗读原来在气泡下面那一排常驻按钮里，现在收进来了。
+                // 只有它说的话才有得读；已经是语音的那条不用再念一遍。
+                if (message.role == MessageRole.assistant &&
+                    VoiceMessage.fromMetadata(message.metadata) == null &&
+                    message.content.trim().isNotEmpty)
+                  Builder(
+                    builder: (inner) {
+                      final tts = inner.watch<TtsService>();
+                      final playing = tts.isPlaying(message.id);
+                      final loading = tts.isLoading(message.id);
+                      return ListTile(
+                        leading:
+                            loading
+                                ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : Icon(
+                                  playing
+                                      ? PhosphorIconsRegular.stopCircle
+                                      : PhosphorIconsRegular.speakerHigh,
+                                ),
+                        title: Text(playing ? '停止朗读' : '朗读'),
+                        onTap: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          Navigator.of(ctx).pop();
+                          try {
+                            await context.read<TtsService>().toggle(
+                              message.id,
+                              message.content,
+                            );
+                          } catch (e) {
+                            messenger.showSnackBar(
+                              SnackBar(content: Text('$e')),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
                 Builder(
                   builder: (inner) {
                     final fav = context.read<FavoritesProvider>().isFavorited(
@@ -359,81 +486,28 @@ class MessageBubble extends StatelessWidget {
   ///
   /// 复制原来只藏在长按菜单里，一条常用操作不该要长按才找得到；
   /// 长按菜单保留，图片复制还在那儿。
-  Widget _buildActionRow(
-    BuildContext context,
-    TtsService tts,
-    ThemeData theme,
-  ) {
-    final scheme = theme.colorScheme;
-    final loading = tts.isLoading(message.id);
-    final playing = tts.isPlaying(message.id);
-    // 缩进对齐到气泡下方（头像直径 28 + 间距 8）
-    return Padding(
-      padding: const EdgeInsets.only(left: 36, top: 2),
-      child: Row(
-        children: [
-          _actionButton(
-            onTap: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await context.read<TtsService>().toggle(
-                  message.id,
-                  message.content,
-                );
-              } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('$e')));
-              }
-            },
-            child:
-                loading
-                    ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: scheme.primary,
-                      ),
-                    )
-                    : Icon(
-                      playing
-                          ? PhosphorIconsRegular.stopCircle
-                          : PhosphorIconsRegular.speakerHigh,
-                      size: 16,
-                      color: scheme.primary,
-                    ),
-          ),
-          _FlowerButton(
-            favorited: context.watch<FavoritesProvider>().isFavorited(
-              message.id,
-            ),
-            onTap: () => _toggleFavorite(context),
-          ),
-          _actionButton(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: message.content));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ 已复制'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            child: Icon(
-              PhosphorIconsRegular.copy,
-              size: 16,
-              color: scheme.onSurfaceVariant,
+  /// 语音转文字：把它说的话摊开给你看。
+  ///
+  /// 单开一张，不是塞回气泡里——**气泡一旦长出文字，下次你就不会再点播放了**。
+  /// 这是「想看的时候能看」，不是「默认就摆着」。
+  void _showTranscript(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder:
+          (ctx) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+            child: SingleChildScrollView(
+              child: Text(
+                message.content,
+                style: const TextStyle(fontSize: 15, height: 1.8),
+              ),
             ),
           ),
-          if (showTimestamp) ...[const SizedBox(width: 6), _timestamp(theme)],
-        ],
-      ),
     );
   }
 
-  /// 收藏 / 取消收藏这一句。
-  ///
-  /// 存的是一条 [MusingEntry]，带上 messageId 和 conversationId——
-  /// 一隅那边要靠它跳回原文，光存内容就找不回来了。
   Future<void> _toggleFavorite(BuildContext context) async {
     final favs = context.read<FavoritesProvider>();
     final messenger = ScaffoldMessenger.of(context);
@@ -464,19 +538,11 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _actionButton({required VoidCallback onTap, required Widget child}) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      onTap: onTap,
-      child: Padding(padding: const EdgeInsets.all(6), child: child),
-    );
-  }
-
   /// 品牌图标管「谁」：猫是 AI，爪印是用户。机器小人和通用 user 图标不认人。
   Widget _buildAvatar(ThemeData theme, {required bool isUser}) {
     final scheme = theme.colorScheme;
     return CircleAvatar(
-      radius: 14,
+      radius: _avatarSize / 2,
       backgroundColor:
           isUser ? scheme.surfaceContainerHighest : scheme.primaryContainer,
       child: Image.asset(
@@ -575,7 +641,6 @@ class _FlowerButtonState extends State<_FlowerButton>
     );
   }
 }
-
 
 /// 气泡里那一小块思考过程。
 ///

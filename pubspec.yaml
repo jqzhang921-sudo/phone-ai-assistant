@@ -74,6 +74,14 @@ flutter:
     - assets/icons/
     - assets/mark-full.png
     - assets/mark-simple.png
+    # 毛玻璃上那层颗粒。128×128 平铺，一半白一半黑、alpha 极低，
+    # 所以叠上去只加颗粒不改亮度。真磨砂玻璃是散射的，
+    # 完美平滑的高斯模糊眼睛会读成塑料。
+    - assets/glass-noise.png
+
+  # 毛玻璃边缘的折射。只在 Impeller 下可用（见 AndroidManifest）。
+  shaders:
+    - shaders/glass_refract.frag
 
   fonts:
     - family: NotoSerifSC

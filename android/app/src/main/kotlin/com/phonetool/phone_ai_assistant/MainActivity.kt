@@ -1,6 +1,7 @@
 package com.phonetool.phone_ai_assistant
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -19,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private var recordFile: File? = null
     private val isRecording = AtomicBoolean(false)
     private var calendar: CalendarChannel? = null
+    private val share = ShareIntentChannel(this)
 
     companion object {
         private const val CHANNEL = "voice_recorder"
@@ -53,6 +55,22 @@ class MainActivity : FlutterActivity() {
         val usage = AppUsageChannel(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AppUsageChannel.CHANNEL)
             .setMethodCallHandler { call, result -> usage.handle(call, result) }
+
+        // 别人分享过来的文字。只有读书版挂了 ACTION_SEND，主 App 这里恒空。
+        // 要在 configureFlutterEngine 里就把冷启动那份存下来——等 Dart 上来
+        // 取的时候 intent 早就不新鲜了，但存着的那份还在。
+        share.attach(
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ShareIntentChannel.CHANNEL)
+        )
+        share.onCreate(intent)
+    }
+
+    // launchMode 是 singleTop：App 已经开着的时候再分享一次，走的是这里，
+    // 不会重新 onCreate。不接的话症状是「第一次分享有反应，第二次没有」。
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        share.onNewIntent(intent)
     }
 
     // 日历权限是异步申请的，结果得转回 CalendarChannel 挂起的那个 result
