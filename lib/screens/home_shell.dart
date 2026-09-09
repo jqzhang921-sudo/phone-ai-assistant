@@ -78,9 +78,18 @@ class _HomeShellState extends State<HomeShell> {
       backgroundColor: Colors.transparent,
       body: Container(
         decoration: decoration,
-        child: Column(
+        // 用 Stack 而不是 Column：导航条要**真的浮在内容上面**，
+        // 内容从它底下滚过去。
+        //
+        // 原来是 Column，内容被顶在导航条上方——那句「内容真的从它底下滚过去」
+        // 的注释一直是假的。玻璃糊的其实是自己的底色，不是滚动的内容。
+        //
+        // 代价：每个 tab 的滚动列表底部要自己留出导航条那么高的空（约 96），
+        // 否则最后一条会被压在下面看不见。书架那份早就留了，
+        // 主页和栖息是这次补的。
+        child: Stack(
           children: [
-            Expanded(
+            Positioned.fill(
               child: IndexedStack(
                 index: _index,
                 children: [
@@ -94,10 +103,14 @@ class _HomeShellState extends State<HomeShell> {
                 ],
               ),
             ),
-            // 键盘弹起时收掉导航条：它在 Column 里，否则会被顶到键盘正上方，
-            // 既挤占了输入区，打字时也用不上。
+            // 键盘弹起时收掉：留着会浮在键盘上方挡住输入区。
             if (!_hideNav && MediaQuery.of(context).viewInsets.bottom == 0)
-              _buildFloatingNav(scheme),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _buildFloatingNav(scheme),
+              ),
           ],
         ),
       ),

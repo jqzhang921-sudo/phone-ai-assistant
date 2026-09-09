@@ -67,6 +67,27 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+
+  /// 输入区实际有多高，用来给消息列表垫底部内边距。
+  ///
+  /// ## 为什么要量，不能写死
+  ///
+  /// 输入框会随文字长到 5 行，上面还可能挂一条待发图片。写死一个数，
+  /// 图片一多就把最后一条消息压住了——而**输入框浮起来之后，被压住的
+  /// 恰好是你正在等的那一条**。
+  ///
+  /// 76 是空框时的高度，只做首帧的兜底，量到真值就换掉。
+  final GlobalKey _inputKey = GlobalKey();
+  double _inputHeight = 76;
+
+  void _measureInput() {
+    final box = _inputKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final h = box.size.height;
+    if ((h - _inputHeight).abs() < 0.5 || !mounted) return;
+    setState(() => _inputHeight = h);
+  }
+
   final _focusNode = FocusNode();
   final _uuid = const Uuid();
   final _picker = ImagePicker();
@@ -787,6 +808,12 @@ class _ChatScreenState extends State<ChatScreen> {
                     toolCallId: tc.id,
                   ),
                 );
+                // send_voice 成功之后，把它接成一条**真的语音消息**。
+                //
+                // 工具本身只负责合成和存盘；「这条出现在对话里」是界面的事。
+                // 不这么接的话，用户看到的只是一个工具调用卡片，
+                // 那句话等于没说出口。
+                _appendVoiceMessage(tc.name, toolResult);
               }
               // Break out of the stream loop to continue the outer while loop
               fullResponse = null; // signal that we need another round
@@ -853,6 +880,34 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   static const _toolTimeout = Duration(seconds: 60);
+
+  /// 把 `send_voice` 的结果变成一条语音消息。
+  ///
+  /// 文字仍然存在 [ChatMessage.content] 里——它是「转文字」的来源，也是
+  /// 发回给模型的上文（不然它不记得自己说过什么）。只是**界面上不显示**。
+  void _appendVoiceMessage(String toolName, String rawResult) {
+    if (toolName != 'send_voice') return;
+    try {
+      final r = jsonDecode(rawResult);
+      if (r is! Map || r['success'] != true) return;
+      final voice = r['voice'];
+      final text = r['text'];
+      if (voice is! Map || text is! String || text.trim().isEmpty) return;
+      setState(() {
+        _conversation.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: text,
+            metadata: {'voice': Map<String, dynamic>.from(voice)},
+          ),
+        );
+      });
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint('[voice] 接语音消息失败：$e');
+    }
+  }
 
   Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
     final extProvider = context.read<ExternalMcpProvider>();
@@ -1341,6 +1396,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 输入框会随内容变高（多行文字、待发图片），每帧之后量一次；
+    // 没变就不 setState，不会打转。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureInput());
     final theme = Theme.of(context);
     final bg = context.watch<BackgroundProvider>();
     final darkFg = bg.darkForeground ?? (theme.brightness == Brightness.light);
@@ -1424,26 +1482,67 @@ class _ChatScreenState extends State<ChatScreen> {
             // 「重命名 / 导出」这两个动作等于藏起来了。给它们一个明面入口。
             if (_chatMode)
               PopupMenuButton<String>(
-                icon: Icon(PhosphorIconsRegular.dotsThree, color: fgColor),
+                padding: EdgeInsets.zero,
+                iconSize: 19,
+                icon: _maybeGlassCircle(
+                  size: 36,
+                  child: Icon(
+                    PhosphorIconsRegular.dotsThree,
+                    color: fgColor,
+                    size: 19,
+                  ),
+                ),
                 tooltip: '更多',
                 onSelected: (v) {
                   if (v == 'rename') _showRenameDialog();
                   if (v == 'persona') _editPersona();
                   if (v == 'export') _exportConversation();
                 },
+                // 菜单本体也走玻璃。
+                //
+                // PopupMenuButton 的背景是它自己那层 Material 画的，塞不进
+                // BackdropFilter。所以反过来：把 Material 设成透明、去掉阴影，
+                // **整张菜单做成一个 PopupMenuItem**，里面放一块 AppSurface——
+                // 玻璃就由我们自己那层来糊。
+                color: Colors.transparent,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                menuPadding: EdgeInsets.zero,
                 itemBuilder:
-                    (_) => const [
-                      PopupMenuItem(value: 'rename', child: Text('重命名')),
-                      PopupMenuItem(value: 'persona', child: Text('TA 的性格')),
-                      PopupMenuItem(value: 'export', child: Text('导出聊天')),
+                    (ctx) => [
+                      PopupMenuItem(
+                        // 整块自己处理点击，外层这一层不参与
+                        enabled: false,
+                        padding: EdgeInsets.zero,
+                        child: AppSurface(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          floating: true,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _menuRow(ctx, '重命名', 'rename'),
+                              _menuRow(ctx, 'TA 的性格', 'persona'),
+                              _menuRow(ctx, '导出聊天', 'export'),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
               ),
           ],
         ),
-        body: Column(
+        // 对话模式下输入框**浮在消息上面**，消息从它底下滚过去。
+        //
+        // 原来是 Column，输入框把列表顶在上面——那条玻璃底下只有壁纸，
+        // 等于白糊一次。浮起来之后它糊的才是活的内容。
+        //
+        // 代价是列表必须自己垫出等高的底部内边距（见 [_inputHeight]），
+        // 否则滚到底时最后一条正好被压住。
+        body: Stack(
           children: [
             // 内容区：主页模式显示首页，对话模式显示消息
-            Expanded(
+            Positioned.fill(
               child:
                   _chatMode
                       ? (_conversation.messages.isEmpty
@@ -1460,7 +1559,13 @@ class _ChatScreenState extends State<ChatScreen> {
                               return MarkBackdrop(
                                 child: ListView.builder(
                                   controller: _scrollController,
-                                  padding: const EdgeInsets.all(12),
+                                  // 底部给浮着的输入框让位
+                                  padding: EdgeInsets.fromLTRB(
+                                    12,
+                                    12,
+                                    12,
+                                    _inputHeight + 12,
+                                  ),
                                   itemCount: items.length + (typing ? 1 : 0),
                                   itemBuilder: (context, index) {
                                     // 「正在输入」挂在最后一项：回复将来落在
@@ -1486,7 +1591,16 @@ class _ChatScreenState extends State<ChatScreen> {
             // 主页原来底部同时挂着输入框和悬浮导航胶囊，两个白色悬浮元素上下
             // 叠着互相抢，底部没有唯一焦点。发消息的入口收到「新对话」和
             // 具体某段对话里去。
-            if (_chatMode) _buildInputArea(theme),
+            if (_chatMode)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: KeyedSubtree(
+                  key: _inputKey,
+                  child: _buildInputArea(theme),
+                ),
+              ),
           ],
         ),
       ),
@@ -1552,22 +1666,75 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// 圆形的玻璃底片。
+  ///
+  /// 顶栏那两个图标（搜索、三点）原来是**裸图标 + 一圈黑色投影**——投影是为了
+  /// 让它在深浅不定的壁纸上都看得见。那是补丁：图标本身没有落脚的地方，
+  /// 只好靠阴影把自己从背景里抠出来，深色壁纸上就成了一团脏影子。
+  ///
+  /// 给它一个圆形玻璃底之后，图标是站在一个面上的，不用再靠阴影自证存在。
+  ///
+  /// [glass] 为 false 时直接返回原样——主操作（发送键）不该退到背景里。
+  Widget _maybeGlassCircle({
+    required Widget child,
+    required double size,
+    bool glass = true,
+  }) {
+    if (!glass) return child;
+    return AppSurface(
+      borderRadius: BorderRadius.circular(size / 2),
+      child: SizedBox(width: size, height: size, child: child),
+    );
+  }
+
+  /// 玻璃菜单里的一行。
+  ///
+  /// 外层那个 PopupMenuItem 是 `enabled: false`（不然它会自己画一层高亮，
+  /// 盖在玻璃上），所以点击和关闭都由这里自己来。
+  Widget _menuRow(BuildContext ctx, String label, String value) {
+    return InkWell(
+      onTap: () => Navigator.pop(ctx, value),
+      child: SizedBox(
+        height: 46,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(label, style: const TextStyle(fontSize: 14)),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _topBarIcon(
     IconData icon, {
     required VoidCallback onPressed,
     String? tooltip,
     Color? color,
   }) {
-    return IconButton(
-      icon: Icon(
-        icon,
-        color: color,
-        shadows: const [
-          Shadow(color: Color(0x66000000), blurRadius: 4, offset: Offset(0, 1)),
-        ],
+    // ⚠️ 外面这层 Center 不能删。
+    //
+    // AppBar 的 `leading` 槽位给的是**紧约束**（56×64 全占满），玻璃底会被
+    // 撑成一个圆角方块；而 `actions:` 里的不受这个约束，是正圆。同一个函数、
+    // 两种长相——Cleo 的原话是「左边的方框看着有点突兀」。
+    //
+    // Center 给子组件松约束，两边就都按 36 收缩成圆了。
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: _maybeGlassCircle(
+          size: 36,
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            iconSize: 19,
+            // 投影去掉了：现在有底片撑着，不用再靠阴影把自己从壁纸里抠出来。
+            icon: Icon(icon, color: color),
+            onPressed: onPressed,
+            tooltip: tooltip,
+          ),
+        ),
       ),
-      onPressed: onPressed,
-      tooltip: tooltip,
     );
   }
 
@@ -1999,7 +2166,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final dark = theme.brightness == Brightness.dark;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      // 底部 96 是给悬浮导航条让的位（它现在浮在内容上面，见 HomeShell）。
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 96),
       // 关掉每项的 RepaintBoundary：玻璃卡片要用 BackdropFilter 采样身后的
       // 背景图，而 RepaintBoundary 把卡片和背景隔进了两个图层，滚动时采样
       // 跟不上位移——症状是卡片「先透明一下再变模糊」。
@@ -2452,25 +2620,25 @@ class _ChatScreenState extends State<ChatScreen> {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            // 发送键是这一行唯一的主操作，用强调色；「+」保持中性。
-            //
-            // 「+」原来写死 Colors.white，深色模式下就是一颗白球——
-            // 整屏最亮的东西是个次要按钮。交回给 scheme。
-            color: active ? scheme.primary : scheme.surfaceContainerLow,
-            shape: BoxShape.circle,
-            border:
-                active
-                    ? null
-                    : Border.all(color: scheme.outline.withValues(alpha: 0.35)),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: active ? scheme.onPrimary : scheme.onSurface,
+        child: _maybeGlassCircle(
+          size: 38,
+          // 发送键是这一行唯一的主操作，实心强调色，不走玻璃——
+          // 玻璃是「退到背景里」，而它要跳出来。
+          glass: !active,
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              // 「+」原来写死 Colors.white，深色模式下就是一颗白球——
+              // 整屏最亮的东西是个次要按钮。交回给 scheme。
+              color: active ? scheme.primary : Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: active ? scheme.onPrimary : scheme.onSurface,
+            ),
           ),
         ),
       ),
@@ -2478,37 +2646,41 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildTextField(ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return TextField(
-      controller: _textController,
-      focusNode: _focusNode,
-      maxLines: 5,
-      minLines: 1,
-      keyboardType: TextInputType.multiline,
-      textInputAction: TextInputAction.newline,
-      decoration: InputDecoration(
-        hintText: '输入消息...',
-        // 输入框只靠填充色成形，不描边。
-        // 之前描边 + 聚焦态的深色粗边让一个空输入框成了整屏最重的元素，
-        // 而这一行里真正该被强调的是右边的发送键。键盘弹起本身已经说明了聚焦。
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          borderSide: BorderSide.none,
-        ),
-        filled: true,
-        // 同上：写死的白色在深色模式下是一条亮条。
-        fillColor: scheme.surfaceContainerLow,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 10,
+    // 外面套一层 AppSurface：有背景图且开了玻璃就是毛玻璃，否则回落到实心卡片色。
+    // TextField 自己不再上色（filled: false），不然玻璃上会盖一层不透明的底，
+    // 白做一次模糊。
+    return AppSurface(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: TextField(
+        controller: _textController,
+        focusNode: _focusNode,
+        maxLines: 5,
+        minLines: 1,
+        keyboardType: TextInputType.multiline,
+        textInputAction: TextInputAction.newline,
+        decoration: InputDecoration(
+          hintText: '输入消息...',
+          // 输入框只靠填充色成形，不描边。
+          // 之前描边 + 聚焦态的深色粗边让一个空输入框成了整屏最重的元素，
+          // 而这一行里真正该被强调的是右边的发送键。键盘弹起本身已经说明了聚焦。
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            borderSide: BorderSide.none,
+          ),
+          // 底色交给外面那层 AppSurface，这里必须透明。
+          filled: false,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
+          ),
         ),
       ),
     );
