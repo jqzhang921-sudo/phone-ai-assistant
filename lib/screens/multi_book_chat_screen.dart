@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/book.dart';
+import '../config/reading_persona.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../models/discussion_note.dart';
@@ -42,6 +43,11 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
 
   String get _title => widget.books.map((b) => '《${b.title}》').join(' · ');
 
+  /// 多本一起聊，人设跟单本共用一份（见 [readingPersona]）。
+  ///
+  /// 只在开头把书列出来，性格那一整段原样复用——「引导型」这件事跟聊几本
+  /// 没关系。两边各写一份的话，改了一处忘了另一处，用户会发现单本和多本
+  /// 里的它性格不一样。
   String get _systemPrompt {
     final names = widget.books
         .map((b) {
@@ -49,11 +55,10 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           return '《${b.title}》$a';
         })
         .join('、');
-    return '我们正在一起聊这几本书：$names。'
-        '你可以分享对这些书的看法，也可以对比它们之间的异同，'
-        '像两个读过这些书的朋友在聊天一样，而不是单纯回答问题。'
-        '如果用户提到某本书的具体内容，你可以展开讨论；'
-        '也可以主动对比几本书在主题、人物、风格上的差异。';
+    return '$readingPersona\n\n'
+        '这次一起聊这几本：$names。\n'
+        '书和书之间的照应、分歧、互相解释的地方，是这种多本讨论最值得挖的，'
+        '但别硬凑——没有关联就老实说没有。';
   }
 
   @override
@@ -152,6 +157,8 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     while (maxRounds > 0) {
       maxRounds--;
       String? fullResponse;
+      // 思考单独攒，不进 fullResponse——那个要发回服务端当上文。
+      String? thinkingBuffer;
 
       try {
         await for (final event in clientWithTools.chat(
@@ -159,9 +166,17 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           systemPrompt: _conversation.systemPrompt,
         )) {
           switch (event.type) {
-            // 读书讨论这边不展示思考过程，收到就丢。留着这个 case 是为了让
-            // switch 保持穷尽——不然以后再加事件类型，这里会静悄悄地漏掉。
+            // 读书版**要**显示思考。
+            //
+            // 引导型的价值在于「它为什么这么问」——看见推理过程，比只看见
+            // 那个问题有用得多。主 App 那边思考是附加信息，这边它本身就是
+            // 内容的一部分。
             case AiEventType.thinking:
+              thinkingBuffer = (thinkingBuffer ?? '') + (event.text ?? '');
+              _updateAssistantMessage(
+                fullResponse ?? '',
+                thinking: thinkingBuffer,
+              );
               break;
 
             case AiEventType.token:
@@ -240,9 +255,12 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     return '错误: 工具 ${tc.name} 未找到';
   }
 
+  /// [thinking] 传 null = 「这次没有新的思考」，不是「清掉已有的」。
+  /// 正文每来一个 token 就重建一次这条消息，不保留的话思考会被冲掉。
   void _updateAssistantMessage(
     String content, {
     List<ToolCallInfo>? toolCalls,
+    String? thinking,
   }) {
     setState(() {
       if (_conversation.messages.isNotEmpty &&
@@ -253,6 +271,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           role: MessageRole.assistant,
           content: content,
           toolCalls: toolCalls,
+          thinking: thinking ?? _conversation.messages.last.thinking,
         );
       } else {
         _conversation.messages.add(
@@ -261,6 +280,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
             role: MessageRole.assistant,
             content: content,
             toolCalls: toolCalls,
+            thinking: thinking,
           ),
         );
       }
@@ -279,6 +299,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           role: MessageRole.assistant,
           content: old.content,
           toolCalls: old.toolCalls,
+          thinking: old.thinking,
         );
       }
     });
@@ -485,7 +506,11 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
                       ? _buildEmptyState(theme)
                       : Builder(
                         builder: (context) {
-                          final items = groupChatItems(_conversation.messages);
+                          // 读书版不拆气泡，理由见 groupChatItems 的注释。
+                          final items = groupChatItems(
+                            _conversation.messages,
+                            splitBubbles: false,
+                          );
                           return ListView.builder(
                             controller: _scrollController,
                             padding: const EdgeInsets.all(12),
