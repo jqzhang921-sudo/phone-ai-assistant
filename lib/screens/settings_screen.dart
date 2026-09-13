@@ -46,6 +46,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   String? _selectedProvider;
 
+  /// 「对话模型」那一行该显示谁——**存下来的那个**，不是这页上正选着的那个。
+  ///
+  /// 两者不是一回事：点 chip 只是把输入框填上，没按「保存」就什么都没落地
+  /// （见 [_selectConfig]）。原来那一行读的是输入框，于是光点一下 chip 就能
+  /// 让它显示成 Claude，可真正发请求的客户端还是 MIMO——他看到的那行在骗他。
+  /// 只在 [_load] 里更新：进了这页、或者按过保存之后，它才该变。
+  String? _activeProvider;
+
   /// 有多少段对话设了自己的性格。
   ///
   /// 露出来是必须的：全局那个开关**管不到**这些对话（对话自己的优先级更高）。
@@ -247,14 +255,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _periodForecastShared = await PeriodLog.forecastSharedWithAi();
     _periodForecast = forecastFrom(await PeriodLog.list());
 
-    // 只在首次打开时自动选中一个（避免每次保存后被跳走）。
+    // 「现在用的是哪一个」只问一次，下面两处都用这一个答案。
     //
     // 挑法和 [buildStoredAiClient] 用的是同一个函数——上面「对话模型」那一行
-    // 显示的是它，真正拿去发请求的也是它，三处必须是同一个答案。
+    // 显示的是它，真正拿去发请求的也是它，三处必须是同一个答案。所以这里存
+    // 下来给 [_modelSummary] 用，别让它自己去猜「选中的那个」。
+    final active = await ApiKeyService.pickActive(_configs);
+    _activeProvider = active?.provider;
+
+    // 只在首次打开时自动选中一个（避免每次保存后被跳走）。
     // 原来这里挑的是「第一个**没填** key 的」，本意是提醒他补上；可内置格式
     // 现在四个一直在，那样一进这页就跳到空白的那一项上去了。
     if (_selectedProvider == null && _configs.isNotEmpty) {
-      _selectConfig(await ApiKeyService.pickActive(_configs) ?? _configs.first);
+      _selectConfig(active ?? _configs.first);
     }
 
     setState(() => _loading = false);
@@ -1504,12 +1517,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) context.read<SettingsProvider>().setThemeMode(picked);
   }
 
+  /// 「对话模型」那一行显示什么。
+  ///
+  /// 读的是**存下来的那个**（[_activeProvider]），不是这页上正选着的那个。
+  /// 点一下 chip 只是把输入框填上，不落盘（见 [_selectConfig]），拿输入框当
+  /// 答案的话，光点一下就能让这一行显示成 Claude，可真正发请求的还是原来那个
+  /// ——这一行在骗他，而且骗法很难发现：重新进一次设置页又变回去了。
   String get _modelSummary {
-    final name =
-        _modelController.text.isNotEmpty
-            ? _modelController.text
-            : (_selectedProvider ?? '未选择');
-    return _keyController.text.isEmpty ? '$name · 缺密钥' : name;
+    final active =
+        _configs.where((c) => c.provider == _activeProvider).firstOrNull;
+    if (active == null) return '未选择';
+    // 模型名优先，没填过才退回格式名。原来那条兜底给的是 `_selectedProvider`
+    // （`openai` 这种内部代号），摆给用户看不如「OpenAI」。
+    final name = (active.model ?? '').isNotEmpty ? active.model! : active.name;
+    return (active.apiKey ?? '').isEmpty ? '$name · 缺密钥' : name;
   }
 
   String get _visionSearchSummary {
