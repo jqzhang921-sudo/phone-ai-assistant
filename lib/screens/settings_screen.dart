@@ -1583,7 +1583,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return ChoiceChip(
                 label: Text(config.name),
                 selected: selected,
-                onSelected: (_) => _selectConfig(config),
+                onSelected: (_) {
+                  _selectConfig(config);
+                  // 这一页是 push 出来的独立路由，`_selectConfig` 里那句
+                  // setState 只重建设置页自己——**勾不会跟着走**。下面三个
+                  // 输入框是 controller 直接改文字的，照常会变，于是看起来
+                  // 就像「点是点动了，但选中的还是原来那个」。得叫一声这一层
+                  // 的 set，这页才会重画。
+                  set(() {});
+                },
               );
             }).toList(),
       ),
