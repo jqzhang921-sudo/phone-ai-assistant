@@ -59,9 +59,15 @@ void main() {
   ApiKeyConfig pick(List<ApiKeyConfig> cs, String p) =>
       cs.firstWhere((c) => c.provider == p);
 
-  test('一次都没配过：四个内置格式都在，顺序固定', () async {
+  test('一次都没配过：五个内置格式都在，顺序固定', () async {
     final configs = await ApiKeyService.loadKeys();
-    expect(providers(configs), ['openai', 'anthropic', 'mimo', 'custom']);
+    expect(providers(configs), [
+      'openai',
+      'anthropic',
+      'gemini',
+      'mimo',
+      'custom',
+    ]);
   });
 
   test('存过一个之后，另外三个不会被挤掉', () async {
@@ -73,11 +79,13 @@ void main() {
     });
 
     final configs = await ApiKeyService.loadKeys();
-    expect(
-      providers(configs),
-      ['openai', 'anthropic', 'mimo', 'custom'],
-      reason: '存过一个不等于只要这一个——其余三个还得能点得回去',
-    );
+    expect(providers(configs), [
+      'openai',
+      'anthropic',
+      'gemini',
+      'mimo',
+      'custom',
+    ], reason: '存过一个不等于只要这一个——其余几个还得能点得回去');
     // 存过的值照旧生效，不能被内置默认值顶掉。
     expect(pick(configs, 'openai').endpoint, 'https://api.xiaomimimo.com/v1');
     expect(pick(configs, 'openai').model, 'mimo-v2.5');
@@ -95,7 +103,13 @@ void main() {
     );
 
     final configs = await ApiKeyService.loadKeys();
-    expect(providers(configs), ['openai', 'anthropic', 'mimo', 'custom']);
+    expect(providers(configs), [
+      'openai',
+      'anthropic',
+      'gemini',
+      'mimo',
+      'custom',
+    ]);
     expect(pick(configs, 'openai').apiKey, 'sk-test');
   });
 
@@ -105,6 +119,17 @@ void main() {
     expect(mimo.endpoint, 'https://api.xiaomimimo.com/v1');
     expect(mimo.model, 'mimo-v2.5');
     expect(mimo.name, contains('MIMO'));
+  });
+
+  test('Gemini 那一条指向的是原生兼容层，地址不带尾斜杠', () async {
+    final gemini = pick(await ApiKeyService.loadKeys(), 'gemini');
+    // 尾斜杠会拼成 `…/openai//chat/completions`；`models/` 前缀会 400。
+    expect(
+      gemini.endpoint,
+      'https://generativelanguage.googleapis.com/v1beta/openai',
+    );
+    expect(gemini.endpoint, isNot(endsWith('/')));
+    expect(gemini.model, isNot(startsWith('models/')));
   });
 
   test('自定义留空的地址是 null，不是空串', () async {

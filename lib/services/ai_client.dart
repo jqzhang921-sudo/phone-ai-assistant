@@ -152,18 +152,17 @@ class AiClient {
   ///
   /// 不新增一条 system 消息、而是并进用户消息里，是为了避开兼容性风险——
   /// 不是所有 OpenAI 兼容端点都接受 system 出现在消息列表中间或末尾。
-  /// 这个 provider 能不能直接把图发给模型。
+  /// 这个格式能不能直接把图发给模型。
   ///
-  /// ⚠️ 现在是**按 provider 名字判断，不是按能力**。而 [chat] 的路由里
-  /// `custom` 和 default 走的是同一个 [_openaiChat]、同样的报文格式——
-  /// 也就是说：一个 OpenAI 兼容、模型也确实支持识图的自定义端点，会在这儿
-  /// 被判成「不能收图」，图被**悄悄丢掉**，模型只看到文字，还查不出为什么。
-  ///
-  /// 没在这次一起修，是因为「这个模型支不支持识图」目前没有地方可问：
-  /// 要么在设置里加个开关让用户自己说，要么试探一次记下来。那是单独一件事。
+  /// 依据是 [kImageNativeProviders] 那张**手写**的表，不是问出来的：
+  /// 「这个模型支不支持识图」没有地方可问。表里没写、但模型其实能识图的端点
+  /// （自定义那一档最常见），图会被**悄悄丢掉**，模型只看到文字，还查不出
+  /// 为什么。真要根治得让用户在设置里自己说，或者试探一次记下来——那是单独
+  /// 一件事。
   ///
   /// 但**这个判断只许有这一处**。散到 UI 层去，两边迟早说不到一起。
-  bool get sendsImagesNatively => config.provider == 'openai';
+  bool get sendsImagesNatively =>
+      kImageNativeProviders.contains(config.provider);
 
   static void _attachMemory(
     List<Map<String, dynamic>> apiMessages,

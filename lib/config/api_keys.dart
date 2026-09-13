@@ -2,6 +2,18 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// 哪些**格式**的端点能把 base64 图原样收下。
+///
+/// ⚠️ 这张表是手写的，不是问出来的——「这个模型支不支持识图」没有地方可问。
+/// 所以新加一档时得顺手在这儿表个态：写进来 = 图随报文原样发过去；不写 = 图
+/// 先送去转成文字（那条路要另配识图 key，转不出来就等于没发）。
+///
+/// 存在的理由见 [AiClient.sendsImagesNatively]：原来那里写的是
+/// `provider == 'openai'` 一句死判断，而 `custom` 和 default 走的是同一个
+/// `_openaiChat`、同一份报文格式——一个 OpenAI 兼容、模型也确实能识图的自定义
+/// 端点，就因为名字不叫 openai 被判成「不能收图」，图被**悄悄丢掉**。
+const kImageNativeProviders = <String>{'openai', 'gemini'};
+
 class ApiKeyConfig {
   static const _keyPrefix = 'api_key_';
   static const _endpointPrefix = 'api_endpoint_';
@@ -36,6 +48,17 @@ class ApiKeyConfig {
       name: 'Claude',
       endpoint: 'https://api.anthropic.com/v1',
       model: 'claude-sonnet-5',
+    ),
+    ApiKeyConfig(
+      provider: 'gemini',
+      // Gemini 原生的 OpenAI 兼容层，不是某个第三方中转。
+      //
+      // 地址结尾**不要**带斜杠：[AiClient] 那边是 `'$endpoint/chat/completions'`
+      // 直接拼的，多一个斜杠就成了 `//chat/completions`。模型名也不带
+      // `models/` 前缀，带了会 400。
+      name: 'Gemini',
+      endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      model: 'gemini-3.8-flash',
     ),
     ApiKeyConfig(
       provider: 'mimo',
