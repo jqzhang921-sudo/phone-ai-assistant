@@ -228,7 +228,7 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
                   ),
                 )
                 : const Icon(PhosphorIconsRegular.sparkle),
-        label: Text(_generating ? '生成中...' : '生成 Discussion'),
+        label: Text(_generating ? '生成中...' : '生成讨论笔记'),
       ),
     );
   }
@@ -243,7 +243,7 @@ class _BookDiscussionScreenState extends State<BookDiscussionScreen> {
           color: theme.colorScheme.primary.withAlpha(80),
         ),
         const SizedBox(height: 12),
-        Text('还没有 Discussion 笔记', style: theme.textTheme.titleMedium),
+        Text('还没有讨论笔记', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
           '点右下角 AI 生成，或右上角 + 手动写',

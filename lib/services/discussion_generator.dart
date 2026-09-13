@@ -28,7 +28,7 @@ Future<String?> generateDiscussionForBook({
     final conversationText = buf.toString();
 
     final prompt =
-        '请根据以下关于《$bookTitle》的读者与AI对话记录，生成一段300字左右的Discussion笔记，'
+        '请根据以下关于《$bookTitle》的读者与AI对话记录，生成一段300字左右的讨论笔记，'
         '总结讨论的主要内容、观点碰撞、以及读者对这本书的感受和思考。'
         '用流畅自然的段落文字来写，不要用列表和分点，像一段读后感讨论笔记。\n\n'
         '对话记录：\n$conversationText';

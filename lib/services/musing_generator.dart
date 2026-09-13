@@ -6,7 +6,9 @@ import '../utils/dates.dart';
 /// 生成一段 AI 自己的、随意的"我想说"——可以是吐槽、观察、随手一提的想法，
 /// 不一定要围绕对话内容，也不强求有主题。
 Future<String?> generateDailyMusing({required AiClient aiClient}) async {
-  final convs = await StorageService.listConversations();
+  // 只读纯文本索引：素材要的是 role / 时间 / 正文，图片一张都用不上，
+  // 而图片在原文里占了两百倍。见 [ConversationSummary]。
+  final convs = await StorageService.listConversationSummaries();
 
   // ⚠️ 素材取的是**刚过去的那一整天**，不是「今天到现在为止」。
   //
@@ -20,7 +22,7 @@ Future<String?> generateDailyMusing({required AiClient aiClient}) async {
 
   final buf = StringBuffer();
   for (final conv in convs) {
-    for (final m in conv.messages) {
+    for (final m in conv.lines) {
       final t = m.timestamp.toLocal();
       if (t.isBefore(from) || !t.isBefore(dayStart)) continue;
       if (m.role != MessageRole.user && m.role != MessageRole.assistant) {

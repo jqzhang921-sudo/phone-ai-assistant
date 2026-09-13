@@ -5,6 +5,10 @@
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <!-- 见 res/values/styles.xml 里同一项的注释：关掉系统启动预览窗口，
+             免得「App 选的深浅」和「系统深浅」不一致时先闪一屏错的颜色。
+             这份必须存在，否则系统深色时 values/ 里那句会被这里盖掉。 -->
+        <item name="android:windowDisablePreview">true</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your

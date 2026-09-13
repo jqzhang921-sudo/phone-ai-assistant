@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../models/book.dart';
 import '../models/conversation.dart';
+import '../models/conversation_summary.dart';
 import '../models/diary_entry.dart';
 import '../models/letter.dart';
 import '../models/memory_topic.dart';
@@ -49,6 +50,16 @@ class StorageService {
   static String get _convDir => '${_dir.path}/conversations';
   static String get _trashDir => '${_dir.path}/conversations_trash';
 
+  /// 纯文本索引的落脚处。**故意跟正文分开放，不放进 `conversations/`。**
+  ///
+  /// 那个目录有几处是「凡是 .json 就当一场对话」的（[listConversations]、
+  /// [lastConversationWriteAt]），索引混进去会被当成读不出来的对话，
+  /// 轻则报失败，重则把「最近写过对话是什么时候」算错。
+  ///
+  /// 也不进备份：backup_service 是逐个目录点名的，这里没被点到。
+  /// 索引本来就是派生数据，恢复备份后重建一遍就行。
+  static String get _indexDir => '${_dir.path}/conversations_index';
+
   /// ⚠️ **先写临时文件再 rename，不能直接往目标文件上写。**
   ///
   /// 症状是「对话一会消失一会又回来」。原来是 `writeAsString` 直接覆盖目标：
@@ -88,6 +99,43 @@ class StorageService {
     // 卡顿。实测就是这么卡的。
     await tmp.writeAsString(jsonEncode(conv.toJson()));
     await tmp.rename(target);
+
+    // 顺手把纯文本索引也刷一遍。**在这里写，不另起一条读盘再压的路径**：
+    // 这场对话此刻就在手上，压索引是白拿的，不用再把刚写下去的东西读回来。
+    //
+    // 包在 try 里、且失败不作声，是因为索引只是缓存——[listConversationSummaries]
+    // 撞见过期或缺失的索引会自己从正文重建。存盘这件事本身绝不能因为它失败。
+    try {
+      await _writeIndex(conv.id, ConversationSummary.fromConversation(conv));
+    } catch (_) {}
+  }
+
+  /// 写一份索引。<**临时文件 + rename**>，理由同 [saveConversation]：
+  /// 首页随时可能在列对话，不能让它读到半个索引。
+  ///
+  /// `size`/`mtime` 记的是**正文文件**的大小与修改时间，是索引「新不新鲜」的
+  /// 唯一凭据。两个一起比：改内容几乎必然改长度，再叠上毫秒级的时间戳，
+  /// 「文件变了而索引看着还新鲜」基本不可能——除了同一毫秒内写两次，
+  /// 那种情况下顶多列表旧一拍，下次存盘就回来了。
+  static Future<void> _writeIndex(
+    String id,
+    ConversationSummary summary,
+  ) async {
+    final src = File('$_convDir/$id.json');
+    if (!await src.exists()) return; // 已经删了（比如刚被移进回收站），别写出个孤儿
+    final stat = src.statSync();
+    final dir = Directory(_indexDir);
+    if (!await dir.exists()) await dir.create(recursive: true);
+    final target = '$_indexDir/$id.json';
+    final tmp = File('$target.tmp');
+    await tmp.writeAsString(
+      jsonEncode({
+        'size': stat.size,
+        'mtime': stat.modified.millisecondsSinceEpoch,
+        ...summary.toJson(),
+      }),
+    );
+    await tmp.rename(target);
   }
 
   static Future<Conversation?> loadConversation(String id) async {
@@ -109,7 +157,8 @@ class StorageService {
     }
   }
 
-  /// 上一次 [listConversations] 有几个文件读不出来。
+  /// 上一次列对话（[listConversations] 或 [listConversationSummaries]）
+  /// 有几个文件读不出来。
   ///
   /// 原来读失败是**无声跳过**的：那段对话直接从列表里消失，没有报错也没有痕迹，
   /// 用户看到的就是「它突然不见了」——而文件其实还在磁盘上。
@@ -172,12 +221,133 @@ class StorageService {
       }
     }
     lastListFailures = failed;
+
     // 置顶的排最前，其余按更新时间倒序
     convs.sort((a, b) {
       if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
       return b.updatedAt.compareTo(a.updatedAt);
     });
     return convs;
+  }
+
+  /// 列对话，但只回[纯文本索引]，**不解析图片**。
+  ///
+  /// 给首页「最近对话」和历史搜索用——它们本来就不需要正文以外的东西，
+  /// 而正文在整份数据里只占两百分之一（187 MB 的 base64 图片 vs 953K 字符正文）。
+  ///
+  /// 语义上和 [listConversations] 一致：同样跳过读不出来的文件、
+  /// 同样往 [lastListFailures] 记账、同样置顶优先、同样按更新时间倒序。
+  /// 需要完整对话（打开某一场）时用 [loadConversation]。
+  static Future<List<ConversationSummary>> listConversationSummaries() async {
+    final dir = Directory(_convDir);
+    if (!await dir.exists()) return [];
+    final files = await dir.list().toList();
+
+    // 清掉崩溃留下的临时文件，同 [listConversations]。
+    for (final f in files) {
+      if (f.path.endsWith('.json.tmp')) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
+
+    final liveIds = <String>{};
+    final out = <ConversationSummary>[];
+    var failed = 0;
+    for (final file in files) {
+      if (!file.path.endsWith('.json')) continue;
+      final id = file.uri.pathSegments.last.replaceAll('.json', '');
+      liveIds.add(id);
+      final summary = await _loadSummary(id);
+      if (summary == null) {
+        failed++;
+      } else {
+        out.add(summary);
+      }
+    }
+    lastListFailures = failed;
+
+    await _sweepOrphanIndexes(liveIds);
+
+    out.sort((a, b) {
+      if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+    return out;
+  }
+
+  /// 读一场对话的索引。缺失、过期、坏掉都走同一条路：**从正文重建一份**。
+  ///
+  /// 重建这一次必须把正文整个解析出来（含 base64 图片）——正是要避免的那份常驻
+  /// 内存。但它是**一次性**的：解析完只留下 [ConversationSummary]，那个
+  /// `Conversation` 随即变成垃圾，不会跟着 App 活到进程结束。建完存回去，
+  /// 之后每次列对话都只读几百 KB 的索引。
+  ///
+  /// 所以升级到这一版之后的第一次列对话会卡一下（等于旧行为），之后就轻了。
+  static Future<ConversationSummary?> _loadSummary(String id) async {
+    final src = File('$_convDir/$id.json');
+    if (!await src.exists()) return null;
+    final FileStat stat;
+    try {
+      stat = src.statSync();
+    } catch (_) {
+      return null;
+    }
+
+    try {
+      final index = File('$_indexDir/$id.json');
+      if (await index.exists()) {
+        final cached = jsonDecode(await index.readAsString());
+        if (cached is Map<String, dynamic> &&
+            cached['size'] == stat.size &&
+            cached['mtime'] == stat.modified.millisecondsSinceEpoch) {
+          return ConversationSummary.fromJson(cached);
+        }
+      }
+    } catch (_) {
+      // 索引坏了（读到半个、版本旧了、字段缺了）不是错误——它只是缓存，往下重建。
+    }
+
+    final conv = await loadConversation(id);
+    if (conv == null) return null;
+    final summary = ConversationSummary.fromConversation(conv);
+    try {
+      await _writeIndex(id, summary);
+    } catch (_) {}
+    return summary;
+  }
+
+  /// 删掉正文已经不在了的索引。
+  ///
+  /// 正常路径不会留下孤儿——移进回收站时索引就跟着删了。但存盘和删除可以撞车：
+  /// 索引正写到一半，那边把对话删了，rename 还是会把索引放下去。
+  /// 孤儿没人读（[listConversationSummaries] 是从正文目录出发去找索引，不是反过来），
+  /// 留着只是白占地方——顺手清掉，别让它无声地越攒越多。
+  static Future<void> _sweepOrphanIndexes(Set<String> liveIds) async {
+    final dir = Directory(_indexDir);
+    if (!await dir.exists()) return;
+    try {
+      for (final f in await dir.list().toList()) {
+        final name = f.uri.pathSegments.last;
+        if (name.endsWith('.json') &&
+            liveIds.contains(name.replaceAll('.json', ''))) {
+          continue;
+        }
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  /// 删索引。**尽力而为，删不掉不算错**——理由同 [_sweepOrphanIndexes]：
+  /// 索引只从正文目录出发被找到，正文不在了它就再也不会被读到。
+  static Future<void> _deleteIndex(String id) async {
+    try {
+      final f = File('$_indexDir/$id.json');
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
   }
 
   /// 设置对话是否置顶。
@@ -196,6 +366,9 @@ class StorageService {
       await trash.parent.create(recursive: true);
       await src.rename(trash.path);
     }
+    // 索引跟着走。恢复的时候不搬回来——那一场要重建一次索引（就一场，很便宜），
+    // 换来的是「回收站里绝对没有和正文对不上的索引」。
+    await _deleteIndex(id);
   }
 
   /// 从回收站恢复对话。
@@ -210,6 +383,9 @@ class StorageService {
   static Future<void> permanentlyDeleteConversation(String id) async {
     final trash = File('$_trashDir/$id.json');
     if (await trash.exists()) await trash.delete();
+    // 进回收站那一步已经删过索引了。这里再来一次是防着那一步没删成，
+    // 让「彻底删除」真的是彻底的。
+    await _deleteIndex(id);
   }
 
   /// 列出回收站中的对话（按更新时间倒序）。

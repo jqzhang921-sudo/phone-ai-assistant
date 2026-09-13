@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phone_ai_assistant/models/chat_message.dart';
 import 'package:phone_ai_assistant/models/conversation.dart';
+import 'package:phone_ai_assistant/models/conversation_summary.dart';
 import 'package:phone_ai_assistant/models/diary_entry.dart';
 import 'package:phone_ai_assistant/models/letter.dart';
 import 'package:phone_ai_assistant/models/musing_entry.dart';
@@ -9,13 +10,18 @@ import 'package:phone_ai_assistant/services/day_stats.dart';
 ChatMessage _msg(MessageRole role, DateTime ts) =>
     ChatMessage(id: 'm', role: role, content: 'x', timestamp: ts);
 
-Conversation _conv(List<ChatMessage> msgs) => Conversation(
-  id: 'c1',
-  title: 't',
-  createdAt: DateTime(2026, 9, 1),
-  updatedAt: DateTime(2026, 9, 1),
-  messages: msgs,
-);
+/// build 现在吃的是[纯文本索引][ConversationSummary]。这里用真的那一层去压，
+/// 不手搓一个假索引——顺带把「压出来的 role/时间戳和原消息一致」也测进去了。
+ConversationSummary _conv(List<ChatMessage> msgs) =>
+    ConversationSummary.fromConversation(
+      Conversation(
+        id: 'c1',
+        title: 't',
+        createdAt: DateTime(2026, 9, 1),
+        updatedAt: DateTime(2026, 9, 1),
+        messages: msgs,
+      ),
+    );
 
 Letter _letter(LetterAuthor author, DateTime ts, {String? replyToId}) =>
     Letter(
@@ -32,7 +38,7 @@ MusingEntry _musing(DateTime d) =>
     MusingEntry(id: 'u', date: d, content: 'x');
 
 DayStatsIndex _build({
-  List<Conversation> convs = const [],
+  List<ConversationSummary> convs = const [],
   List<DiaryEntry> diaries = const [],
   List<Letter> letters = const [],
   List<MusingEntry> musings = const [],

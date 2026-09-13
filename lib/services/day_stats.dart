@@ -1,15 +1,18 @@
 /// 「日子」的按天聚合。
 ///
-/// 输入是四个 storage list API 的全量数据，输出是 `dateKey -> DayStats`
+/// 输入是四个 storage list API 的输出，输出是 `dateKey -> DayStats`
 /// 的索引。构建是纯函数（[DayStatsIndex.build]），IO 只发生在
-/// [DayStatsIndex.collect]：先拉全量，再交给 build——探索阶段结论是
+/// [DayStatsIndex.collect]：先拉数据，再交给 build——探索阶段结论是
 /// storage 没有按天查询（SharedPreferences 是整串 JSON，对话是整文件），
 /// 想看任何一天都必须读完整个文件，「按需加载」在这个存储形状下省不了解析，
-/// 所以和 diary_generator / habitat 的 `_load` 一样：进屏一次全量读。
+/// 所以和 diary_generator / habitat 的 `_load` 一样：进屏一次读全。
+///
+/// 差别在于「读全」读的是什么：对话那份走纯文本索引（几百 KB），
+/// 不再是连着 base64 图片的原文（真机上差两百倍）。
 library;
 
 import '../models/chat_message.dart';
-import '../models/conversation.dart';
+import '../models/conversation_summary.dart';
 import '../models/diary_entry.dart';
 import '../models/letter.dart';
 import '../models/musing_entry.dart';
@@ -99,7 +102,7 @@ class DayStatsIndex {
   /// 纯函数：喂数据出索引。构建全程无 IO、无时间线之外的状态——
   /// 单测只测这一层，IO 的问题交给 [[collect]]。
   factory DayStatsIndex.build({
-    required List<Conversation> conversations,
+    required List<ConversationSummary> conversations,
     required List<DiaryEntry> diaries,
     required List<Letter> letters,
     required List<MusingEntry> musings,
@@ -115,7 +118,7 @@ class DayStatsIndex {
     // 会显示 538 轮）。时间戳都是本地时间存本地时间读（ISO8601 无偏移），
     // 直接 y/m/d 判断，绝不做 toUtc 切日。
     for (final c in conversations) {
-      for (final m in c.messages) {
+      for (final m in c.lines) {
         final role = m.role;
         if (role != MessageRole.user && role != MessageRole.assistant) {
           // system / toolCall / toolResult 不是「互发」的正文，不进数
@@ -170,11 +173,15 @@ class DayStatsIndex {
 
   /// IO 层：一次拉全量数据，再交给 [build]。
   ///
+  /// 对话走的是[纯文本索引][ConversationSummary]，不是完整对话——这里只要
+  /// `role` 和 `timestamp`，图片 base64 一个字节都用不上（真机上后者是前者的
+  /// 两百倍）。这正是一个月前那条 TODO 想要的轻量 API。
+  ///
   /// 解析失败的对话会被 loadConversation 跳过（storage_service 计数落在
   /// `lastListFailures`），该对话的消息从统计中消失——与栖息页口径一致，
   /// 这里不做提示，避免过度工程。
   static Future<DayStatsIndex> collect() async {
-    final conversations = await StorageService.listConversations();
+    final conversations = await StorageService.listConversationSummaries();
     final diaries = await StorageService.listDiaryEntries();
     final letters = await StorageService.listLetters();
     final musings = await StorageService.listFavoritedMusings();
@@ -187,6 +194,6 @@ class DayStatsIndex {
   }
 }
 
-// TODO(性能)：对话量到「首开明显卡顿」时，给 StorageService 加一个只取
-// `messages[].timestamp/role` 的轻量 API（jsonDecode 后不构造 ChatMessage，
-// 省掉 base64 图片字符串拷贝）。现在和栖息页同量级，不值得第二套 decode 逻辑。
+// 那条「加一个只取 messages[].timestamp/role 的轻量 API」的 TODO 已经做了：
+// 就是 StorageService.listConversationSummaries()，落盘格式在
+// models/conversation_summary.dart。

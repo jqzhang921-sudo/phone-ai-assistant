@@ -61,11 +61,12 @@ class SettingsProvider extends ChangeNotifier {
 /// 只能从存储直接建。
 Future<AiClient?> buildStoredAiClient() async {
   try {
-    for (final config in await ApiKeyService.loadKeys()) {
-      if (config.apiKey != null && config.apiKey!.isNotEmpty) {
-        return AiClient(config: config);
-      }
-    }
+    // 「挑哪一个」也抽到 ApiKeyService 里了：设置页要选中的、这儿要拿去用的，
+    // 必须是同一个答案。以前这儿是「第一个填了 key 的」，设置页是「第一个
+    // **没填** key 的」——两句话，两种结果。
+    final configs = await ApiKeyService.loadKeys();
+    final config = await ApiKeyService.pickActive(configs);
+    if (config != null) return AiClient(config: config);
   } catch (_) {}
   return null;
 }

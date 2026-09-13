@@ -40,6 +40,22 @@ void main() async {
 
   await StorageService.init();
 
+  // ⚠️ 设置必须在 runApp **之前**读出来，用来给 SettingsProvider 开局定调。
+  //
+  // 原来是在 widget 树的 FutureBuilder 里异步读的，读出来之前先铺一块
+  // **写死的浅米色**兜底——于是深色模式下冷启动是「先浅一下、再翻深」，
+  // 那块米色就是闪的那一下。主 App 早就改成预读了（main.dart 里同一段），
+  // 这边一直漏着。
+  //
+  // 代价是启动多等一次 SharedPreferences（毫秒级），换**第一帧就是对的**。
+  // 读失败也不能让 App 起不来，所以整段包在 try 里。
+  AppSettings? bootSettings;
+  try {
+    bootSettings = await AppSettings.load();
+  } catch (e) {
+    debugPrint('[reading] 预读设置失败，第一帧按系统深浅走：$e');
+  }
+
   runApp(
     MultiProvider(
       // ⚠️ 这七个一个都不能少。
@@ -54,7 +70,16 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AiClientProvider()),
         ChangeNotifierProvider(create: (_) => BackgroundProvider()),
-        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final p = SettingsProvider();
+            // 开局就带上预读的值。create 是懒的（第一次被 watch 时才跑），
+            // 所以注入发生在第一帧 build 的过程中——那一帧 `settings != null`，
+            // 深色/浅色不用等异步读盘，也就没有「先浅一下再翻深」。
+            if (bootSettings != null) p.setSettings(bootSettings);
+            return p;
+          },
+        ),
         // 气泡上的朗读按钮
         ChangeNotifierProvider(create: (_) => TtsService()),
         // 气泡上的收藏
@@ -78,8 +103,6 @@ class ReadingApp extends StatefulWidget {
 }
 
 class _ReadingAppState extends State<ReadingApp> {
-  late final Future<AppSettings> _settings = AppSettings.load();
-
   @override
   void initState() {
     super.initState();
@@ -94,11 +117,10 @@ class _ReadingAppState extends State<ReadingApp> {
   Future<void> _restoreClient() async {
     try {
       final configs = await ApiKeyService.loadKeys();
-      final filled = configs.where((c) => (c.apiKey ?? '').isNotEmpty);
-      if (filled.isEmpty || !mounted) return;
-      context.read<AiClientProvider>().setClient(
-        AiClient(config: filled.first),
-      );
+      // 和设置页选中的、跟主 App 建客户端时用的是同一个函数，别各挑各的。
+      final config = await ApiKeyService.pickActive(configs);
+      if (config == null || !mounted) return;
+      context.read<AiClientProvider>().setClient(AiClient(config: config));
     } catch (e) {
       debugPrint('[reading] 恢复 API 配置失败：$e');
     }
@@ -106,27 +128,25 @@ class _ReadingAppState extends State<ReadingApp> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<AppSettings>(
-      future: _settings,
-      builder: (context, snapshot) {
-        final settings = snapshot.data;
-        if (settings == null) {
-          // 主题还没读出来，先给一块底色，别闪白。
-          return const ColoredBox(color: Color(0xFFF3F1EC));
-        }
-        return Consumer<SettingsProvider>(
-          builder: (context, sp, _) {
-            final s = sp.settings ?? settings;
-            return MaterialApp(
-              title: '读书讨论',
-              debugShowCheckedModeBanner: false,
-              theme: AppTheme.lightWith(titleSerif: s.titleSerif),
-              darkTheme: AppTheme.darkWith(titleSerif: s.titleSerif),
-              home: const ReadingShell(),
-            );
-          },
-        );
-      },
+    // 设置已经在 main() 里预读、并塞进 SettingsProvider 了，**所以第一帧就是对的**。
+    //
+    // 原来这里是个 FutureBuilder：读盘期间先铺一块**写死的浅米色**兜底。
+    // 深色模式下冷启动就成了「先浅一下、再翻深」——闪的就是那块米色。
+    // 主 App 早就改成 runApp 之前预读了（main.dart 里同一段），这边一直漏着。
+    //
+    // 兜底取默认值（`themeMode` 是 system，跟系统走）而不是写死浅色：
+    // 只有预读也失败（见 main 里的 try）才会用到它，那时跟着系统是最不坏的猜法。
+    final s = context.watch<SettingsProvider>().settings ?? AppSettings();
+
+    return MaterialApp(
+      title: '读书讨论',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightWith(titleSerif: s.titleSerif),
+      darkTheme: AppTheme.darkWith(titleSerif: s.titleSerif),
+      // 少了这一行，两套主题都建好了却没人用——永远跟着系统走，
+      // 设置页里选什么都白选。
+      themeMode: s.themeMode,
+      home: const ReadingShell(),
     );
   }
 }

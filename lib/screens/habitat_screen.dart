@@ -65,7 +65,10 @@ class _HabitatScreenState extends State<HabitatScreen> {
   }
 
   Future<void> _load() async {
-    final convs = await StorageService.listConversations();
+    // 走索引，不走全量：这个 initState 在 App 一起来就跑（HomeShell 的
+    // IndexedStack 会把每个 tab 都建出来），是最不能全量解析的一处。
+    // 索引里有 role 和时间戳，下面数的两样都在。见 [ConversationSummary]。
+    final convs = await StorageService.listConversationSummaries();
     final diaries = await StorageService.listDiaryEntries();
     final musings = await StorageService.listFavoritedMusings();
     final letters = await StorageService.listLetters();
@@ -85,8 +88,9 @@ class _HabitatScreenState extends State<HabitatScreen> {
     //
     // 数的是**用户消息**：一条用户消息开启一轮来回，这才对得上「轮」这个词。
     for (final c in convs) {
-      total += c.messages.length;
-      for (final m in c.messages) {
+      total += c.messageCount;
+      // lines 里本来就没有工具消息，下面那个 role 判断和以前是同一个口径。
+      for (final m in c.lines) {
         if (m.role != MessageRole.user) continue;
         if (!m.timestamp.toLocal().isBefore(midnight)) today++;
       }

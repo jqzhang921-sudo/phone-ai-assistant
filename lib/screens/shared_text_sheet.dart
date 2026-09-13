@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../config/app_shape.dart';
 import '../models/book.dart';
 import '../models/reading_note.dart';
+import '../services/book_chat_store.dart';
 import '../services/reading_note_store.dart';
 import '../services/shared_text.dart';
 import '../services/storage_service.dart';
@@ -78,7 +79,7 @@ class _SharedTextSheetState extends State<_SharedTextSheet> {
     await nav.push(
       MaterialPageRoute(
         builder: (_) => BookChatScreen(
-          bookId: known?.id ?? 'adhoc_${_title.hashCode}',
+          bookId: known?.id ?? BookChatStore.adhocId(_title),
           bookTitle: known?.title ?? _title,
           bookAuthor: known?.author,
           wereadBookId: known?.wereadBookId,

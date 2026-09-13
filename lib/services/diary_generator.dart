@@ -5,12 +5,14 @@ import '../services/storage_service.dart';
 /// 读取当天全部对话（跨所有会话），生成一段日记体短文。
 /// 返回 null 表示今天没有任何对话内容可写。
 Future<String?> generateTodayDiary({required AiClient aiClient}) async {
-  final convs = await StorageService.listConversations();
+  // 只读纯文本索引：这里要的就是 role / 时间 / 正文，图片用不上，
+  // 而图片在原文里占了两百倍。见 [ConversationSummary]。
+  final convs = await StorageService.listConversationSummaries();
   final now = DateTime.now();
 
   final buf = StringBuffer();
   for (final conv in convs) {
-    for (final m in conv.messages) {
+    for (final m in conv.lines) {
       final t = m.timestamp.toLocal();
       final isToday =
           t.year == now.year && t.month == now.month && t.day == now.day;

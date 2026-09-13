@@ -19,8 +19,21 @@ class TtsService extends ChangeNotifier {
   /// 正在合成中的消息 id（ElevenLabs 网络请求期间）
   String? _loadingId;
 
-  /// ElevenLabs 合成音频缓存：消息 id -> mp3 字节
+  /// ElevenLabs 合成音频缓存：`消息id|音色` -> mp3 字节。
+  ///
+  /// ## 为什么要封顶
+  ///
+  /// 原来是个只进不出的 Map。ElevenLabs 回来的是一整段 mp3，一条十几秒的
+  /// 回复就有几百 KB；读上一百条就是几十 MB 钉死在内存里——而它们**再也
+  /// 不会被播第二遍**，用户早翻过去了。这不是缓慢泄漏，是跟着朗读条数
+  /// 线性往上涨，正是「用久了内存变得非常大」里最直白的一处。
+  ///
+  /// 封顶之后超出就按插入顺序丢最旧的。丢掉的代价只是「再点一次要重新
+  /// 合成、多花一次钱」，功能一点不少。
+  static const int _audioCacheMaxBytes = 8 * 1024 * 1024;
+
   final Map<String, Uint8List> _audioCache = {};
+  int _audioCacheBytes = 0;
 
   TtsService() {
     _init();
@@ -81,6 +94,26 @@ class TtsService extends ChangeNotifier {
     // 播完由 completionHandler 清状态
   }
 
+  /// 放进缓存，并把总量压回上限以内。
+  void _cacheAudio(String key, Uint8List bytes) {
+    // 单条就超过上限的（超长回复）：存了也是白占，还会把前面的一并挤掉，
+    // 所以直接不存。不这么写的话，下面那个 while 会清空整个缓存、
+    // 最后只留下它自己。
+    if (bytes.length > _audioCacheMaxBytes) return;
+
+    final old = _audioCache.remove(key);
+    if (old != null) _audioCacheBytes -= old.length;
+
+    _audioCache[key] = bytes;
+    _audioCacheBytes += bytes.length;
+
+    // 按插入顺序淘汰，最早放进来的是最不可能再听的。
+    while (_audioCacheBytes > _audioCacheMaxBytes && _audioCache.isNotEmpty) {
+      final oldest = _audioCache.keys.first;
+      _audioCacheBytes -= _audioCache.remove(oldest)!.length;
+    }
+  }
+
   Future<void> _speakElevenLabs(
     String messageId,
     String text,
@@ -98,8 +131,11 @@ class TtsService extends ChangeNotifier {
     final cacheKey = '$messageId|$voiceId';
 
     // 命中缓存：直接播，不再调 API（不重复扣费）
-    final cached = _audioCache[cacheKey];
+    final cached = _audioCache.remove(cacheKey);
     if (cached != null) {
+      // 放回队尾。拿出又放回不改总量，但这条从此算「最近用过的」，
+      // 淘汰时不会轮到它——否则反复听同一条，它反而可能被挤掉。
+      _audioCache[cacheKey] = cached;
       _playingId = messageId;
       notifyListeners();
       await _audioPlayer.play(BytesSource(cached, mimeType: 'audio/mpeg'));
@@ -128,7 +164,7 @@ class TtsService extends ChangeNotifier {
         );
       }
       final bytes = resp.bodyBytes;
-      _audioCache[cacheKey] = bytes;
+      _cacheAudio(cacheKey, bytes);
       _loadingId = null;
       _playingId = messageId;
       notifyListeners();

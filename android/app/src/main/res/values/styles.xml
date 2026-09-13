@@ -5,6 +5,16 @@
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <!-- 不要启动预览窗口。
+             那层闪屏（白底 + 蓝色 Flutter 图标）是**系统**画的：它拿 manifest 里的
+             主题、按**系统**的深浅去挑 values-night，App 自己选的主题它读不到。所以
+             「App 选深色、系统停在浅色」时必然先闪一屏白再翻黑，App 侧怎么改都够不着
+             那一帧（连 attachBaseContext 改 uiMode 都试过，无效；原因见 MainActivity.kt）。
+             与其闪一个错的颜色，不如不画：这一项让系统跳过预览窗口，桌面一直留到
+             Flutter 画出第一帧，也就没有「先浅后深」。
+             ⚠️ 两个 values 目录都得写：只在 values/ 里写，系统深色时会被
+             values-night/ 那份盖掉，白写。 -->
+        <item name="android:windowDisablePreview">true</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your

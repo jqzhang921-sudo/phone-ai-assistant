@@ -12,6 +12,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../models/conversation_summary.dart';
 import '../widgets/app_surface.dart';
 import '../widgets/typing_indicator.dart';
 import 'persona_screen.dart';
@@ -103,7 +104,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final _pendingImages = <XFile>[];
   bool _isLoading = false;
   bool _chatMode = false;
-  List<Conversation> _savedConversations = [];
+
+  /// 已存的对话，**只留纯文本索引**。
+  ///
+  /// ⚠️ 这里以前是 `List<Conversation>`——每一场对话连同全部 base64 图片。
+  /// 而这个 State 活在 `home_shell` 的 IndexedStack 里永不销毁，于是那份全量
+  /// 加载一旦读进来就跟着 App 活到进程结束。真机上量过：4 场对话 2516 条消息，
+  /// 正文 953K 字符、图片 base64 187,212K 字符——**图片是正文的两百倍**，
+  /// 它们就是这个页面常驻内存的全部来源。
+  ///
+  /// 现在只留索引（同一份数据约 1 MB），点开哪一场才读哪一场。
+  /// 见 [StorageService.listConversationSummaries]。
+  List<ConversationSummary> _savedConversations = [];
   String? _musingContent;
   bool _musingFavorited = false;
   bool _musingLoading = false;
@@ -157,18 +169,21 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 「N 轮对话」，但一轮是一来一回，条数差着一倍；而首页的对话卡片一直
   /// 写的是「N 条消息」，同一个数在两处叫两个名字。统一成条。
   int get _totalMessages =>
-      _savedConversations.fold(0, (sum, c) => sum + c.messages.length);
+      _savedConversations.fold(0, (sum, c) => sum + c.messageCount);
 
   @override
   void dispose() {
     _aiClients?.removeListener(_onAiClientChanged);
     _textController.dispose();
     _scrollController.dispose();
+    // 之前漏了这一个。是卫生问题而不是内存泄漏（State 一没，
+    // FocusNode 也就没人引用了），但既然是要「用」的对象就该还回去。
+    _focusNode.dispose();
     super.dispose();
   }
 
   Future<void> _loadConversations() async {
-    final convs = await StorageService.listConversations();
+    final convs = await StorageService.listConversationSummaries();
     if (mounted) setState(() => _savedConversations = convs);
   }
 
@@ -331,15 +346,45 @@ class _ChatScreenState extends State<ChatScreen> {
       delegate: HistorySearchDelegate(_savedConversations),
     );
     if (result != null && mounted) {
-      _switchToSearchResult(result);
+      await _switchToSearchResult(result);
     }
   }
 
-  void _switchToSearchResult(HistorySearchSelection selection) {
-    _switchConversation(selection.conversation);
-    if (selection.scrollToMessageIndex != null) {
-      _scrollToMessage(selection.scrollToMessageIndex!);
-    }
+  Future<void> _switchToSearchResult(HistorySearchSelection selection) async {
+    await _openConversation(
+      selection.conversation.id,
+      scrollToMessage: selection.scrollToMessageIndex,
+    );
+  }
+
+  /// 拿到某场对话的**完整**对象。
+  ///
+  /// ⚠️ 正开在手上的那一场必须用内存里这份，**不能回盘上读**：盘上那份是上次
+  /// 存盘时的快照，还没存下去的几条新消息回读一次就没了，而且接手的正是这份
+  /// 旧状态——下一轮存盘就把新消息覆盖掉，等于丢消息。
+  ///
+  /// 这个坑是改索引带出来的。以前 `_switchConversation` 直接接手列表里那个
+  /// `Conversation`，而它和 `_conversation` 往往**就是同一个对象**（连
+  /// `messages` 都是同一条 List），所以点当前这场等于什么都没做。现在列表上
+  /// 只有索引，多了一次「按 id 去取」的机会，也就多了这一次丢消息的机会。
+  Future<Conversation?> _fullConversation(String id) async {
+    if (id == _conversation.id) return _conversation;
+    return StorageService.loadConversation(id);
+  }
+
+  /// 从列表/搜索结果打开一场对话。
+  ///
+  /// 列表上手里只有[索引][ConversationSummary]——正文（和图片）还在文件里，
+  /// 到这一步才读出来，而且只管这一场。
+  ///
+  /// 读不出来（文件坏了、或刚好在别处被删了）就什么都不做：下一次
+  /// `_loadConversations()` 会把它从列表里去掉。用户看到的是「它不在了」，
+  /// 而不是点进去一个空白页。
+  Future<void> _openConversation(String id, {int? scrollToMessage}) async {
+    final conv = await _fullConversation(id);
+    if (conv == null || !mounted) return;
+    _switchConversation(conv);
+    if (scrollToMessage != null) _scrollToMessage(scrollToMessage);
   }
 
   void _scrollToMessage(int index) {
@@ -1099,7 +1144,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 subtitle: Text(
-                                  '${conv.messages.length} 条消息 · ${conv.model}',
+                                  '${conv.messageCount} 条消息 · ${conv.model}',
                                   style: const TextStyle(fontSize: 11),
                                 ),
                                 selected: isCurrent,
@@ -1116,7 +1161,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     if (ctx.mounted) Navigator.of(ctx).pop();
                                   },
                                 ),
-                                onTap: () => _switchConversation(conv),
+                                onTap: () => _openConversation(conv.id),
                               );
                             },
                           ),
@@ -1163,8 +1208,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _showRenameConversationDialog(Conversation conv) {
-    final controller = TextEditingController(text: conv.title);
+  /// 重命名列表里的某一场对话。
+  ///
+  /// **改名得先把完整对话读出来**：标题和 `titleManuallySet` 都长在正文文件里，
+  /// 而列表上手里只有[索引][ConversationSummary]。读盘放在「确定」那一下而不是
+  /// 弹框的时候——点开又取消不该付一次全量读盘，那正是刚从这一页拿掉的东西。
+  /// 存回去时索引会跟着刷新，见 [StorageService.saveConversation]。
+  void _showRenameConversationDialog(ConversationSummary summary) {
+    final controller = TextEditingController(text: summary.title);
     showDialog(
       context: context,
       builder:
@@ -1184,15 +1235,18 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: const Text('取消'),
               ),
               FilledButton(
-                onPressed: () {
+                onPressed: () async {
                   final title = controller.text.trim();
-                  if (title.isNotEmpty) {
-                    conv.title = title;
-                    conv.titleManuallySet = true;
-                    StorageService.saveConversation(conv);
-                  }
                   Navigator.of(ctx).pop();
-                  _loadConversations();
+                  if (title.isEmpty) return;
+                  final conv = await _fullConversation(summary.id);
+                  if (conv == null) return;
+                  conv.title = title;
+                  conv.titleManuallySet = true;
+                  await StorageService.saveConversation(conv);
+                  // 等存完再刷。原来是不等就刷，紧接着的那次列对话有可能
+                  // 抢在写盘前面，读到的还是旧标题。
+                  if (mounted) _loadConversations();
                 },
                 child: const Text('确定'),
               ),
@@ -2352,7 +2406,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 原来三个动作散在三处——左滑删除、右侧图钉按钮置顶、长按重命名，得记住
   /// 哪个动作藏在哪个手势里。现在统一收进左滑面板，右侧只留一个图钉**状态**
   /// 标记（不再可点），置顶与否主要靠整行底色区分。
-  Widget _conversationTile(ThemeData theme, Conversation conv) {
+  Widget _conversationTile(ThemeData theme, ConversationSummary conv) {
     final scheme = theme.colorScheme;
     final pinned = conv.isPinned;
 
@@ -2448,7 +2502,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 subtitle: Text(
-                  '${conv.messages.length} 条消息 · ${_shortTime(conv.updatedAt)}',
+                  '${conv.messageCount} 条消息 · ${_shortTime(conv.updatedAt)}',
                   style: TextStyle(
                     fontSize: 11,
                     color:
@@ -2468,7 +2522,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         )
                         : null,
-                onTap: () => _switchConversation(conv),
+                onTap: () => _openConversation(conv.id),
                 onLongPress: () {
                   HapticFeedback.mediumImpact();
                   _showRenameConversationDialog(conv);

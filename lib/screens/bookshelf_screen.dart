@@ -513,7 +513,7 @@ class _BookshelfScreenState extends State<BookshelfScreen> {
                 ),
                 ListTile(
                   leading: const Icon(PhosphorIconsRegular.sparkle),
-                  title: const Text('查看 Discussion'),
+                  title: const Text('查看讨论笔记'),
                   subtitle: const Text('AI 帮你总结讨论笔记'),
                   onTap: () {
                     Navigator.of(ctx).pop();

@@ -79,6 +79,44 @@ import '../config/app_theme.dart';
   );
 }
 
+/// base64 图片 -> 解出来的字节。带上限。
+///
+/// ## 为什么非缓存不可
+///
+/// [Image.memory] 的缓存键是**字节对象本身**（`MemoryImage` 比的是
+/// `bytes` 的 identity）。原来在 build 里直接 `base64Decode(...)`，
+/// 每次重建都得到一个全新的 `Uint8List`，也就是**一个新键**——于是每重建
+/// 一次，就往 Flutter 的全局面图缓存里塞一张**永远不会被命中的新图**，
+/// 而全局缓存默认能装 100MB / 1000 张。带图的对话多滚几轮，几十 MB
+/// 就这么静静地堆进去了，且再也不会被读出来。
+///
+/// 同一个字符串解出来的字节保持同一个对象，键才稳定，全局缓存才真的是
+/// 在「缓存」而不是只进不出。
+///
+/// 上限防的是另一个方向：图特别多时这份字节本身也别无限涨。淘汰掉的
+/// 代价只是下次重解一遍。
+const int _imageBytesMaxBytes = 4 * 1024 * 1024;
+final Map<String, Uint8List> _imageBytes = {};
+int _imageBytesTotal = 0;
+
+Uint8List _decodeImage(String base64Text) {
+  final hit = _imageBytes.remove(base64Text);
+  if (hit != null) {
+    // 放回队尾：刚渲染过的不该是下一个被淘汰的。
+    _imageBytes[base64Text] = hit;
+    return hit;
+  }
+
+  final bytes = base64Decode(base64Text);
+  _imageBytes[base64Text] = bytes;
+  _imageBytesTotal += bytes.length;
+  while (_imageBytesTotal > _imageBytesMaxBytes && _imageBytes.isNotEmpty) {
+    final oldest = _imageBytes.keys.first;
+    _imageBytesTotal -= _imageBytes.remove(oldest)!.length;
+  }
+  return bytes;
+}
+
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
 
@@ -562,7 +600,7 @@ class MessageBubble extends StatelessWidget {
       return ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.sm),
         child: Image.memory(
-          base64Decode(images.first),
+          _decodeImage(images.first),
           height: 160,
           width: double.infinity,
           fit: BoxFit.cover,
@@ -577,7 +615,7 @@ class MessageBubble extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.sm),
             child: Image.memory(
-              base64Decode(image),
+              _decodeImage(image),
               width: 92,
               height: 92,
               fit: BoxFit.cover,

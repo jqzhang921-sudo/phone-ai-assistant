@@ -1,18 +1,14 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/book.dart';
 import '../config/reading_persona.dart';
-import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../models/discussion_note.dart';
-import '../services/ai_client.dart';
-import '../services/mcp_server.dart';
+import '../services/book_chat_streaming.dart';
 import '../services/discussion_generator.dart';
 import '../services/discussion_group_service.dart';
 import '../widgets/chat_message_item.dart';
@@ -29,12 +25,16 @@ class MultiBookChatScreen extends StatefulWidget {
   State<MultiBookChatScreen> createState() => _MultiBookChatScreenState();
 }
 
-class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
-  final _textController = TextEditingController();
-  final _scrollController = ScrollController();
+class _MultiBookChatScreenState extends State<MultiBookChatScreen>
+    with BookChatStreaming<MultiBookChatScreen> {
+  @override
+  final TextEditingController textController = TextEditingController();
+  @override
+  final ScrollController scrollController = ScrollController();
   final _uuid = const Uuid();
-  bool _isLoading = false;
-  late Conversation _conversation;
+
+  @override
+  late Conversation conversation;
 
   String get _conversationId =>
       widget.groupId != null
@@ -48,7 +48,8 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
   /// 只在开头把书列出来，性格那一整段原样复用——「引导型」这件事跟聊几本
   /// 没关系。两边各写一份的话，改了一处忘了另一处，用户会发现单本和多本
   /// 里的它性格不一样。
-  String get _systemPrompt {
+  @override
+  String get systemPrompt {
     final names = widget.books
         .map((b) {
           final a = b.author != null ? '（${b.author}）' : '';
@@ -64,256 +65,29 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
   @override
   void initState() {
     super.initState();
-    _conversation = Conversation(
+    conversation = Conversation(
       id: _conversationId,
-      systemPrompt: _systemPrompt,
+      systemPrompt: systemPrompt,
     );
-    _loadConversation();
+    loadConversation();
   }
 
   @override
   void dispose() {
-    _textController.dispose();
-    _scrollController.dispose();
+    textController.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
-  Future<Directory> get _convDir async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final dir = Directory('${appDir.path}/book_conversations');
-    if (!await dir.exists()) await dir.create(recursive: true);
-    return dir;
-  }
-
-  Future<void> _loadConversation() async {
-    try {
-      final dir = await _convDir;
-      final file = File('${dir.path}/${_conversation.id}.json');
-      if (await file.exists()) {
-        final data = jsonDecode(await file.readAsString());
-        setState(() {
-          _conversation = Conversation.fromJson(data);
-          _conversation.systemPrompt = _systemPrompt;
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveConversation() async {
-    final dir = await _convDir;
-    final file = File('${dir.path}/${_conversation.id}.json');
-    await file.writeAsString(jsonEncode(_conversation.toJson()));
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
-
-  Future<void> _sendMessage() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty || _isLoading) return;
-    _textController.clear();
-
-    setState(() {
-      _conversation.messages.add(
-        ChatMessage(id: _uuid.v4(), role: MessageRole.user, content: text),
-      );
-      _isLoading = true;
-    });
-    _scrollToBottom();
-    _continueChat();
-  }
-
-  Future<void> _continueChat() async {
-    final aiClient = context.read<AiClientProvider>().currentClient;
-    final mcpServer = context.read<McpServerProvider>().server;
-    final externalTools = context.read<ExternalMcpProvider>().allExternalTools;
-
-    if (aiClient == null) {
-      setState(() {
-        _conversation.messages.add(
-          ChatMessage(
-            id: _uuid.v4(),
-            role: MessageRole.assistant,
-            content: '请先在设置中配置 API Key',
-          ),
-        );
-        _isLoading = false;
-      });
-      return;
-    }
-
-    final allTools = [
-      ...mcpServer.registeredTools.map((r) => r.tool),
-      ...externalTools,
-    ];
-    final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
-
-    int maxRounds = 5;
-    while (maxRounds > 0) {
-      maxRounds--;
-      String? fullResponse;
-      // 思考单独攒，不进 fullResponse——那个要发回服务端当上文。
-      String? thinkingBuffer;
-
-      try {
-        await for (final event in clientWithTools.chat(
-          _conversation.messages,
-          systemPrompt: _conversation.systemPrompt,
-        )) {
-          switch (event.type) {
-            // 读书版**要**显示思考。
-            //
-            // 引导型的价值在于「它为什么这么问」——看见推理过程，比只看见
-            // 那个问题有用得多。主 App 那边思考是附加信息，这边它本身就是
-            // 内容的一部分。
-            case AiEventType.thinking:
-              thinkingBuffer = (thinkingBuffer ?? '') + (event.text ?? '');
-              _updateAssistantMessage(
-                fullResponse ?? '',
-                thinking: thinkingBuffer,
-              );
-              break;
-
-            case AiEventType.token:
-              fullResponse = (fullResponse ?? '') + (event.text ?? '');
-              _updateAssistantMessage(fullResponse);
-              break;
-
-            case AiEventType.toolCalls:
-              fullResponse = fullResponse ?? '';
-              _updateAssistantMessage(
-                fullResponse,
-                toolCalls: event.toolCalls ?? [],
-              );
-              _finalizeStreamMessage();
-              for (final tc in event.toolCalls ?? []) {
-                final toolResult = await _executeTool(mcpServer, tc);
-                _conversation.messages.add(
-                  ChatMessage(
-                    id: _uuid.v4(),
-                    role: MessageRole.toolResult,
-                    content: toolResult,
-                    toolCallId: tc.id,
-                  ),
-                );
-              }
-              fullResponse = null;
-              break;
-
-            case AiEventType.done:
-              fullResponse = event.text ?? fullResponse ?? '';
-              _updateAssistantMessage(fullResponse);
-              break;
-
-            case AiEventType.error:
-              _updateAssistantMessage(
-                event.error?.contains('400') == true
-                    ? '抱歉，该模型暂不支持图片识别'
-                    : event.error?.contains('401') == true
-                    ? 'API 密钥无效或已过期，请在设置中更新'
-                    : '抱歉，我遇到了一点问题，请再试一次',
-              );
-              _finalizeStreamMessage();
-              fullResponse = 'done';
-              break;
-          }
-        }
-      } catch (e) {
-        _updateAssistantMessage('发送消息失败: $e');
-      }
-
-      if (fullResponse != null) break;
-    }
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    _scrollToBottom();
-    _saveConversation();
-  }
-
-  Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
-    final executor =
-        mcpServer.registeredTools
-            .where((r) => r.tool.name == tc.name)
-            .firstOrNull
-            ?.executor;
-    if (executor != null) {
-      final result = await executor(tc.arguments);
-      return result.toString();
-    }
-    for (final client in context.read<ExternalMcpProvider>().clients) {
-      if (client.tools.any((t) => t.name == tc.name)) {
-        final result = await client.callTool(tc.name, tc.arguments);
-        return result.toString();
-      }
-    }
-    return '错误: 工具 ${tc.name} 未找到';
-  }
-
-  /// [thinking] 传 null = 「这次没有新的思考」，不是「清掉已有的」。
-  /// 正文每来一个 token 就重建一次这条消息，不保留的话思考会被冲掉。
-  void _updateAssistantMessage(
-    String content, {
-    List<ToolCallInfo>? toolCalls,
-    String? thinking,
-  }) {
-    setState(() {
-      if (_conversation.messages.isNotEmpty &&
-          _conversation.messages.last.role == MessageRole.assistant &&
-          _conversation.messages.last.id.startsWith('stream_')) {
-        _conversation.messages.last = ChatMessage(
-          id: _conversation.messages.last.id,
-          role: MessageRole.assistant,
-          content: content,
-          toolCalls: toolCalls,
-          thinking: thinking ?? _conversation.messages.last.thinking,
-        );
-      } else {
-        _conversation.messages.add(
-          ChatMessage(
-            id: 'stream_${_uuid.v4()}',
-            role: MessageRole.assistant,
-            content: content,
-            toolCalls: toolCalls,
-            thinking: thinking,
-          ),
-        );
-      }
-    });
-    _scrollToBottom();
-  }
-
-  void _finalizeStreamMessage() {
-    setState(() {
-      if (_conversation.messages.isNotEmpty &&
-          _conversation.messages.last.role == MessageRole.assistant &&
-          _conversation.messages.last.id.startsWith('stream_')) {
-        final old = _conversation.messages.last;
-        _conversation.messages.last = ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
-          content: old.content,
-          toolCalls: old.toolCalls,
-          thinking: old.thinking,
-        );
-      }
-    });
-  }
-
   Future<bool> _handleBack() async {
-    if (_conversation.messages.isEmpty) return true;
+    if (conversation.messages.isEmpty) return true;
 
     final result = await showDialog<String>(
       context: context,
       builder:
           (ctx) => AlertDialog(
             title: const Text('离开讨论'),
-            content: const Text('要生成本次讨论的 Discussion 笔记吗？'),
+            content: const Text('要生成本次讨论的笔记吗？'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop('no'),
@@ -325,7 +99,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
               ),
               FilledButton(
                 onPressed: () => Navigator.of(ctx).pop('generate'),
-                child: const Text('生成 Discussion'),
+                child: const Text('生成讨论笔记'),
               ),
             ],
           ),
@@ -334,7 +108,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     if (result == 'generate') {
       await _generateAndSaveDiscussion();
     } else if (result == 'save') {
-      _saveConversation();
+      saveConversation();
     }
     return true;
   }
@@ -368,7 +142,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
     if (mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Discussion 笔记已生成')));
+      ).showSnackBar(const SnackBar(content: Text('讨论笔记已生成')));
     }
   }
 
@@ -493,7 +267,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(2),
             child:
-                _isLoading
+                isLoading
                     ? const LinearProgressIndicator()
                     : const SizedBox.shrink(),
           ),
@@ -502,24 +276,24 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           children: [
             Expanded(
               child:
-                  _conversation.messages.isEmpty
+                  conversation.messages.isEmpty
                       ? _buildEmptyState(theme)
                       : Builder(
                         builder: (context) {
                           // 读书版不拆气泡，理由见 groupChatItems 的注释。
                           final items = groupChatItems(
-                            _conversation.messages,
+                            conversation.messages,
                             splitBubbles: false,
                           );
                           return ListView.builder(
-                            controller: _scrollController,
+                            controller: scrollController,
                             padding: const EdgeInsets.all(12),
                             itemCount: items.length,
                             itemBuilder:
                                 (context, index) => chatDisplayItem(
                                   items,
                                   index,
-                                  conversationId: _conversation.id,
+                                  conversationId: conversation.id,
                                 ),
                           );
                         },
@@ -574,7 +348,7 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
       children: [
         Expanded(
           child: TextField(
-            controller: _textController,
+            controller: textController,
             maxLines: 5,
             minLines: 1,
             keyboardType: TextInputType.multiline,
@@ -595,14 +369,16 @@ class _MultiBookChatScreenState extends State<MultiBookChatScreen> {
           ),
         ),
         const SizedBox(width: 4),
+        // 同 book_chat_screen：生成中禁用发送，不再摆一个点了没反应的停止键。
         IconButton(
           icon: Icon(
-            _isLoading
-                ? PhosphorIconsRegular.stop
-                : PhosphorIconsRegular.paperPlaneTilt,
-            color: theme.colorScheme.primary,
+            PhosphorIconsRegular.paperPlaneTilt,
+            color:
+                isLoading
+                    ? theme.colorScheme.onSurfaceVariant
+                    : theme.colorScheme.primary,
           ),
-          onPressed: _isLoading ? null : _sendMessage,
+          onPressed: isLoading ? null : sendMessage,
         ),
       ],
     ),

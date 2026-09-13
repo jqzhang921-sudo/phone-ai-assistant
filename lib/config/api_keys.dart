@@ -7,6 +7,9 @@ class ApiKeyConfig {
   static const _endpointPrefix = 'api_endpoint_';
   static const _modelPrefix = 'api_model_';
 
+  /// 「现在用的是哪一个」。
+  static const _activeProviderKey = 'api_active_provider';
+
   final String provider;
   final String name;
   String? apiKey;
@@ -36,9 +39,12 @@ class ApiKeyConfig {
     ),
     ApiKeyConfig(
       provider: 'mimo',
-      name: 'MIMO Vision',
-      endpoint: 'https://api.mimo.com/v1',
-      model: 'mimo-vision',
+      // 小米的 MIMO，OpenAI 兼容格式。地址和模型跟 [VisionService] 用的是同一
+      // 份——那边「拿它看图」，这边「拿它聊天」，本来就是一个服务。
+      // （原来写的是 api.mimo.com / mimo-vision，那个域名根本不存在。）
+      name: '小米 MIMO',
+      endpoint: 'https://api.xiaomimimo.com/v1',
+      model: 'mimo-v2.5',
     ),
     ApiKeyConfig(
       provider: 'custom',
@@ -76,14 +82,35 @@ class ApiKeyService {
     return '';
   }
 
+  /// 空字符串按「没有」算。
+  ///
+  /// [AiClient] 那边是拿 `endpoint ?? '默认地址'` 判断的，给它一个空串，它就
+  /// 拼出 `/chat/completions` 这种半截地址，还查不出为什么。
+  static String? _nonEmpty(String? s) => (s == null || s.isEmpty) ? null : s;
+
+  /// 读出可选的全部「兼容格式」。
+  ///
+  /// **四个内置格式永远都在**，存过的值只往里填字段，不决定哪一项出场。
+  ///
+  /// 这里原来是「`api_providers` 里有谁就返回谁」，而 [saveKey] 只往里加
+  /// *当前选中的这一个*——于是保存过第一次之后，列表就只剩他刚选的那一项，
+  /// 另外三个（连 MIMO 一起）凭空消失，再也选不回去。用户看到的就是
+  /// 「选过一次兼容格式就退不出来了」。
   static Future<List<ApiKeyConfig>> loadKeys() async {
     final prefs = await SharedPreferences.getInstance();
-    final providers = prefs.getStringList('api_providers') ?? [];
-    if (providers.isEmpty) {
-      return ApiKeyConfig.defaults;
-    }
+    final saved = prefs.getStringList('api_providers') ?? [];
+    // 内置的按固定顺序排在前面；用户手里多出来的（以后支持自建时才会有）
+    // 按存下来的顺序接在后面。
+    final order = <String>[
+      for (final d in ApiKeyConfig.defaults) d.provider,
+      ...saved.where((p) => !ApiKeyConfig.defaults.any((d) => d.provider == p)),
+    ];
+
     final result = <ApiKeyConfig>[];
-    for (final p in providers) {
+    for (final p in order) {
+      final fallback =
+          ApiKeyConfig.defaults.where((d) => d.provider == p).firstOrNull;
+
       // 1) Try secure storage
       String? key = await _secureStorage.read(
         key: '${ApiKeyConfig._keyPrefix}$p',
@@ -97,20 +124,16 @@ class ApiKeyService {
       final endpoint =
           prefs.getString('${ApiKeyConfig._endpointPrefix}$p') ?? '';
       final model = prefs.getString('${ApiKeyConfig._modelPrefix}$p') ?? '';
-      final name =
-          prefs.getString('api_name_$p') ??
-          ApiKeyConfig.defaults
-              .where((d) => d.provider == p)
-              .firstOrNull
-              ?.name ??
-          p;
+      final name = prefs.getString('api_name_$p') ?? fallback?.name ?? p;
       result.add(
         ApiKeyConfig(
           provider: p,
           name: name,
           apiKey: (key.isNotEmpty) ? key : null,
-          endpoint: endpoint.isEmpty ? null : endpoint,
-          model: model.isEmpty ? null : model,
+          // 一次都没存过的，填上内置的地址和模型——他不该为了知道 OpenAI 的
+          // 地址长什么样去翻文档，光看这一眼就知道了。
+          endpoint: _nonEmpty(endpoint) ?? _nonEmpty(fallback?.endpoint),
+          model: _nonEmpty(model) ?? _nonEmpty(fallback?.model),
         ),
       );
     }
@@ -119,6 +142,8 @@ class ApiKeyService {
 
   static Future<void> saveKey(ApiKeyConfig config) async {
     final prefs = await SharedPreferences.getInstance();
+    // 这份清单只记「除内置的四个之外，他还配过谁」，**不再决定设置页列出
+    // 哪些格式**——那是 [loadKeys] 的事，它现在把内置的几个一直摆着。
     final providers = prefs.getStringList('api_providers') ?? [];
     if (!providers.contains(config.provider)) {
       providers.add(config.provider);
@@ -142,8 +167,31 @@ class ApiKeyService {
     );
     await prefs.setString('api_name_${config.provider}', config.name);
 
+    // 「保存」这个动作本身就是「以后就用这个」——顺手记下来，见 [pickActive]。
+    // key 是空的也照记：读的时候会跳过没有 key 的那一个。
+    await prefs.setString(ApiKeyConfig._activeProviderKey, config.provider);
+
     // Clean up any lingering plain-text copy
     await prefs.remove('${ApiKeyConfig._keyPrefix}${config.provider}');
+  }
+
+  /// 「现在到底用的是哪一个」——**只有这一个地方回答这个问题**。
+  ///
+  /// 顺序：
+  /// 1. 上次按过「保存」的那一个（[saveKey] 记下的），但它得有 key；
+  /// 2. 否则第一个填了 key 的——老版本没有第 1 条时就是这个行为，原样保留；
+  /// 3. 一个 key 都没有 → null。
+  ///
+  /// 为什么非要有第 1 条：内置的四个格式现在一直在列表里，谁都能填上 key，
+  /// 于是「第一个填了 key 的」永远轮不到后面那几个——他把 key 填进 MIMO 存了，
+  /// 重启之后用的还是 openai，界面上还说不出哪里不对。
+  static Future<ApiKeyConfig?> pickActive(List<ApiKeyConfig> configs) async {
+    if (configs.isEmpty) return null;
+    final prefs = await SharedPreferences.getInstance();
+    final active = prefs.getString(ApiKeyConfig._activeProviderKey);
+    final chosen = configs.where((c) => c.provider == active).firstOrNull;
+    if (chosen != null && (chosen.apiKey ?? '').isNotEmpty) return chosen;
+    return configs.where((c) => (c.apiKey ?? '').isNotEmpty).firstOrNull;
   }
 
   static Future<void> deleteKey(String provider) async {

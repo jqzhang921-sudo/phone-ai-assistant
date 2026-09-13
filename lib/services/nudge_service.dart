@@ -558,11 +558,13 @@ class NudgeService {
   /// 长期的那部分由记忆摘要负责。
   static Future<String> _recentTranscript({int take = 8}) async {
     try {
-      final convs = await StorageService.listConversations();
+      // 只要尾部几条正文，走索引就够——这里也是「每次 nudge 都可能走到」的
+      // 一条路，没理由为了一小段上下文去解析图片。
+      final convs = await StorageService.listConversationSummaries();
       if (convs.isEmpty) return '';
       convs.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       final msgs =
-          convs.first.messages
+          convs.first.lines
               .where(
                 (m) =>
                     (m.role == MessageRole.user ||

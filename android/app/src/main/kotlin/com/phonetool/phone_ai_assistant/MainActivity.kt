@@ -27,6 +27,15 @@ class MainActivity : FlutterActivity() {
         private const val SAMPLE_RATE = 16000
     }
 
+    // 这里曾经有过一个 attachBaseContext 覆写：把 App 存的主题翻译成这个 Activity 的
+    // uiMode，想让冷启动那层启动窗口跟着 App 的深色走。**试过，无效，已删**——
+    // Android 12+ 的启动画面是**系统**合成的（拿 manifest 里的主题、按系统的深浅挑
+    // values-night），那一帧在 App 进程起来之前就画好了，attachBaseContext 再早也够不着。
+    // 留着不只有名无实，还有副作用：它会把 Activity 的 configuration 钉死成 App 的
+    // 选择，而 Flutter 的 platformBrightness 是从 view 的 configuration 推的——于是
+    // 「启动时是深色」的情况下再切回「跟随系统」，App 会以为系统也是深色。
+    // 真正的解法见 res/values/styles.xml 里的 windowDisablePreview。
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->

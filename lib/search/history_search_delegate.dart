@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../models/chat_message.dart';
-import '../models/conversation.dart';
+import '../models/conversation_summary.dart';
 import 'search_result_model.dart';
 import '../config/app_shape.dart';
 
+/// 搜历史对话。
+///
+/// 手里拿的是[纯文本索引][ConversationSummary]，不是完整对话——**这是这块内存
+/// 收益的落点**：原来这里握着的是每一场对话连同全部 base64 图片，而它由
+/// `chat_screen` 持有且永不释放。索引里有搜索需要的全部东西（标题 + 每条正文
+/// + 原下标），一个字都不少，只是没有图片。
 class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
-  final List<Conversation> _allConversations;
+  final List<ConversationSummary> _allConversations;
 
   HistorySearchDelegate(this._allConversations)
     : super(searchFieldLabel: '搜索历史对话...');
@@ -54,7 +60,7 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
           leading: const Icon(PhosphorIconsRegular.chatCircle),
           title: Text(conv.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            '${conv.messages.length} 条消息 · ${conv.model}',
+            '${conv.messageCount} 条消息 · ${conv.model}',
             style: const TextStyle(fontSize: 12),
           ),
           onTap:
@@ -77,28 +83,27 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
       }
 
       // Search messages
-      for (int i = 0; i < conv.messages.length; i++) {
-        final msg = conv.messages[i];
-        // Skip internal tool messages
-        if (msg.role == MessageRole.toolCall ||
-            msg.role == MessageRole.toolResult) {
-          continue;
-        }
-        final contentLower = msg.content.toLowerCase();
+      //
+      // 索引里已经剔掉了工具消息（toolCall/toolResult），这里不用再筛一遍——
+      // 口径在 ConversationSummary.fromConversation 那一边，两处只要对得上就行。
+      // line.index 是它在原 messages 里的下标，不是在这段正文里的序号：
+      // 命中了要滚到那条消息，差一位就滚错地方。
+      for (final line in conv.lines) {
+        final contentLower = line.content.toLowerCase();
         int start = 0;
         while (true) {
           final idx = contentLower.indexOf(lower, start);
           if (idx == -1) break;
-          final snippetStart = (idx - 30).clamp(0, msg.content.length);
+          final snippetStart = (idx - 30).clamp(0, line.content.length);
           final snippetEnd = (idx + query.length + 30).clamp(
             0,
-            msg.content.length,
+            line.content.length,
           );
           matches.add(
             MessageMatch(
-              message: msg,
-              messageIndex: i,
-              snippet: msg.content.substring(snippetStart, snippetEnd),
+              role: line.role,
+              messageIndex: line.index,
+              snippet: line.content.substring(snippetStart, snippetEnd),
             ),
           );
           start = idx + 1;
@@ -224,13 +229,13 @@ class HistorySearchDelegate extends SearchDelegate<HistorySearchSelection?> {
   Widget _buildSnippet(
     BuildContext context,
     MessageMatch match,
-    Conversation conversation,
+    ConversationSummary conversation,
   ) {
     final theme = Theme.of(context);
     final icon =
         match.isTitleMatch
             ? PhosphorIconsRegular.textT
-            : match.message?.role == MessageRole.user
+            : match.role == MessageRole.user
             ? PhosphorIconsRegular.user
             : PhosphorIconsRegular.robot;
 

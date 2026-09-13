@@ -12,6 +12,7 @@ import '../services/shared_text.dart';
 import '../services/storage_service.dart';
 import '../widgets/app_surface.dart';
 import 'book_chat_screen.dart';
+import 'chat_search_screen.dart';
 import 'multi_book_chat_screen.dart';
 import 'reading_settings_screen.dart';
 import 'shared_text_sheet.dart';
@@ -158,7 +159,7 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
             (_) => BookChatScreen(
               // 书架上有就用它的身份；没有就用书名兜一个稳定的键，
               // 这样同一本书再聊也能接上上次的记录。
-              bookId: known?.id ?? 'adhoc_${trimmed.hashCode}',
+              bookId: known?.id ?? BookChatStore.adhocId(trimmed),
               bookTitle: known?.title ?? trimmed,
               bookAuthor: known?.author,
               wereadBookId: known?.wereadBookId,
@@ -178,9 +179,7 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
             content: TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '书名就行，作者可写可不写',
-              ),
+              decoration: const InputDecoration(hintText: '书名就行，作者可写可不写'),
               onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
             ),
             actions: [
@@ -189,8 +188,7 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
                 child: const Text('取消'),
               ),
               FilledButton(
-                onPressed:
-                    () => Navigator.of(ctx).pop(controller.text.trim()),
+                onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
                 child: const Text('开聊'),
               ),
             ],
@@ -203,18 +201,20 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
   /// 书架上有同名的就用那一条的身份进去——跟「说本书」和分享进来那两条路
   /// 同一套规矩。三个入口行为不一致的话，用户是看不出原因的。
   Future<void> _openChat(BookChatEntry chat) async {
-    final known = _books.where((b) => b.id == chat.bookId).firstOrNull ??
+    final known =
+        _books.where((b) => b.id == chat.bookId).firstOrNull ??
         _books.where((b) => b.title.trim() == chat.title.trim()).firstOrNull;
 
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => BookChatScreen(
-          // bookId 用记录里那个，换了就接不上原来的对话文件。
-          bookId: chat.bookId,
-          bookTitle: known?.title ?? chat.title,
-          bookAuthor: known?.author,
-          wereadBookId: known?.wereadBookId,
-        ),
+        builder:
+            (_) => BookChatScreen(
+              // bookId 用记录里那个，换了就接不上原来的对话文件。
+              bookId: chat.bookId,
+              bookTitle: known?.title ?? chat.title,
+              bookAuthor: known?.author,
+              wereadBookId: known?.wereadBookId,
+            ),
       ),
     );
     _load();
@@ -281,13 +281,11 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
   }
 
   Future<void> _openGroup(DiscussionGroup group) async {
-    final picked =
-        _books.where((b) => group.bookIds.contains(b.id)).toList();
+    final picked = _books.where((b) => group.bookIds.contains(b.id)).toList();
     if (picked.isEmpty) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder:
-            (_) => MultiBookChatScreen(books: picked, groupId: group.id),
+        builder: (_) => MultiBookChatScreen(books: picked, groupId: group.id),
       ),
     );
     _load();
@@ -323,7 +321,15 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
                   ),
                 ),
                 IconButton(
-                  tooltip: '模型设置',
+                  tooltip: '搜聊过的内容',
+                  icon: Icon(
+                    PhosphorIconsRegular.magnifyingGlass,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  onPressed: _openSearch,
+                ),
+                IconButton(
+                  tooltip: '设置',
                   icon: Icon(
                     PhosphorIconsRegular.gearSix,
                     color: scheme.onSurfaceVariant,
@@ -333,7 +339,10 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
               ],
             ),
             const SizedBox(height: 16),
-            if (_needsKey) ...[_keyBanner(theme, scheme), const SizedBox(height: 12)],
+            if (_needsKey) ...[
+              _keyBanner(theme, scheme),
+              const SizedBox(height: 12),
+            ],
             _startCard(theme, scheme),
             // 剪贴板里没东西就不出现——摆一个点了会说「空的」的按钮，
             // 等于让他自己去发现这里没用。
@@ -375,10 +384,22 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
     );
   }
 
+  /// 搜聊过的内容。
+  ///
+  /// 单独一页而不是首页顶上一个输入框：首页上那两张大卡（说本书 / 粘一段）
+  /// 是这一页的主张——**开了口就能聊**。顶上再压一个搜索框，等于一进门
+  /// 先问「你要找旧的还是开新的」，而绝大多数时候答案是开新的。
+  Future<void> _openSearch() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ChatSearchScreen()));
+    _load();
+  }
+
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ReadingSettingsScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ReadingSettingsScreen()));
     _load();
   }
 
@@ -527,6 +548,32 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
     );
   }
 
+  /// 多本讨论的标。
+  ///
+  /// 多本和单本在「聊过的书」里本来长得一模一样：同一张卡、同样是标题 + 一行小字，
+  /// 而群组名常常就是几本书名拼出来的——扫一眼分不出点进去是哪种。单本那行右侧
+  /// 是「N 条」，这边就在同一个位置放个带底的标签：位置眼熟，样子不一样。
+  ///
+  /// 样式抄 `bookshelf_screen.dart` 的 `_statusPill`（同样 10.5 / w600 / 淡底），
+  /// 两个页面看着才像一套。
+  Widget _multiTag(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.onSurface.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(
+        '多本',
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
   Widget _groupTile(
     DiscussionGroup group,
     ThemeData theme,
@@ -549,11 +596,19 @@ class _ReadingHomeScreenState extends State<ReadingHomeScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  group.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        group.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _multiTag(scheme),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(

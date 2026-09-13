@@ -1,15 +1,19 @@
 import '../models/chat_message.dart';
-import '../models/conversation.dart';
+import '../models/conversation_summary.dart';
 
 /// A single match within a conversation
+///
+/// 带的是 [MessageRole] 而不是整条 `ChatMessage`：命中之后只需要知道
+/// 「这是他说的还是它说的」来挑图标，而带着整条消息就等于把正文（可能还有
+/// base64 图片）钉在搜索结果上。见 [ConversationSummary]。
 class MessageMatch {
-  final ChatMessage? message;
+  final MessageRole? role;
   final int? messageIndex;
   final String snippet;
   final bool isTitleMatch;
 
   const MessageMatch({
-    this.message,
+    this.role,
     this.messageIndex,
     required this.snippet,
     this.isTitleMatch = false,
@@ -18,7 +22,7 @@ class MessageMatch {
 
 /// Result of searching a single conversation
 class ConversationSearchResult {
-  final Conversation conversation;
+  final ConversationSummary conversation;
   final List<MessageMatch> matches;
 
   const ConversationSearchResult(this.conversation, this.matches);
@@ -27,8 +31,11 @@ class ConversationSearchResult {
 }
 
 /// Value returned by SearchDelegate when user taps a result
+///
+/// 选中之后**要按 id 去把完整对话读出来**才能打开——带上来的只是索引。
+/// 那一读在 `chat_screen._openConversation` 里。
 class HistorySearchSelection {
-  final Conversation conversation;
+  final ConversationSummary conversation;
   final int? scrollToMessageIndex;
 
   const HistorySearchSelection({

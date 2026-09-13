@@ -247,13 +247,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _periodForecastShared = await PeriodLog.forecastSharedWithAi();
     _periodForecast = forecastFrom(await PeriodLog.list());
 
-    // 只在首次打开时自动选中一个配置（避免每次保存后被跳走）
+    // 只在首次打开时自动选中一个（避免每次保存后被跳走）。
+    //
+    // 挑法和 [buildStoredAiClient] 用的是同一个函数——上面「对话模型」那一行
+    // 显示的是它，真正拿去发请求的也是它，三处必须是同一个答案。
+    // 原来这里挑的是「第一个**没填** key 的」，本意是提醒他补上；可内置格式
+    // 现在四个一直在，那样一进这页就跳到空白的那一项上去了。
     if (_selectedProvider == null && _configs.isNotEmpty) {
-      final missingKey =
-          _configs
-              .where((c) => c.apiKey == null || c.apiKey!.isEmpty)
-              .firstOrNull;
-      _selectConfig(missingKey ?? _configs.first);
+      _selectConfig(await ApiKeyService.pickActive(_configs) ?? _configs.first);
     }
 
     setState(() => _loading = false);
@@ -1555,8 +1556,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadOwnPersonaCount() async {
     try {
-      final convs = await StorageService.listConversations();
-      final n = convs.where((c) => (c.systemPrompt ?? '').isNotEmpty).length;
+      // 索引里只留了「有没有人格」这一个布尔值——这里就是那个唯一的用处，
+      // 没必要为它把每段对话的 systemPrompt 全文都读进内存。
+      final convs = await StorageService.listConversationSummaries();
+      final n = convs.where((c) => c.hasSystemPrompt).length;
       if (!mounted) return;
       setState(() => _ownPersonaCount = n);
     } catch (e) {

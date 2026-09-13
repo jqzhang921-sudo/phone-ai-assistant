@@ -4,11 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../config/api_keys.dart';
 import '../config/app_shape.dart';
+import '../config/settings.dart';
 import '../services/ai_client.dart';
 import '../services/app_providers.dart';
 import '../widgets/app_surface.dart';
 
-/// 读书版的设置：只有模型配置，别的一概没有。
+/// 读书版的设置：模型配置 + 外观，别的一概没有。
 ///
 /// ## 为什么不复用主 App 的设置页
 ///
@@ -16,7 +17,15 @@ import '../widgets/app_surface.dart';
 /// 语音、备份⋯⋯读书版一个都用不上。整页搬过来，等于把用不着的功能全摆在
 /// 他面前，还得挨个解释「这个你别管」。
 ///
-/// 这一页只干一件事：**让他能填上 key 把 app 跑起来**。
+/// 这一页只干两件事：**让他能填上 key 把 app 跑起来**，以及**把深浅色
+/// 调成自己要的**。
+///
+/// ## 外观那一栏是后补的
+///
+/// `themeMode` 一直存在设置里，主 App 也一直能改；读书版两头都缺——
+/// MaterialApp 没读它（见 main_reading.dart），这一页也没有入口。
+/// 于是**深浅完全被系统牵着走**：系统不切，App 就不会变，
+/// 想手动调一次都做不到。
 class ReadingSettingsScreen extends StatefulWidget {
   const ReadingSettingsScreen({super.key});
 
@@ -50,17 +59,15 @@ class _ReadingSettingsScreenState extends State<ReadingSettingsScreen> {
 
   Future<void> _load() async {
     final configs = await ApiKeyService.loadKeys();
+    // 上次保存的那个优先（挑法和真正建客户端时是同一个函数），省得他每次
+    // 进来都要找自己那一项。
+    final active = await ApiKeyService.pickActive(configs);
     if (!mounted) return;
     setState(() {
       _configs = configs;
       _loading = false;
     });
-    // 已经填过 key 的优先选中，省得他每次进来都要找自己那一项。
-    final filled = configs.firstWhere(
-      (c) => (c.apiKey ?? '').isNotEmpty,
-      orElse: () => configs.first,
-    );
-    _select(filled);
+    _select(active ?? configs.first);
   }
 
   void _select(ApiKeyConfig c) {
@@ -96,6 +103,67 @@ class _ReadingSettingsScreenState extends State<ReadingSettingsScreen> {
     );
   }
 
+  /// 深色还是浅色。
+  ///
+  /// 三个都给：只给「深/浅」两个的话，想跟着系统走的人就没得选了，
+  /// 而他原来一直在跟着系统走。
+  ///
+  /// 顺序按「从最亮到最自动」排，不按 [ThemeMode.values] 的声明顺序
+  /// （那个是 system 打头），省得每次都要在脑子里重新找一遍。
+  Widget _appearance(ThemeData theme, ColorScheme scheme) {
+    final current =
+        context.watch<SettingsProvider>().settings?.themeMode ??
+        ThemeMode.system;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('外观', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final m in const [
+              ThemeMode.light,
+              ThemeMode.dark,
+              ThemeMode.system,
+            ])
+              ChoiceChip(
+                label: Text(_modeLabel(m)),
+                selected: current == m,
+                onSelected: (_) => _setThemeMode(m),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static String _modeLabel(ThemeMode m) => switch (m) {
+    ThemeMode.light => '浅色',
+    ThemeMode.dark => '深色',
+    ThemeMode.system => '跟随系统',
+  };
+
+  Future<void> _setThemeMode(ThemeMode m) async {
+    final sp = context.read<SettingsProvider>();
+
+    if (sp.settings != null) {
+      // 存进设置 + 通知，MaterialApp 立刻用新的 themeMode 重建。
+      await sp.setThemeMode(m);
+      return;
+    }
+
+    // 正常情况走不到这儿——main_reading 已经把读出来的设置塞进 provider 了。
+    // 留着是防「点了没反应」：那是所有毛病里最难查的一种，而且这个按钮
+    // 一点就看得出来，所以宁可在这儿多写三行。
+    final s = await AppSettings.load();
+    s.themeMode = m;
+    await s.save();
+    sp.setSettings(s);
+  }
+
   Future<void> _paste(TextEditingController c) async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim();
@@ -109,13 +177,15 @@ class _ReadingSettingsScreenState extends State<ReadingSettingsScreen> {
     final scheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('模型设置')),
+      appBar: AppBar(title: const Text('设置')),
       body:
           _loading
               ? const Center(child: CircularProgressIndicator())
               : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                 children: [
+                  _appearance(theme, scheme),
+                  const SizedBox(height: 28),
                   Text(
                     '选一个服务商，填上你自己的 API Key。'
                     'Key 存在这台手机上，不会发到别处。',

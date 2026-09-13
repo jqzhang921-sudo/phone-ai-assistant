@@ -52,6 +52,27 @@ class BookChatStore {
   static Future<File> fileFor(String bookId) async =>
       _fileFor(await dir(), bookId);
 
+  /// 给「说本书」/分享进来这种没有书架身份的书，拼一个稳定的临时 id。
+  ///
+  /// ## 为什么不用 hashCode
+  ///
+  /// 原来用 `'adhoc_${title.hashCode}'`。Dart 的 String.hashCode **不保证跨版本
+  /// 稳定**，而它要拿去拼对话文件名 `book_<id>.json`——哪天升级 Flutter 换了
+  /// 实现，同一本书就接不上旧记录，症状是「记录凭空消失」。用书名本身当 key
+  /// 就没这个问题：名字不变，key 就不变。
+  ///
+  /// 规范化：转小写、只留字母数字和 CJK/假名/谚文，超长截断。这样 key 既是
+  /// 稳定标识，也是文件系统安全的文件名片段（不含路径分隔符）。
+  static String adhocId(String title) {
+    final normalized = title.trim().toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9一-鿿㐀-䶿぀-ヿ가-힯]'),
+      '',
+    );
+    final key =
+        normalized.length > 40 ? normalized.substring(0, 40) : normalized;
+    return 'adhoc_${key.isEmpty ? 'book' : key}';
+  }
+
   /// 列出所有单本讨论，新的在前。
   ///
   /// 一条读不出来就跳过那一条，不整个失败——这是他自己的记录，
@@ -73,12 +94,23 @@ class BookChatStore {
     }
   }
 
+  /// 从文件名还原 bookId：`book_<bookId>.json` 中间那一段。
+  ///
+  /// 不是这个形状就返回 null。抽出来是因为搜索那边也要认同一个文件名
+  /// （见 [BookChatSearch]）——两处各写一遍前缀长度的话，
+  /// 哪天命名改了只会有一处跟着改，另一处静静地什么都搜不到。
+  static String? bookIdFromFileName(String fileName) {
+    if (!fileName.startsWith('book_') || !fileName.endsWith('.json')) {
+      return null;
+    }
+    final id = fileName.substring(5, fileName.length - 5);
+    return id.isEmpty ? null : id;
+  }
+
   static BookChatEntry? _parse(File f) {
     try {
-      final name = f.uri.pathSegments.last;
-      if (!name.startsWith('book_')) return null;
-      final bookId = name.substring(5, name.length - 5); // 去掉 book_ 和 .json
-      if (bookId.isEmpty) return null;
+      final bookId = bookIdFromFileName(f.uri.pathSegments.last);
+      if (bookId == null) return null;
 
       final data = jsonDecode(f.readAsStringSync());
       if (data is! Map) return null;
@@ -114,7 +146,7 @@ class BookChatStore {
 
     return BookChatEntry(
       bookId: bookId,
-      title: _title(data, bookId),
+      title: titleOf(data, bookId: bookId),
       preview: preview.length > 60 ? '${preview.substring(0, 60)}…' : preview,
       // 消息上没时间戳就退回文件修改时间：排序总得有个依据。
       lastAt:
@@ -137,7 +169,10 @@ class BookChatStore {
   ///
   /// 好在书名其实一直在文件里：系统提示的最后一句就是「这次聊的是《X》」。
   /// 从那儿把它捞回来，老记录不用打开也能显示对。
-  static String _title(Map data, String bookId) {
+  ///
+  /// 公开是因为搜索页也要显示它——搜出来的每条结果都得说清楚是哪本书，
+  /// 不然同一句话在哪本书里说的就分不出来了。
+  static String titleOf(Map data, {required String bookId}) {
     final stored = (data['title']?.toString() ?? '').trim();
     if (stored.isNotEmpty && stored != '新对话') return stored;
 

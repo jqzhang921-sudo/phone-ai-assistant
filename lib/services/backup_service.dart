@@ -50,6 +50,9 @@ class BackupService {
     'bookshelf_ignored_weread_ids',
     'chat_background_preset',
     'api_providers',
+    // 上次保存的那个格式（不是密钥，就是个 id）。不导的话，恢复之后又回到
+    // 「第一个填了 key 的」——他明明选的不是那个。
+    'api_active_provider',
     // 稳定事实（关于用户是谁）。这一条**最不能漏**：日记和收藏丢了还能从
     // 对话里重新长出来，这层是它对用户的全部认识，换手机丢了就是从零重认识。
     // 上面 bookshelf_books 那次就是漏在这个列表里，别再来一遍。

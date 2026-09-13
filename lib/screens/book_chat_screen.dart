@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,11 +8,10 @@ import '../config/reading_persona.dart';
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../models/discussion_note.dart';
-import '../services/ai_client.dart';
 import '../services/book_chat_store.dart';
+import '../services/book_chat_streaming.dart';
 import 'chat_export_screen.dart';
 import '../services/book_lookup.dart';
-import '../services/mcp_server.dart';
 import '../widgets/chat_message_item.dart';
 import '../services/discussion_generator.dart';
 import '../services/reader_traces.dart';
@@ -46,13 +44,16 @@ class BookChatScreen extends StatefulWidget {
   State<BookChatScreen> createState() => _BookChatScreenState();
 }
 
-class _BookChatScreenState extends State<BookChatScreen> {
-  final _textController = TextEditingController();
-  final _scrollController = ScrollController();
+class _BookChatScreenState extends State<BookChatScreen>
+    with BookChatStreaming<BookChatScreen> {
+  @override
+  final TextEditingController textController = TextEditingController();
+  @override
+  final ScrollController scrollController = ScrollController();
   final _uuid = const Uuid();
-  bool _isLoading = false;
 
-  late Conversation _conversation;
+  @override
+  late Conversation conversation;
 
   /// 读书版的人设见 [readingPersona]。
   ///
@@ -67,7 +68,8 @@ class _BookChatScreenState extends State<BookChatScreen> {
   /// 顺序是有讲究的。资料在前、他的痕迹在后，因为**后面的更可信**：
   /// 书目资料可能查错了书，他划的句子不会。两段对不上的时候，
   /// 提示词里各自都写了「以用户为准」，位置再帮一把。
-  String get _systemPrompt {
+  @override
+  String get systemPrompt {
     final base = readingPromptFor(
       title: widget.bookTitle,
       author: widget.bookAuthor,
@@ -112,19 +114,48 @@ class _BookChatScreenState extends State<BookChatScreen> {
   @override
   void initState() {
     super.initState();
-    _conversation = Conversation(
+    conversation = Conversation(
       // 书名必须写进去：首页列单本讨论时就是读这个字段。
       // 不写的话默认是「新对话」，一整列全叫这个，等于没列。
       id: 'book_${widget.bookId}',
       title: widget.bookTitle,
-      systemPrompt: _systemPrompt,
+      systemPrompt: systemPrompt,
     );
     _loaded = _loadConversation();
     // 两件事并行：一个走公网书库，一个走微信读书接口 + 本地，互不依赖。
     // 串起来等于把开聊前的等待翻倍。
     _lookup = Future.wait([_lookupBook(), _gatherTraces()]);
     final seed = widget.initialInput?.trim();
-    if (seed != null && seed.isNotEmpty) _textController.text = seed;
+    if (seed != null && seed.isNotEmpty) textController.text = seed;
+  }
+
+  @override
+  void dispose() {
+    textController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 单本讨论要发之前，先等书目查询和划线收集落地（最多 4 秒），
+  /// 网不通的时候不能把他卡在这儿。
+  @override
+  Future<void> beforeTurn() async {
+    final pending = _lookup;
+    if (pending != null) {
+      _lookup = null;
+      await pending.timeout(const Duration(seconds: 4), onTimeout: () {});
+    }
+  }
+
+  /// 读旧记录 + 补上早期记录漏写的书名。
+  Future<void> _loadConversation() async {
+    await loadConversation();
+    if (!mounted) return;
+    // 老记录是在「书名没写进去」那版存的，标题会是「新对话」。
+    // 每次打开补一次，旧记录也就跟着修好了。
+    if (conversation.title != widget.bookTitle) {
+      setState(() => conversation.title = widget.bookTitle);
+    }
   }
 
   /// 开聊就查一次，不问模型的意见。
@@ -139,7 +170,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
     if (facts == null || !mounted) return;
     setState(() {
       _bookFacts = facts;
-      _conversation.systemPrompt = _systemPrompt;
+      conversation.systemPrompt = systemPrompt;
     });
   }
 
@@ -152,7 +183,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
     if (traces.isEmpty || !mounted) return;
     setState(() {
       _traces = traces;
-      _conversation.systemPrompt = _systemPrompt;
+      conversation.systemPrompt = systemPrompt;
     });
     await _announceTraces(traces);
   }
@@ -168,7 +199,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
     await _loaded;
     if (!mounted) return;
     // 只在全新的对话里说一次。聊过之后再插一条会打断上下文。
-    if (_conversation.messages.isNotEmpty) return;
+    if (conversation.messages.isNotEmpty) return;
     final bits = <String>[
       if (traces.highlightTotal > 0) '${traces.highlightTotal} 条划线',
       if (traces.thoughts.isNotEmpty) '${traces.thoughts.length} 条想法',
@@ -176,7 +207,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
     ];
     if (bits.isEmpty) return;
     setState(() {
-      _conversation.messages.add(
+      conversation.messages.add(
         ChatMessage(
           id: _uuid.v4(),
           role: MessageRole.assistant,
@@ -186,267 +217,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
         ),
       );
     });
-    _saveConversation();
-  }
-
-  @override
-  void dispose() {
-    _textController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  /// 目录归 [BookChatStore] 管——首页也要读同一个地方，
-  /// 两处各写一份路径迟早会分叉。
-  Future<Directory> get _bookConvDir => BookChatStore.dir();
-
-  Future<void> _loadConversation() async {
-    try {
-      final dir = await _bookConvDir;
-      final file = File('${dir.path}/${_conversation.id}.json');
-      if (await file.exists()) {
-        final data = jsonDecode(await file.readAsString());
-        setState(() {
-          _conversation = Conversation.fromJson(data);
-          // always refresh system prompt to latest
-          _conversation.systemPrompt = _systemPrompt;
-          // 老记录是在「书名没写进去」那版存的，标题会是「新对话」。
-          // 每次打开补一次，旧记录也就跟着修好了。
-          _conversation.title = widget.bookTitle;
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _saveConversation() async {
-    final dir = await _bookConvDir;
-    final file = File('${dir.path}/${_conversation.id}.json');
-    await file.writeAsString(jsonEncode(_conversation.toJson()));
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
-
-  Future<void> _sendMessage() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty || _isLoading) return;
-    _textController.clear();
-
-    final userMsg = ChatMessage(
-      id: _uuid.v4(),
-      role: MessageRole.user,
-      content: text,
-    );
-
-    setState(() {
-      _conversation.messages.add(userMsg);
-      _isLoading = true;
-    });
-    _scrollToBottom();
-    _continueChat();
-  }
-
-  Future<void> _continueChat() async {
-    // 等查询落地再发，但最多等 4 秒——网不通的时候不能把他卡在这儿。
-    // BookLookup 自己也有 6 秒超时，这一层只是为了「他打字比网快」那一下。
-    final pending = _lookup;
-    if (pending != null) {
-      _lookup = null;
-      await pending.timeout(const Duration(seconds: 4), onTimeout: () {});
-      if (!mounted) return;
-    }
-
-    final aiClient = context.read<AiClientProvider>().currentClient;
-    final mcpServer = context.read<McpServerProvider>().server;
-    final externalTools = context.read<ExternalMcpProvider>().allExternalTools;
-
-    if (aiClient == null) {
-      setState(() {
-        _conversation.messages.add(
-          ChatMessage(
-            id: _uuid.v4(),
-            role: MessageRole.assistant,
-            content: '请先在设置中配置 API Key',
-          ),
-        );
-        _isLoading = false;
-      });
-      return;
-    }
-
-    final allTools = [
-      ...mcpServer.registeredTools.map((r) => r.tool),
-      ...externalTools,
-    ];
-    final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
-
-    int maxRounds = 5;
-    while (maxRounds > 0) {
-      maxRounds--;
-      String? fullResponse;
-      // 思考单独攒，不进 fullResponse——那个要发回服务端当上文。
-      String? thinkingBuffer;
-
-      try {
-        await for (final event in clientWithTools.chat(
-          _conversation.messages,
-          systemPrompt: _conversation.systemPrompt,
-        )) {
-          switch (event.type) {
-            // 读书版**要**显示思考。
-            //
-            // 引导型的价值在于「它为什么这么问」——看见推理过程，比只看见
-            // 那个问题有用得多。主 App 那边思考是附加信息，这边它本身就是
-            // 内容的一部分。
-            case AiEventType.thinking:
-              thinkingBuffer = (thinkingBuffer ?? '') + (event.text ?? '');
-              _updateAssistantMessage(
-                fullResponse ?? '',
-                thinking: thinkingBuffer,
-              );
-              break;
-
-            case AiEventType.token:
-              fullResponse = (fullResponse ?? '') + (event.text ?? '');
-              _updateAssistantMessage(fullResponse);
-              break;
-
-            case AiEventType.toolCalls:
-              _updateAssistantMessage(
-                fullResponse ?? '',
-                toolCalls: event.toolCalls ?? [],
-              );
-              _finalizeStreamMessage();
-              for (final tc in event.toolCalls ?? []) {
-                final toolResult = await _executeTool(mcpServer, tc);
-                _conversation.messages.add(
-                  ChatMessage(
-                    id: _uuid.v4(),
-                    role: MessageRole.toolResult,
-                    content: toolResult,
-                    toolCallId: tc.id,
-                  ),
-                );
-              }
-              fullResponse = null;
-              break;
-
-            case AiEventType.done:
-              fullResponse = event.text ?? fullResponse ?? '';
-              _updateAssistantMessage(fullResponse);
-              break;
-
-            case AiEventType.error:
-              _updateAssistantMessage(
-                event.error?.contains('400') == true
-                    ? '抱歉，该模型暂不支持图片识别'
-                    : event.error?.contains('401') == true
-                    ? 'API 密钥无效或已过期，请在设置中更新'
-                    : '抱歉，我遇到了一点问题，请再试一次',
-              );
-              _finalizeStreamMessage();
-              fullResponse = 'done';
-              break;
-          }
-        }
-      } catch (e) {
-        _updateAssistantMessage('发送消息失败: $e');
-      }
-
-      if (fullResponse != null) break;
-    }
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    _scrollToBottom();
-    _saveConversation();
-  }
-
-  /// ⚠️ 一律 `jsonEncode`，不要用 `.toString()`。
-  ///
-  /// 工具返回的是 Map，`Map.toString()` 出来是 Dart 格式
-  /// （`{success: true, query: 余耕 金枝玉叶 小说}`）——**键和字符串值都没有
-  /// 引号，不是合法 JSON**。这个字符串有两个下游：
-  ///
-  /// 1. 发回给模型当工具结果 → 模型只能连蒙带猜地读
-  /// 2. 界面拿去 `jsonDecode` → 解析失败 → **每一次调用都被标成 failed**
-  ///
-  /// 主 App 的 `chat_screen` 早就改过了，这一份漏了。2026-09-07 的症状是
-  /// 《金枝玉叶》那场里 `Web search · 2x · 2 failed`，展开却写着 `success: true`——
-  /// 我照着那个红字判断它在瞎编，结果冤枉了它。
-  Future<String> _executeTool(McpServer mcpServer, ToolCallInfo tc) async {
-    final executor =
-        mcpServer.registeredTools
-            .where((r) => r.tool.name == tc.name)
-            .firstOrNull
-            ?.executor;
-    if (executor != null) {
-      return _encodeToolResult(() => executor(tc.arguments), tc.name);
-    }
-
-    for (final client in context.read<ExternalMcpProvider>().clients) {
-      if (client.tools.any((t) => t.name == tc.name)) {
-        return _encodeToolResult(
-          () => client.callTool(tc.name, tc.arguments),
-          tc.name,
-        );
-      }
-    }
-
-    return jsonEncode({'success': false, 'error': '工具 ${tc.name} 未找到'});
-  }
-
-  /// 成功失败都返回 JSON。
-  ///
-  /// 失败路径也必须是 JSON：模型和界面都按 JSON 读，混进裸字符串
-  /// （`'错误: ...'`）会让两边都拿不到结构化的失败原因。
-  Future<String> _encodeToolResult(
-    Future<dynamic> Function() run,
-    String name,
-  ) async {
-    try {
-      return jsonEncode(await run());
-    } catch (e) {
-      return jsonEncode({'success': false, 'error': '$name 执行失败: $e'});
-    }
-  }
-
-  /// [thinking] 传 null = 「这次没有新的思考」，不是「清掉已有的」。
-  /// 正文每来一个 token 就重建一次这条消息，不保留的话思考会被冲掉。
-  void _updateAssistantMessage(
-    String content, {
-    List<ToolCallInfo>? toolCalls,
-    String? thinking,
-  }) {
-    setState(() {
-      if (_conversation.messages.isNotEmpty &&
-          _conversation.messages.last.role == MessageRole.assistant &&
-          _conversation.messages.last.id.startsWith('stream_')) {
-        _conversation.messages.last = ChatMessage(
-          id: _conversation.messages.last.id,
-          role: MessageRole.assistant,
-          content: content,
-          toolCalls: toolCalls,
-          thinking: thinking ?? _conversation.messages.last.thinking,
-        );
-      } else {
-        _conversation.messages.add(
-          ChatMessage(
-            id: 'stream_${_uuid.v4()}',
-            role: MessageRole.assistant,
-            content: content,
-            toolCalls: toolCalls,
-            thinking: thinking,
-          ),
-        );
-      }
-    });
-    _scrollToBottom();
+    saveConversation();
   }
 
   /// 退出不再拦。
@@ -467,7 +238,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
   /// 不想要的时候它不来找你。
   Future<void> _generateDiscussionNote() async {
     final messenger = ScaffoldMessenger.of(context);
-    if (_conversation.messages.isEmpty) {
+    if (conversation.messages.isEmpty) {
       messenger.showSnackBar(const SnackBar(content: Text('还没聊什么')));
       return;
     }
@@ -505,26 +276,9 @@ class _BookChatScreenState extends State<BookChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Discussion 笔记已生成')));
+        ).showSnackBar(const SnackBar(content: Text('讨论笔记已生成')));
       }
     }
-  }
-
-  void _finalizeStreamMessage() {
-    setState(() {
-      if (_conversation.messages.isNotEmpty &&
-          _conversation.messages.last.role == MessageRole.assistant &&
-          _conversation.messages.last.id.startsWith('stream_')) {
-        final old = _conversation.messages.last;
-        _conversation.messages.last = ChatMessage(
-          id: _uuid.v4(),
-          role: MessageRole.assistant,
-          content: old.content,
-          toolCalls: old.toolCalls,
-          thinking: old.thinking,
-        );
-      }
-    });
   }
 
   @override
@@ -555,22 +309,21 @@ class _BookChatScreenState extends State<BookChatScreen> {
                 }
                 setState(() {
                   _traces = traces;
-                  _conversation.systemPrompt = _systemPrompt;
+                  conversation.systemPrompt = systemPrompt;
                 });
-                _saveConversation();
+                saveConversation();
                 messenger.showSnackBar(
-                  SnackBar(
-                    content: Text('已同步 ${traces.highlightTotal} 条划线'),
-                  ),
+                  SnackBar(content: Text('已同步 ${traces.highlightTotal} 条划线')),
                 );
               } else if (v == 'export') {
                 await Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => ChatExportScreen(
-                      messages: _conversation.messages,
-                      bookTitle: widget.bookTitle,
-                      bookAuthor: widget.bookAuthor,
-                    ),
+                    builder:
+                        (_) => ChatExportScreen(
+                          messages: conversation.messages,
+                          bookTitle: widget.bookTitle,
+                          bookAuthor: widget.bookAuthor,
+                        ),
                   ),
                 );
               } else if (v == 'discussion') {
@@ -595,11 +348,9 @@ class _BookChatScreenState extends State<BookChatScreen> {
                       ),
                 );
                 if (ok == true) {
-                  final dir = await _bookConvDir;
-                  final file = File('${dir.path}/book_${widget.bookId}.json');
-                  await file.delete();
+                  await BookChatStore.remove(widget.bookId);
                   if (mounted) {
-                    _conversation.messages.clear();
+                    conversation.messages.clear();
                     setState(() {});
                     // 清空之后重新打一次招呼。材料本身在 systemPrompt 里，
                     // 删对话不会把它删掉，所以这里只要那一句气泡。
@@ -620,15 +371,6 @@ class _BookChatScreenState extends State<BookChatScreen> {
                     child: ListTile(
                       leading: Icon(PhosphorIconsRegular.arrowsClockwise),
                       title: Text('刷新划线'),
-                      dense: true,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'export',
-                    child: ListTile(
-                      leading: Icon(PhosphorIconsRegular.export),
-                      title: Text('导出'),
                       dense: true,
                       visualDensity: VisualDensity.compact,
                     ),
@@ -666,7 +408,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(2),
           child:
-              _isLoading
+              isLoading
                   ? const LinearProgressIndicator()
                   : const SizedBox.shrink(),
         ),
@@ -675,24 +417,24 @@ class _BookChatScreenState extends State<BookChatScreen> {
         children: [
           Expanded(
             child:
-                _conversation.messages.isEmpty
+                conversation.messages.isEmpty
                     ? _buildEmptyState(theme)
                     : Builder(
                       builder: (context) {
                         // 读书版不拆气泡，理由见 groupChatItems 的注释。
                         final items = groupChatItems(
-                          _conversation.messages,
+                          conversation.messages,
                           splitBubbles: false,
                         );
                         return ListView.builder(
-                          controller: _scrollController,
+                          controller: scrollController,
                           padding: const EdgeInsets.all(12),
                           itemCount: items.length,
                           itemBuilder:
                               (context, index) => chatDisplayItem(
                                 items,
                                 index,
-                                conversationId: _conversation.id,
+                                conversationId: conversation.id,
                               ),
                         );
                       },
@@ -749,7 +491,7 @@ class _BookChatScreenState extends State<BookChatScreen> {
         children: [
           Expanded(
             child: TextField(
-              controller: _textController,
+              controller: textController,
               maxLines: 5,
               minLines: 1,
               keyboardType: TextInputType.multiline,
@@ -770,14 +512,18 @@ class _BookChatScreenState extends State<BookChatScreen> {
             ),
           ),
           const SizedBox(width: 4),
+          // 生成中禁用发送。原来这里切成一个 stop 图标，但 onPressed 是 null——
+          // 一个点了没反应的停止键，比灰掉的发送键更骗人。真要「停止生成」
+          // 得让 AiClient 支持流取消，那是另一件事。
           IconButton(
             icon: Icon(
-              _isLoading
-                  ? PhosphorIconsRegular.stop
-                  : PhosphorIconsRegular.paperPlaneTilt,
-              color: theme.colorScheme.primary,
+              PhosphorIconsRegular.paperPlaneTilt,
+              color:
+                  isLoading
+                      ? theme.colorScheme.onSurfaceVariant
+                      : theme.colorScheme.primary,
             ),
-            onPressed: _isLoading ? null : _sendMessage,
+            onPressed: isLoading ? null : sendMessage,
           ),
         ],
       ),

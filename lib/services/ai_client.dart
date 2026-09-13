@@ -320,53 +320,66 @@ class AiClient {
       var attempt = 0;
       while (true) {
         attempt++;
-        final request = http.Request(
-          'POST',
-          Uri.parse('$endpoint/chat/completions'),
-        );
-        request.headers.addAll({
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${config.apiKey}',
-        });
-        request.body = jsonEncode(body);
+        // 每次尝试配一个自己的 client，用完关掉。
+        //
+        // 原来是 `await http.Client().send(request)`：建完就撒手，没人 close。
+        // 一个 Client 背后挂着连接池和已连的 socket，不关就一直占着——
+        // 而这是**每发一条消息都要走一次**的路，聊得越久积得越多。
+        // 见 [chat]：这是用户提「内存越来越大」时最值得先修的一处。
+        final client = http.Client();
+        try {
+          final request = http.Request(
+            'POST',
+            Uri.parse('$endpoint/chat/completions'),
+          );
+          request.headers.addAll({
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${config.apiKey}',
+          });
+          request.body = jsonEncode(body);
 
-        final response = await http.Client().send(request);
+          final response = await client.send(request);
 
-        if (response.statusCode == 200) {
-          yield* _streamOpenAiResponse(response);
+          if (response.statusCode == 200) {
+            yield* _streamOpenAiResponse(response);
+            return;
+          }
+
+          final error = await response.stream.bytesToString();
+          final lowered = error.toLowerCase();
+          final toolHistoryError =
+              lowered.contains('invalid_request_error') &&
+              (lowered.contains('tool_call') ||
+                  lowered.contains('tool messages') ||
+                  lowered.contains('insufficient'));
+          if (toolHistoryError && attempt == 1) {
+            // 工具历史异常（如孤儿 tool_calls）：去掉全部工具消息，纯文本重试一次。
+            //
+            // ⚠️ 这个兜底会让模型完全看不到工具结果——工具明明执行成功了，
+            // 模型却回答「我这边是空的」。原来这里把服务端错误直接吞掉，
+            // 于是两边都看不见问题。先打出来，好定位第一次请求为什么非法。
+            debugPrint(
+              '[ai_client] 工具历史被服务端拒绝，将丢弃全部工具消息重试。'
+              '原始错误：$error',
+            );
+            // 手机上看不到日志，所以直接显示在对话里——否则这个降级完全无声，
+            // 用户只会看到模型说「我没收到结果」，看不出是 App 丢掉的。
+            // 定位完根因后应当移除。
+            yield AiStreamEvent.token(
+              '⚠️ 工具结果被服务端拒绝，已丢弃后重试。原始错误：\n'
+              '${error.length > 500 ? '${error.substring(0, 500)}…' : error}\n\n',
+            );
+            // 用 cleaned 而不是 apiMessages：后者没经过 _repairToolMessages
+            body['messages'] = _stripAllToolMessages(cleaned);
+            continue;
+          }
+          yield AiStreamEvent.error('API 错误 (${response.statusCode}): $error');
           return;
+        } finally {
+          // 放在 finally 里：正常出流、重试、抛异常、以及被调用方取消订阅
+          // （用户切走页面）这四条路都会走到这儿。
+          client.close();
         }
-
-        final error = await response.stream.bytesToString();
-        final lowered = error.toLowerCase();
-        final toolHistoryError =
-            lowered.contains('invalid_request_error') &&
-            (lowered.contains('tool_call') ||
-                lowered.contains('tool messages') ||
-                lowered.contains('insufficient'));
-        if (toolHistoryError && attempt == 1) {
-          // 工具历史异常（如孤儿 tool_calls）：去掉全部工具消息，纯文本重试一次。
-          //
-          // ⚠️ 这个兜底会让模型完全看不到工具结果——工具明明执行成功了，
-          // 模型却回答「我这边是空的」。原来这里把服务端错误直接吞掉，
-          // 于是两边都看不见问题。先打出来，好定位第一次请求为什么非法。
-          debugPrint(
-            '[ai_client] 工具历史被服务端拒绝，将丢弃全部工具消息重试。'
-            '原始错误：$error',
-          );
-          // 手机上看不到日志，所以直接显示在对话里——否则这个降级完全无声，
-          // 用户只会看到模型说「我没收到结果」，看不出是 App 丢掉的。
-          // 定位完根因后应当移除。
-          yield AiStreamEvent.token(
-            '⚠️ 工具结果被服务端拒绝，已丢弃后重试。原始错误：\n'
-            '${error.length > 500 ? '${error.substring(0, 500)}…' : error}\n\n',
-          );
-          // 用 cleaned 而不是 apiMessages：后者没经过 _repairToolMessages
-          body['messages'] = _stripAllToolMessages(cleaned);
-          continue;
-        }
-        yield AiStreamEvent.error('API 错误 (${response.statusCode}): $error');
-        return;
       }
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
@@ -609,6 +622,9 @@ class AiClient {
               .toList();
     }
 
+    // 同 _openaiChat 里那处修复：Client 建了就得关，否则连接的 socket
+    // 和连接池一直留着。这条是 Claude 分支，每次发消息都会走。
+    final client = http.Client();
     try {
       final request = http.Request('POST', Uri.parse('$endpoint/messages'));
       request.headers.addAll({
@@ -618,7 +634,7 @@ class AiClient {
       });
       request.body = jsonEncode(body);
 
-      final response = await http.Client().send(request);
+      final response = await client.send(request);
 
       if (response.statusCode != 200) {
         final error = await response.stream.bytesToString();
@@ -677,6 +693,9 @@ class AiClient {
       }
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
+    } finally {
+      // 正常出流、报错、以及被调用方取消订阅，三条路都走到这儿。
+      client.close();
     }
   }
 
