@@ -8,11 +8,16 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// 所以新加一档时得顺手在这儿表个态：写进来 = 图随报文原样发过去；不写 = 图
 /// 先送去转成文字（那条路要另配识图 key，转不出来就等于没发）。
 ///
+/// 「格式」指的是**报文怎么写**，不是模型聪不聪明：同一份 base64 图，OpenAI
+/// 那条路包成 `image_url`，Claude 那条路包成 `source`。两条路现在都能发图了，
+/// 所以两个都写在表里；`mimo` 和 `custom` 走的是 `_openaiChat`，报文本身没问题，
+/// 迟迟没写进来是因为没验过——等哪天真拿 MIMO 发通一张图，把它加进来就行。
+///
 /// 存在的理由见 [AiClient.sendsImagesNatively]：原来那里写的是
 /// `provider == 'openai'` 一句死判断，而 `custom` 和 default 走的是同一个
 /// `_openaiChat`、同一份报文格式——一个 OpenAI 兼容、模型也确实能识图的自定义
 /// 端点，就因为名字不叫 openai 被判成「不能收图」，图被**悄悄丢掉**。
-const kImageNativeProviders = <String>{'openai', 'gemini'};
+const kImageNativeProviders = <String>{'openai', 'gemini', 'anthropic'};
 
 class ApiKeyConfig {
   static const _keyPrefix = 'api_key_';

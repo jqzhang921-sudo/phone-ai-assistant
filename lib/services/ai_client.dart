@@ -15,6 +15,54 @@ String _withTimestamp(String content, DateTime t) {
   return '[time: $ts]\n$content';
 }
 
+/// 从 base64 图里嗅出真实的 MIME 类型。
+///
+/// 为什么不能写死：图是从相册里挑的，png、jpeg、webp、gif 都有。以前这里一律
+/// 报 `image/jpeg`——OpenAI 那边不看这个字段，混过去一直没人发现；Anthropic
+/// 那边 `media_type` 是**校验**的，把 png 报成 jpeg 整条请求直接 400，不是
+/// 「图丢了」而是「消息发不出去」。
+///
+/// 认不出来的一律按 jpeg 报：宁可让对端自己去猜，也别在这儿抛异常——
+/// 这一步挂掉的话，用户看到的是「发图就崩」。
+///
+/// 拆成公开的、不依赖网络的纯函数，就是为了能直接测——认字节这件事是这里
+/// 唯一会错的地方，而它的错法（Anthropic 400）在真机上不摆弄一次看不出来。
+@visibleForTesting
+String mimeOfImage(String base64Image) {
+  // 只看开头一小截就够，不必把整张图解出来。截断的长度得是 4 的倍数，
+  // 否则 base64.decode 会当成非法输入。
+  final take = base64Image.length - (base64Image.length % 4);
+  if (take < 12) return 'image/jpeg';
+  final List<int> bytes;
+  try {
+    bytes = base64.decode(base64Image.substring(0, take));
+  } catch (_) {
+    return 'image/jpeg';
+  }
+
+  bool startsWith(List<int> sig) {
+    if (bytes.length < sig.length) return false;
+    for (var i = 0; i < sig.length; i++) {
+      if (bytes[i] != sig[i]) return false;
+    }
+    return true;
+  }
+
+  if (startsWith([0x89, 0x50, 0x4E, 0x47])) return 'image/png';
+  if (startsWith([0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  // RIFF 只是容器（wav、avi 都是它），第 8 字节起写着真正的格式。
+  if (startsWith([0x52, 0x49, 0x46, 0x46]) &&
+      bytes.length >= 12 &&
+      bytes[8] == 0x57 &&
+      bytes[9] == 0x45 &&
+      bytes[10] == 0x42 &&
+      bytes[11] == 0x50) {
+    return 'image/webp';
+  }
+  // 剩下的按 jpeg 算，jpeg 自己的头（FF D8 FF）也落在这儿。
+  return 'image/jpeg';
+}
+
 /// 去掉模型可能复读出来的 [time: ...] 时间戳标记。
 String _stripTimeMarkers(String text) {
   return text
@@ -226,7 +274,9 @@ class AiClient {
                 for (final image in msg.images)
                   {
                     'type': 'image_url',
-                    'image_url': {'url': 'data:image/jpeg;base64,$image'},
+                    'image_url': {
+                      'url': 'data:${mimeOfImage(image)};base64,$image',
+                    },
                   },
               ],
             });
@@ -544,10 +594,34 @@ class AiClient {
     for (final msg in messages) {
       switch (msg.role) {
         case MessageRole.user:
-          apiMessages.add({
-            'role': 'user',
-            'content': _withTimestamp(msg.content, msg.timestamp),
-          });
+          if (msg.images.isNotEmpty && sendsImagesNatively) {
+            apiMessages.add({
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'text',
+                  'text': _withTimestamp(msg.content, msg.timestamp),
+                },
+                // Claude 的图片块和 OpenAI 长得像，装法不一样：没有 `image_url`，
+                // 要的是 `source` 里三个字段。`media_type` 会被**校验**，对不上
+                // 直接 400——所以上面那个 [mimeOfImage] 在这儿是必须的。
+                for (final image in msg.images)
+                  {
+                    'type': 'image',
+                    'source': {
+                      'type': 'base64',
+                      'media_type': mimeOfImage(image),
+                      'data': image,
+                    },
+                  },
+              ],
+            });
+          } else {
+            apiMessages.add({
+              'role': 'user',
+              'content': _withTimestamp(msg.content, msg.timestamp),
+            });
+          }
           break;
         case MessageRole.assistant:
           if (msg.toolCalls != null && msg.toolCalls!.isNotEmpty) {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:phone_ai_assistant/config/api_keys.dart';
@@ -15,15 +17,18 @@ void main() {
       AiClient(config: ApiKeyConfig(provider: provider, name: provider));
 
   test('能收图的格式：图随报文原样发过去', () {
-    for (final p in ['openai', 'gemini']) {
+    // anthropic 也在这边——两条路报文的装法不同（image_url vs source），
+    // 但都真的把图发出去了。加档位时忘了配报文，`sendsImagesNatively` 会
+    // 提前放行，图却哪儿都没去，比「转成文字」还难查。
+    for (final p in ['openai', 'gemini', 'anthropic']) {
       expect(clientOf(p).sendsImagesNatively, isTrue, reason: p);
     }
   });
 
   test('不能收图的格式：图得先送去转成文字', () {
-    // anthropic 这一档目前也收不了——`_anthropicChat` 根本没构造图片块，
-    // 它那条路是不导图的。所以它跟 mimo、custom 一样落在这边。
-    for (final p in ['mimo', 'custom', 'anthropic']) {
+    // mimo 和 custom 走的是 `_openaiChat`，报文本身没问题，只是没验过——
+    // 等哪天真拿 MIMO 发通一张图，把它挪到上面那一组就行。
+    for (final p in ['mimo', 'custom']) {
       expect(clientOf(p).sendsImagesNatively, isFalse, reason: p);
     }
   });
@@ -34,5 +39,54 @@ void main() {
     for (final p in kImageNativeProviders) {
       expect(builtin, contains(p), reason: '$p 不在内置档位里');
     }
+  });
+
+  group('认得出图是什么格式', () {
+    // Anthropic 那边 media_type 对不上是**整条请求 400**，所以这里错不起。
+    String b64(List<int> head) =>
+        base64Encode([...head, ...List.filled(16, 0)]);
+
+    test('四种相册里常见的都认得', () {
+      expect(
+        mimeOfImage(b64([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A])),
+        'image/png',
+      );
+      expect(mimeOfImage(b64([0xFF, 0xD8, 0xFF, 0xE0])), 'image/jpeg');
+      expect(
+        mimeOfImage(b64([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
+        'image/gif',
+      );
+      // webp 是 RIFF 容器：前四字节谁都是 RIFF，第 8 字节起才写着 WEBP。
+      expect(
+        mimeOfImage(
+          b64([
+            0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, //
+            0x57, 0x45, 0x42, 0x50,
+          ]),
+        ),
+        'image/webp',
+      );
+    });
+
+    test('RIFF 但不带 WEBP 的，不算 webp', () {
+      // wav、avi 也是 RIFF 开头。认成 webp 就是给对端递一个它解不开的东西。
+      expect(
+        mimeOfImage(
+          b64([
+            0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, //
+            0x57, 0x41, 0x56, 0x45,
+          ]),
+        ),
+        isNot('image/webp'),
+      );
+    });
+
+    test('认不出来、或者根本不是图：按 jpeg 报，不抛', () {
+      // 宁可让对端自己去猜，也别在这儿抛——这一步挂掉就是「发图就崩」。
+      expect(mimeOfImage(b64([0x00, 0x01, 0x02, 0x03])), 'image/jpeg');
+      expect(mimeOfImage(''), 'image/jpeg');
+      expect(mimeOfImage('abc'), 'image/jpeg');
+      expect(mimeOfImage('!!!!not base64!!!!'), 'image/jpeg');
+    });
   });
 }
