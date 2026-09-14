@@ -5,6 +5,7 @@ import 'config/settings.dart';
 import 'config/app_theme.dart';
 import 'screens/home_shell.dart';
 import 'services/app_providers.dart';
+import 'services/chat_images.dart';
 import 'services/storage_service.dart';
 import 'services/external_mcp_service.dart';
 import 'services/nudge_scheduler.dart';
@@ -33,6 +34,9 @@ void main() async {
   );
 
   await StorageService.init();
+
+  // 超过 30 天的聊天图片清掉，见 [ChatImages]。不等它，也不让它拦住启动。
+  ChatImages.sweep().ignore();
 
   // 只是把后台入口注册给原生侧，不会开始跑——跑不跑由设置里那个开关决定。
   // 必须在 runApp 之前：系统唤醒时走的是另一条路径，那时候没有 widget 树。
@@ -104,8 +108,7 @@ class PhoneAiApp extends StatefulWidget {
   State<PhoneAiApp> createState() => _PhoneAiAppState();
 }
 
-class _PhoneAiAppState extends State<PhoneAiApp>
-    with WidgetsBindingObserver {
+class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
   late Future<AppSettings> _settingsFuture;
 
   @override

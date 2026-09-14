@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../models/chat_message.dart';
 import '../models/musing_entry.dart';
 import '../services/app_providers.dart';
+import '../services/chat_images.dart';
 import '../services/tts_service.dart';
 import '../services/voice_message.dart';
 import 'voice_bubble.dart';
@@ -599,12 +600,7 @@ class MessageBubble extends StatelessWidget {
     if (images.length == 1) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.sm),
-        child: Image.memory(
-          _decodeImage(images.first),
-          height: 160,
-          width: double.infinity,
-          fit: BoxFit.cover,
-        ),
+        child: _image(images.first, width: double.infinity, height: 160),
       );
     }
     return Wrap(
@@ -614,14 +610,44 @@ class MessageBubble extends StatelessWidget {
         for (final image in images)
           ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.sm),
-            child: Image.memory(
-              _decodeImage(image),
-              width: 92,
-              height: 92,
-              fit: BoxFit.cover,
-            ),
+            child: _image(image, width: 92, height: 92),
           ),
       ],
+    );
+  }
+
+  /// 一张图。三种来源见 [ChatImages]：文件、已清理、老的内联 base64。
+  Widget _image(String image, {required double width, required double height}) {
+    Widget cleared() => Container(
+      width: width,
+      height: height,
+      color: Colors.black.withValues(alpha: 0.06),
+      alignment: Alignment.center,
+      child: const Text(
+        '图片已清理',
+        style: TextStyle(fontSize: 12, color: Colors.black45),
+      ),
+    );
+
+    if (ChatImages.isCleared(image)) return cleared();
+    if (ChatImages.isFileRef(image)) {
+      final file = ChatImages.fileOf(image);
+      if (file == null) return cleared();
+      return Image.file(
+        file,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        // 气泡里最大也就屏幕宽，按原图 1920 解码是白占内存。
+        cacheWidth: 720,
+        errorBuilder: (context, error, stack) => cleared(),
+      );
+    }
+    return Image.memory(
+      _decodeImage(image),
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
     );
   }
 }

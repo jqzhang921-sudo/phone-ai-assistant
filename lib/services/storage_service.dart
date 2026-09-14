@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:isolate';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
@@ -10,6 +12,7 @@ import '../models/letter.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
 import '../utils/dates.dart';
+import 'chat_images.dart';
 
 class StorageService {
   static late Directory _dir;
@@ -18,6 +21,7 @@ class StorageService {
 
   static Future<void> init() async {
     _dir = await getApplicationDocumentsDirectory();
+    ChatImages.dirPath = '${_dir.path}/chat_images';
   }
 
   /// 保存自定义聊天背景图片路径（传 null 清除）
@@ -46,6 +50,16 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_kBackgroundPresetKey) ?? 'none';
   }
+
+  /// 超过这么长的 JSON 挪到另一个 isolate 去解，别卡界面线程。
+  ///
+  /// 两千条消息的对话约 76 万字符，电脑上解一次 12ms，手机上要慢几倍——
+  /// 正好卡在「点进对话」和「返回主页」的那一下。小文件不挪：起一个
+  /// isolate 本身也要几毫秒，比直接解还贵。
+  ///
+  /// ⚠️ 传给 `Isolate.run` 的闭包里**只能用传进去的字符串**。新 isolate 里
+  /// 静态变量是空的（[_dir] 没 init 过），碰到 `_convDir` 就炸。
+  static const _kOffThreadJsonChars = 100 * 1000;
 
   static String get _convDir => '${_dir.path}/conversations';
   static String get _trashDir => '${_dir.path}/conversations_trash';
@@ -143,7 +157,11 @@ class StorageService {
       final file = File('$_convDir/$id.json');
       if (!await file.exists()) return null;
       final data = await file.readAsString();
-      final conv = Conversation.fromJson(jsonDecode(data));
+      final imagesDir = ChatImages.dirPath;
+      final (conv, migrated) =
+          data.length < _kOffThreadJsonChars
+              ? _decodeConversation(data, imagesDir)
+              : await Isolate.run(() => _decodeConversation(data, imagesDir));
       // 存量数据里 `updatedAt` 全是创建时间（见 saveConversation 的注释）。
       // 读出来就地纠正，不写盘：排序立刻就对了，而下次真存盘时会落到磁盘上。
       final lastMsg =
@@ -151,10 +169,45 @@ class StorageService {
       if (lastMsg != null && lastMsg.isAfter(conv.updatedAt)) {
         conv.updatedAt = lastMsg;
       }
+      if (migrated > 0) {
+        // 图刚从正文里拆出去，**存回去之前先把原文件原样留一份**。
+        // 这一步改写的是整段聊天记录，拆错了得有地方找回来。
+        // 留不下来就先不存：内存里这份照样能看，原文件一个字没动。
+        try {
+          final bak = File('${_dir.path}/conversations_pre_images/$id.json');
+          if (!await bak.exists()) {
+            await bak.parent.create(recursive: true);
+            await file.copy(bak.path);
+          }
+          await saveConversation(conv);
+          debugPrint('[images] $id 拆出 $migrated 张图，原文件留在 ${bak.path}');
+        } catch (e) {
+          debugPrint('[images] $id 备份原文件失败，这次不存：$e');
+        }
+      }
       return conv;
     } catch (_) {
       return null;
     }
+  }
+
+  /// JSON → 对话，顺手把内联的图拆成文件（见 [ChatImages.migrateInline]）。
+  ///
+  /// 会被放进 `Isolate.run`，所以只用参数，不碰静态变量。
+  static (Conversation, int) _decodeConversation(
+    String data,
+    String? imagesDir,
+  ) {
+    final map = jsonDecode(data) as Map<String, dynamic>;
+    final migrated =
+        imagesDir == null
+            ? 0
+            : ChatImages.migrateInline(
+              map,
+              dirPath: imagesDir,
+              now: DateTime.now(),
+            );
+    return (Conversation.fromJson(map), migrated);
   }
 
   /// 上一次列对话（[listConversations] 或 [listConversationSummaries]）
@@ -298,7 +351,12 @@ class StorageService {
     try {
       final index = File('$_indexDir/$id.json');
       if (await index.exists()) {
-        final cached = jsonDecode(await index.readAsString());
+        final raw = await index.readAsString();
+        // 索引里存着每条消息的正文，长对话的索引也有好几百 KB。
+        final cached =
+            raw.length < _kOffThreadJsonChars
+                ? jsonDecode(raw)
+                : await Isolate.run(() => jsonDecode(raw));
         if (cached is Map<String, dynamic> &&
             cached['size'] == stat.size &&
             cached['mtime'] == stat.modified.millisecondsSinceEpoch) {

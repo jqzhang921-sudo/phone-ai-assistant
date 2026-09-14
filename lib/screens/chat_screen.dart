@@ -21,6 +21,7 @@ import '../services/ai_client.dart';
 import '../services/app_providers.dart';
 import '../config/persona.dart';
 import '../services/chat_events.dart';
+import '../services/chat_images.dart';
 import '../services/mcp_server.dart';
 import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
@@ -279,7 +280,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _switchConversation(Conversation conv) {
-    if (_conversation.messages.isNotEmpty) _saveConversation();
+    _saveIfChanged();
+    // 刚从盘上读出来（或刚存过）的，就是存盘时的样子。
+    _savedSig = _sigOf(conv);
     setState(() {
       _conversation = conv;
       _isLoading = false;
@@ -294,7 +297,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _newConversation() {
-    if (_conversation.messages.isNotEmpty) _saveConversation();
+    _saveIfChanged();
     setState(() {
       _conversation = Conversation(id: _uuid.v4());
       _isLoading = false;
@@ -307,7 +310,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 返回主页：保存当前对话，回到主页模式。
   void _goHome() {
-    if (_conversation.messages.isNotEmpty) _saveConversation();
+    _saveIfChanged();
     setState(() {
       _conversation = Conversation(id: _uuid.v4());
       _isLoading = false;
@@ -324,18 +327,14 @@ class _ChatScreenState extends State<ChatScreen> {
     widget.onChatModeChanged?.call(true);
   }
 
+  /// 列表是倒着排的（见 build 里的 `reverse: true`），「最底下」就是偏移 0。
+  ///
+  /// 原来跳的是 `maxScrollExtent`：那个数要等布局把整张列表的高度估出来才准，
+  /// 所以跳一次、100ms 后还得补跳一次；流式时每来一个字就排两次。偏移 0 不用估。
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        // Try again after layout settles
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (_scrollController.hasClients) {
-            _scrollController.jumpTo(
-              _scrollController.position.maxScrollExtent,
-            );
-          }
-        });
+      if (_scrollController.hasClients && _scrollController.offset != 0) {
+        _scrollController.jumpTo(0);
       }
     });
   }
@@ -391,8 +390,9 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
       // Estimate: each message roughly 100px, tool cards ~80px
+      // 列表倒着排，偏移从最底下往上量——数的是这条**之后**的消息。
       double offset = 0;
-      for (int i = 0; i < index && i < _conversation.messages.length; i++) {
+      for (int i = index + 1; i < _conversation.messages.length; i++) {
         final msg = _conversation.messages[i];
         if (msg.role == MessageRole.toolCall && msg.toolCalls != null) {
           offset += 80;
@@ -420,15 +420,22 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickImages(ImageSource source) async {
     final picked = <XFile>[];
     if (source == ImageSource.camera) {
+      // imageQuality：原来只限了尺寸没压画质，一张图还是几 MB。
+      // 85 肉眼看不出差别，体积能小一大截。
       final shot = await _picker.pickImage(
         source: source,
         maxWidth: 1920,
         maxHeight: 1920,
+        imageQuality: 85,
       );
       if (shot != null) picked.add(shot);
     } else {
       picked.addAll(
-        await _picker.pickMultiImage(maxWidth: 1920, maxHeight: 1920),
+        await _picker.pickMultiImage(
+          maxWidth: 1920,
+          maxHeight: 1920,
+          imageQuality: 85,
+        ),
       );
     }
     if (picked.isEmpty || !mounted) return;
@@ -620,10 +627,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final picked = List<XFile>.from(_pendingImages);
     setState(() => _pendingImages.clear());
 
-    final images = <String>[];
-    for (final file in picked) {
-      images.add(base64Encode(await file.readAsBytes()));
-    }
+    // 图存成文件，消息里只记引用。原来是整张 base64 塞进消息，
+    // 对话文件就是这么涨到 200MB 的，见 [ChatImages]。
+    final pickedBytes = [for (final file in picked) await file.readAsBytes()];
+    final images = [
+      for (final bytes in pickedBytes) await ChatImages.save(bytes),
+    ];
 
     // 识图服务是**兜底**，不是主路。
     //
@@ -636,9 +645,9 @@ class _ChatScreenState extends State<ChatScreen> {
     var content = text;
     if (images.isNotEmpty && client != null && !client.sendsImagesNatively) {
       final described = <String>[];
-      for (final image in images) {
+      for (final bytes in pickedBytes) {
         final result = await VisionService.analyze(
-          image,
+          base64Encode(bytes),
           prompt: text.isNotEmpty ? text : null,
         );
         if (result != null) described.add(result);
@@ -1373,7 +1382,35 @@ class _ChatScreenState extends State<ChatScreen> {
               ? '新对话'
               : first.substring(0, first.length.clamp(0, 30));
     }
+    _savedSig = _sigOf(_conversation);
     StorageService.saveConversation(_conversation);
+  }
+
+  /// 上次存盘（或读盘）时这场对话的样子，见 [_saveIfChanged]。
+  String? _savedSig;
+
+  /// 粗略的「变没变」。不是哈希全文——那本身就要把两千条过一遍。
+  ///
+  /// 够用的理由：这个页面对消息只做两种改动，**往后加**和**替换最后一条**
+  /// （流式、定稿），两种都会动到条数或最后一条的 id/长度。标题和人设改完
+  /// 当场就存了，这里只是兜底。
+  String _sigOf(Conversation c) {
+    final last = c.messages.lastOrNull;
+    return '${c.messages.length}|${last?.id}|${last?.content.length}|'
+        '${last?.thinking?.length}|${last?.metadata?.length}|'
+        '${c.summarizedCount}|${c.title}|${c.titleManuallySet}|'
+        '${c.systemPrompt}|${c.isPinned}';
+  }
+
+  /// 离开一场对话时：变了才存。
+  ///
+  /// ⚠️ 原来是**无条件**存。一段两千条的对话光编码就是七百多 KB，还要顺手
+  /// 重写一份索引——什么都没聊、点进去看一眼就返回，也要白等这一趟，
+  /// 返回键就是这么变慢的。每一轮聊完本来就存过了（见 `_continueChat` 末尾）。
+  void _saveIfChanged() {
+    if (_conversation.messages.isEmpty) return;
+    if (_sigOf(_conversation) == _savedSig) return;
+    _saveConversation();
   }
 
   /// 三宫格。图标二选一：品牌图标给 [asset]，功能图标给 [icon]——
@@ -1610,27 +1647,61 @@ class _ChatScreenState extends State<ChatScreen> {
                                 events: _chatEvents,
                               );
                               final typing = _showTyping;
+                              // 最新的排在第 0 项、贴着最底下，所以 builder
+                              // 的 i 要倒过来换成 items 里的下标。
+                              final base = typing ? 1 : 0;
                               return MarkBackdrop(
                                 child: ListView.builder(
                                   controller: _scrollController,
-                                  // 底部给浮着的输入框让位
+                                  // ⚠️ 倒着排。原来是正着排、打开后再跳到底：
+                                  // 第一帧画的是两千条里的**第一条**，
+                                  // 下一帧才跳过去，而跳到底要先估出整张列表
+                                  // 多高——长对话点进去就是「先闪一下开头、
+                                  // 卡一下、再滚到最新」。倒过来之后偏移 0
+                                  // 就是最新那条，第一帧就对，也不用估高度。
+                                  reverse: true,
+                                  // 倒着排时这个 bottom 仍然在屏幕底部，
+                                  // 给浮着的输入框让位。
                                   padding: EdgeInsets.fromLTRB(
                                     12,
                                     12,
                                     12,
                                     _inputHeight + 12,
                                   ),
-                                  itemCount: items.length + (typing ? 1 : 0),
-                                  itemBuilder: (context, index) {
-                                    // 「正在输入」挂在最后一项：回复将来落在
-                                    // 哪儿，它就等在哪儿。
-                                    if (typing && index == items.length) {
-                                      return TypingIndicator(name: _aiName);
+                                  itemCount: items.length + base,
+                                  // 倒着排，每来一条新消息，所有旧项的 i 都
+                                  // 往后挪一位。不按 key 找回原位的话，
+                                  // 正在播的语音条、展开的思考会**串到隔壁
+                                  // 那条上**。
+                                  findChildIndexCallback: (key) {
+                                    if (key is! ValueKey<String>) return null;
+                                    if (key.value == 'typing') {
+                                      return typing ? 0 : null;
                                     }
-                                    return chatDisplayItem(
-                                      items,
-                                      index,
-                                      conversationId: _conversation.id,
+                                    final at = items.indexWhere(
+                                      (it) => it.key == key.value,
+                                    );
+                                    return at < 0
+                                        ? null
+                                        : items.length - 1 - at + base;
+                                  },
+                                  itemBuilder: (context, i) {
+                                    // 「正在输入」贴在最底下：回复将来落在
+                                    // 哪儿，它就等在哪儿。
+                                    if (typing && i == 0) {
+                                      return TypingIndicator(
+                                        key: const ValueKey('typing'),
+                                        name: _aiName,
+                                      );
+                                    }
+                                    final index = items.length - 1 - (i - base);
+                                    return KeyedSubtree(
+                                      key: ValueKey(items[index].key),
+                                      child: chatDisplayItem(
+                                        items,
+                                        index,
+                                        conversationId: _conversation.id,
+                                      ),
                                     );
                                   },
                                 ),

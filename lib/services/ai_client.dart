@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_keys.dart';
 import '../models/chat_message.dart';
 import '../models/mcp_tool.dart';
+import 'chat_images.dart';
 
 /// 把时间戳格式化并拼在消息内容前面，让模型能看到每条消息的发生时间。
 String _withTimestamp(String content, DateTime t) {
@@ -212,6 +213,16 @@ class AiClient {
   bool get sendsImagesNatively =>
       kImageNativeProviders.contains(config.provider);
 
+  /// 这条消息里真正要随报文发出去的图（base64）。
+  ///
+  /// 图现在大多是文件引用，发的时候才读出来；超过 30 天被清掉的、文件
+  /// 找不到的，直接不带（见 [ChatImages]）。一张都不剩就按纯文字发——
+  /// 不能因为一张旧图没了，整轮请求发不出去。
+  List<String> _sendableImages(ChatMessage msg) {
+    if (!sendsImagesNatively || msg.images.isEmpty) return const [];
+    return msg.images.map(ChatImages.base64Of).whereType<String>().toList();
+  }
+
   static void _attachMemory(
     List<Map<String, dynamic>> apiMessages,
     String? memoryContext,
@@ -260,7 +271,8 @@ class AiClient {
     for (final msg in messages) {
       switch (msg.role) {
         case MessageRole.user:
-          if (msg.images.isNotEmpty && sendsImagesNatively) {
+          final images = _sendableImages(msg);
+          if (images.isNotEmpty) {
             apiMessages.add({
               'role': 'user',
               'content': [
@@ -271,7 +283,7 @@ class AiClient {
                 // 多张图就是多个 image_url 块，顺序按用户选的来。
                 // 一条消息里给全，模型才看得到图与图之间的关系——
                 // 拆成几条发就只剩几张互不相干的图。
-                for (final image in msg.images)
+                for (final image in images)
                   {
                     'type': 'image_url',
                     'image_url': {
@@ -594,7 +606,8 @@ class AiClient {
     for (final msg in messages) {
       switch (msg.role) {
         case MessageRole.user:
-          if (msg.images.isNotEmpty && sendsImagesNatively) {
+          final images = _sendableImages(msg);
+          if (images.isNotEmpty) {
             apiMessages.add({
               'role': 'user',
               'content': [
@@ -605,7 +618,7 @@ class AiClient {
                 // Claude 的图片块和 OpenAI 长得像，装法不一样：没有 `image_url`，
                 // 要的是 `source` 里三个字段。`media_type` 会被**校验**，对不上
                 // 直接 400——所以上面那个 [mimeOfImage] 在这儿是必须的。
-                for (final image in msg.images)
+                for (final image in images)
                   {
                     'type': 'image',
                     'source': {
