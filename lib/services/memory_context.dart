@@ -23,6 +23,8 @@
 /// [memoryReadingRules] 里一律不用位置指代，改成「带过来的那段记录里」。
 library;
 
+import 'package:flutter/foundation.dart';
+
 import '../models/book.dart';
 import '../models/diary_entry.dart';
 import '../models/memory_topic.dart';
@@ -212,14 +214,35 @@ Future<String> buildMemoryContext({
   final buf = StringBuffer();
   buf.writeln('## 这一轮带过来的记录');
 
-  await _appendDiaries(buf);
-  await _appendMusings(buf, fullMusings);
-  await _appendBooks(buf, maxBooks);
-  await _appendLetterStatus(buf);
-  await _appendSmallThings(buf);
-  await _appendSelfNotes(buf);
-  await _appendPeriod(buf);
-  await _appendAppUsage(buf);
+  // ⚠️ 每一块单独兜异常：一块读不出来只少这一块。
+  //
+  // 原来这八个 await 一个都没兜，任何一块抛（比如读用量那块走的是系统接口，
+  // 权限一变就抛），整个函数就抛，发消息那条路跟着抛，界面一直在加载。
+  // 2026-09-14 晚上主 App 就是这么卡住的样子。
+  //
+  // 先写进自己的缓冲区、成功了再并进来：抛在半路的话，不会留下半截标题。
+  // 成功的时候写进去的字节和原来一模一样，不影响前缀缓存。
+  Future<void> section(
+    String name,
+    Future<void> Function(StringBuffer part) append,
+  ) async {
+    final part = StringBuffer();
+    try {
+      await append(part);
+      buf.write(part);
+    } catch (e) {
+      debugPrint('[memory_context] $name 读不出来，这一轮不带：$e');
+    }
+  }
+
+  await section('日记', (b) => _appendDiaries(b));
+  await section('随笔', (b) => _appendMusings(b, fullMusings));
+  await section('书', (b) => _appendBooks(b, maxBooks));
+  await section('信', (b) => _appendLetterStatus(b));
+  await section('小事', (b) => _appendSmallThings(b));
+  await section('便签', (b) => _appendSelfNotes(b));
+  await section('经期', (b) => _appendPeriod(b));
+  await section('手机用量', (b) => _appendAppUsage(b));
 
   return buf.toString();
 }
@@ -251,10 +274,7 @@ Future<void> _appendAppUsage(StringBuffer buf) async {
     end: now,
   );
   // 不到 5 分钟的多半是划过一眼，不算「在用」。
-  final items = all
-      .where((e) => e.total.inMinutes >= 5)
-      .take(6)
-      .toList();
+  final items = all.where((e) => e.total.inMinutes >= 5).take(6).toList();
   if (items.isEmpty) return;
 
   buf.writeln();
@@ -366,9 +386,7 @@ Future<void> _appendPeriod(StringBuffer buf) async {
   if (days < 0 || days > _forecastHeadsUpDays) return;
 
   buf.writeln();
-  buf.writeln(
-    days == 0 ? '### 按她的记录，这两天可能要来例假' : '### 按她的记录，大概 $days 天后要来例假',
-  );
+  buf.writeln(days == 0 ? '### 按她的记录，这两天可能要来例假' : '### 按她的记录，大概 $days 天后要来例假');
   buf.writeln(
     '这是**算出来的，不是确定的**，真实周期本来就会晃。'
     '$manners'

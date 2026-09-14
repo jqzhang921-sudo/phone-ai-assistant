@@ -675,7 +675,26 @@ class _ChatScreenState extends State<ChatScreen> {
     _continueChat();
   }
 
+  /// 跑一轮对话。**不管里面出了什么事，都要把「生成中」放下来。**
+  ///
+  /// 原来没有这一层：身份、记忆、历史压缩这几步都在 [_runChatTurn] 的
+  /// try 外面，任何一处抛异常，[_isLoading] 就永远是 true——一直在加载，
+  /// 没有网络连接，也没有报错。2026-09-14 晚上读书讨论先这样卡过，
+  /// 接着主 App 也卡了。读书那边的同一层兜底见 `BookChatStreaming.continueTurn`。
   Future<void> _continueChat() async {
+    try {
+      await _runChatTurn();
+    } catch (e) {
+      debugPrint('[chat] 这一轮出错：$e');
+      if (!mounted) return;
+      _updateAssistantMessage('❌ 发送消息失败: $e');
+      _finalizeStreamMessage();
+      setState(() => _isLoading = false);
+      _saveConversation();
+    }
+  }
+
+  Future<void> _runChatTurn() async {
     final aiClient = context.read<AiClientProvider>().currentClient;
     final mcpServer = context.read<McpServerProvider>().server;
 
