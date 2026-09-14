@@ -213,6 +213,34 @@ class AiClient {
   bool get sendsImagesNatively =>
       kImageNativeProviders.contains(config.provider);
 
+  /// 发出请求后，等响应头最多等多久。
+  ///
+  /// ## 为什么要有超时
+  ///
+  /// 原来**一个超时都没有**。连接要是没断、只是卡住（代理半死不活、握手挂着），
+  /// `client.send` 和读流都会一直等下去——界面上就是进度条永远在走，发送键
+  /// 灰着，也没有报错。2026-09-14 读书讨论《窄门》那条就是这么卡住的，
+  /// 当时 Cleo 手机开着代理。
+  ///
+  /// 断掉的连接会报 HandshakeException，那种早就能看见；怕的是**不断也不回**。
+  @visibleForTesting
+  static Duration responseTimeout = const Duration(seconds: 60);
+
+  /// 流开始以后，两段数据之间最多隔多久。
+  ///
+  /// 放得比 [responseTimeout] 宽：有的推理模型想的时候不往外吐 reasoning，
+  /// 会安静一阵子。这里只防「彻底没动静」。
+  @visibleForTesting
+  static Duration idleTimeout = const Duration(seconds: 90);
+
+  /// 测试里换成假的 client。
+  @visibleForTesting
+  static http.Client Function() newHttpClient = http.Client.new;
+
+  static String _timeoutMessage(TimeoutException e) =>
+      '连接超时：${e.duration?.inSeconds ?? '?'} 秒没收到模型的回音。'
+      '多半是网络或代理的问题，再发一次试试。';
+
   /// 这条消息里真正要随报文发出去的图（base64）。
   ///
   /// 图现在大多是文件引用，发的时候才读出来；超过 30 天被清掉的、文件
@@ -387,7 +415,7 @@ class AiClient {
         // 一个 Client 背后挂着连接池和已连的 socket，不关就一直占着——
         // 而这是**每发一条消息都要走一次**的路，聊得越久积得越多。
         // 见 [chat]：这是用户提「内存越来越大」时最值得先修的一处。
-        final client = http.Client();
+        final client = newHttpClient();
         try {
           final request = http.Request(
             'POST',
@@ -399,10 +427,16 @@ class AiClient {
           });
           request.body = jsonEncode(body);
 
-          final response = await client.send(request);
+          final response = await client.send(request).timeout(responseTimeout);
 
           if (response.statusCode == 200) {
-            yield* _streamOpenAiResponse(response);
+            // ⚠️ 不能写 `yield*`。`yield*` 里冒出来的异常**不会在这一行抛出**，
+            // 而是原样转给下游的监听者——外面那层 try/catch 根本碰不到它。
+            // 读流超时就是这么漏出去的：调用方拿到一个裸 TimeoutException，
+            // 而不是一条能显示的错误事件。`await for` 才会在这里抛。
+            await for (final event in _streamOpenAiResponse(response)) {
+              yield event;
+            }
             return;
           }
 
@@ -442,6 +476,8 @@ class AiClient {
           client.close();
         }
       }
+    } on TimeoutException catch (e) {
+      yield AiStreamEvent.error(_timeoutMessage(e));
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
     }
@@ -469,6 +505,7 @@ class AiClient {
     // LineSplitter 自己维护跨分片的缓冲，只吐完整的行，末尾没有换行符的最后
     // 一行也会补吐出来。
     await for (final line in response.stream
+        .timeout(idleTimeout)
         .transform(utf8.decoder)
         .transform(const LineSplitter())) {
       if (!line.startsWith('data: ')) continue;
@@ -710,7 +747,7 @@ class AiClient {
 
     // 同 _openaiChat 里那处修复：Client 建了就得关，否则连接的 socket
     // 和连接池一直留着。这条是 Claude 分支，每次发消息都会走。
-    final client = http.Client();
+    final client = newHttpClient();
     try {
       final request = http.Request('POST', Uri.parse('$endpoint/messages'));
       request.headers.addAll({
@@ -720,7 +757,7 @@ class AiClient {
       });
       request.body = jsonEncode(body);
 
-      final response = await client.send(request);
+      final response = await client.send(request).timeout(responseTimeout);
 
       if (response.statusCode != 200) {
         final error = await response.stream.bytesToString();
@@ -735,6 +772,7 @@ class AiClient {
 
       // 同 _streamOpenAiResponse：按分片切行会丢掉跨分片的那一行。
       await for (final line in response.stream
+          .timeout(idleTimeout)
           .transform(utf8.decoder)
           .transform(const LineSplitter())) {
         if (!line.startsWith('data: ')) continue;
@@ -777,6 +815,8 @@ class AiClient {
       } else {
         yield AiStreamEvent.done(_stripTimeMarkers(contentBuffer));
       }
+    } on TimeoutException catch (e) {
+      yield AiStreamEvent.error(_timeoutMessage(e));
     } catch (e) {
       yield AiStreamEvent.error('网络错误: $e');
     } finally {

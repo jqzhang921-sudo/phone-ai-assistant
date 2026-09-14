@@ -131,7 +131,25 @@ mixin BookChatStreaming<T extends StatefulWidget> on State<T> {
     await continueTurn();
   }
 
+  /// 跑一轮。**不管里面出了什么事，都要把「生成中」放下来。**
+  ///
+  /// 原来没有这一层：[beforeTurn]、取 provider、拼工具这些都在
+  /// [_runTurn] 的 try 外面，任何一处抛异常，[isLoading] 就永远是 true——
+  /// 进度条一直转、发送键一直灰，屏幕上什么提示都没有，只能退出重进。
   Future<void> continueTurn() async {
+    try {
+      await _runTurn();
+    } catch (e) {
+      debugPrint('[book_chat] 这一轮出错：$e');
+      if (!mounted) return;
+      updateAssistantMessage('这条没发出去（$e）。再发一次试试。');
+      finalizeStreamMessage();
+      setState(() => isLoading = false);
+      await saveConversation();
+    }
+  }
+
+  Future<void> _runTurn() async {
     await beforeTurn();
     if (!mounted) return;
 
@@ -213,7 +231,11 @@ mixin BookChatStreaming<T extends StatefulWidget> on State<T> {
 
             case AiEventType.error:
               updateAssistantMessage(
-                event.error?.contains('400') == true
+                // 超时要单独说：统一回「请再试一次」的话，他不知道是网的事，
+                // 会以为是书聊坏了。
+                event.error?.contains('超时') == true
+                    ? '连不上模型，等了很久也没回音。看看网络或者代理，再发一次。'
+                    : event.error?.contains('400') == true
                     ? '抱歉，该模型暂不支持图片识别'
                     : event.error?.contains('401') == true
                     ? 'API 密钥无效或已过期，请在设置中更新'

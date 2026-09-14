@@ -143,7 +143,17 @@ class _BookChatScreenState extends State<BookChatScreen>
     final pending = _lookup;
     if (pending != null) {
       _lookup = null;
-      await pending.timeout(const Duration(seconds: 4), onTimeout: () {});
+      // ⚠️ 查书、收划线失败了也**必须放行**。
+      //
+      // 这两件事只是给提示词添料。原来是直接 await：任何一个抛异常，异常就
+      // 顺着 beforeTurn 冒出发送流程，isLoading 再也没人复位。2026-09-14
+      // 《窄门》那条的样子：发出去五分钟，进度条一直在走，没有网络连接，
+      // 没有报错，也没有回复。
+      try {
+        await pending.timeout(const Duration(seconds: 4), onTimeout: () {});
+      } catch (e) {
+        debugPrint('[book_chat] 开聊前的查询失败，跳过：$e');
+      }
     }
   }
 
