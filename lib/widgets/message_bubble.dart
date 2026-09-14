@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -8,9 +7,9 @@ import 'package:uuid/uuid.dart';
 import '../models/chat_message.dart';
 import '../models/musing_entry.dart';
 import '../services/app_providers.dart';
-import '../services/chat_images.dart';
 import '../services/tts_service.dart';
 import '../services/voice_message.dart';
+import 'chat_image_stack.dart';
 import 'voice_bubble.dart';
 import '../config/app_shape.dart';
 import '../config/app_theme.dart';
@@ -78,44 +77,6 @@ import '../config/app_theme.dart';
       lightSurface ? const Color(0xFF1A1512) : const Color(0xFFF2EAE0),
     ),
   );
-}
-
-/// base64 图片 -> 解出来的字节。带上限。
-///
-/// ## 为什么非缓存不可
-///
-/// [Image.memory] 的缓存键是**字节对象本身**（`MemoryImage` 比的是
-/// `bytes` 的 identity）。原来在 build 里直接 `base64Decode(...)`，
-/// 每次重建都得到一个全新的 `Uint8List`，也就是**一个新键**——于是每重建
-/// 一次，就往 Flutter 的全局面图缓存里塞一张**永远不会被命中的新图**，
-/// 而全局缓存默认能装 100MB / 1000 张。带图的对话多滚几轮，几十 MB
-/// 就这么静静地堆进去了，且再也不会被读出来。
-///
-/// 同一个字符串解出来的字节保持同一个对象，键才稳定，全局缓存才真的是
-/// 在「缓存」而不是只进不出。
-///
-/// 上限防的是另一个方向：图特别多时这份字节本身也别无限涨。淘汰掉的
-/// 代价只是下次重解一遍。
-const int _imageBytesMaxBytes = 4 * 1024 * 1024;
-final Map<String, Uint8List> _imageBytes = {};
-int _imageBytesTotal = 0;
-
-Uint8List _decodeImage(String base64Text) {
-  final hit = _imageBytes.remove(base64Text);
-  if (hit != null) {
-    // 放回队尾：刚渲染过的不该是下一个被淘汰的。
-    _imageBytes[base64Text] = hit;
-    return hit;
-  }
-
-  final bytes = base64Decode(base64Text);
-  _imageBytes[base64Text] = bytes;
-  _imageBytesTotal += bytes.length;
-  while (_imageBytesTotal > _imageBytesMaxBytes && _imageBytes.isNotEmpty) {
-    final oldest = _imageBytes.keys.first;
-    _imageBytesTotal -= _imageBytes.remove(oldest)!.length;
-  }
-  return bytes;
 }
 
 class MessageBubble extends StatelessWidget {
@@ -226,6 +187,12 @@ class MessageBubble extends StatelessWidget {
     // 只加一行小字，不换气泡样式：它说的还是同一种话，只是这句没人问它。
     final isNudge = message.metadata?['nudge'] == true;
 
+    // 气泡里有没有东西要画。图不算——图画在气泡外面。
+    final hasBody =
+        voice != null ||
+        message.content.trim().isNotEmpty ||
+        (isAssistant && (message.thinking?.trim().isNotEmpty ?? false));
+
     return Padding(
       // 组内 3，组间 14。**这一个数字是「成组」看起来成立的主要原因**——
       // 三条各隔 14 是三次发言，各隔 3 是一口气说的三句。
@@ -275,86 +242,111 @@ class MessageBubble extends StatelessWidget {
                       : const SizedBox(width: _avatarSize),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      maxWidth: _maxBubbleWidth,
-                    ),
-                    // 13/8，原来是 16/12。
-                    //
-                    // 竖直方向减得比水平多：气泡「胖」主要胖在上下——左右
-                    // 留白少了，长句子会顶到圆角上，反而挤。
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: radius,
-                      boxShadow: AppShadow.soften(dark),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (isAssistant &&
-                            (message.thinking?.trim().isNotEmpty ?? false))
-                          _ThinkingBlock(
-                            text: message.thinking!,
-                            color: textColor,
-                            // 正文还没来 = 它还在想，这时候默认摊开，
-                            // 不然屏幕上只有一个空气泡，看着像卡住了。
-                            startExpanded: message.content.trim().isEmpty,
+                  // 图和字**分开放**：图在上面单独立着，字在下面自己一个气泡。
+                  //
+                  // 原来图塞在气泡里、字跟在图下面。Cleo 2026-09-14 说要
+                  // 分开——图裹在一块底色里，卡片的边、露出来的那几张都被
+                  // 糊成一片，微信也是图单独放。
+                  //
+                  // 只发了图、一个字没打的，就只有图，不再画一个空气泡。
+                  child: Column(
+                    crossAxisAlignment:
+                        isUser
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                    children: [
+                      if (message.images.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: hasBody ? 4 : 0),
+                          child: ChatImageGallery(
+                            images: message.images,
+                            alignEnd: isUser,
                           ),
-                        if (message.images.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: _images(message.images),
+                        ),
+                      if (hasBody)
+                        Container(
+                          constraints: const BoxConstraints(
+                            maxWidth: _maxBubbleWidth,
                           ),
-                        // 语音消息：只画语音条，**不画文字**。
-                        //
-                        // 文字和语音摆在一起，语音就白发了——眼睛比耳朵快，
-                        // 你会直接读完，不会点播放。而它选择用说的，
-                        // 多半是想让你听见语气。文字在长按菜单里。
-                        if (voice != null)
-                          VoiceBubble(
-                            voice: voice,
-                            messageId: message.id,
-                            textColor: textColor,
-                          )
-                        else if (isUser)
-                          Text(
-                            message.content,
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: textColor,
-                              height: _bubbleLineHeight,
-                            ),
-                          )
-                        else
-                          MarkdownBody(
-                            data: message.content,
-                            styleSheet: MarkdownStyleSheet(
-                              // 段落之间也收一点：默认 8 是按文档排的，
-                              // 气泡里两段之间不需要那么远。
-                              blockSpacing: 6,
-                              p: theme.textTheme.bodyLarge?.copyWith(
-                                color: textColor,
-                                height: _bubbleLineHeight,
-                              ),
-                              code: TextStyle(
-                                backgroundColor:
-                                    theme.colorScheme.surfaceContainerHigh,
-                                fontFamily: 'monospace',
-                                fontSize: 13,
-                              ),
-                              codeblockDecoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceContainerHigh,
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.sm,
+                          // 13/8，原来是 16/12。
+                          //
+                          // 竖直方向减得比水平多：气泡「胖」主要胖在上下——左右
+                          // 留白少了，长句子会顶到圆角上，反而挤。
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 13,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: bgColor,
+                            borderRadius: radius,
+                            boxShadow: AppShadow.soften(dark),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (isAssistant &&
+                                  (message.thinking?.trim().isNotEmpty ??
+                                      false))
+                                _ThinkingBlock(
+                                  text: message.thinking!,
+                                  color: textColor,
+                                  // 正文还没来 = 它还在想，这时候默认摊开，
+                                  // 不然屏幕上只有一个空气泡，看着像卡住了。
+                                  startExpanded: message.content.trim().isEmpty,
                                 ),
-                              ),
-                            ),
+                              // 语音消息：只画语音条，**不画文字**。
+                              //
+                              // 文字和语音摆在一起，语音就白发了——眼睛比耳朵快，
+                              // 你会直接读完，不会点播放。而它选择用说的，
+                              // 多半是想让你听见语气。文字在长按菜单里。
+                              if (voice != null)
+                                VoiceBubble(
+                                  voice: voice,
+                                  messageId: message.id,
+                                  textColor: textColor,
+                                )
+                              else if (isUser)
+                                Text(
+                                  message.content,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    color: textColor,
+                                    height: _bubbleLineHeight,
+                                  ),
+                                )
+                              else
+                                MarkdownBody(
+                                  data: message.content,
+                                  styleSheet: MarkdownStyleSheet(
+                                    // 段落之间也收一点：默认 8 是按文档排的，
+                                    // 气泡里两段之间不需要那么远。
+                                    blockSpacing: 6,
+                                    p: theme.textTheme.bodyLarge?.copyWith(
+                                      color: textColor,
+                                      height: _bubbleLineHeight,
+                                    ),
+                                    code: TextStyle(
+                                      backgroundColor:
+                                          theme
+                                              .colorScheme
+                                              .surfaceContainerHigh,
+                                      fontFamily: 'monospace',
+                                      fontSize: 13,
+                                    ),
+                                    codeblockDecoration: BoxDecoration(
+                                      color:
+                                          theme
+                                              .colorScheme
+                                              .surfaceContainerHigh,
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadius.sm,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
                 if (isUser) const SizedBox(width: 8),
@@ -589,65 +581,6 @@ class MessageBubble extends StatelessWidget {
         height: isUser ? 13 : 15,
         color: isUser ? scheme.onSurfaceVariant : scheme.onPrimaryContainer,
       ),
-    );
-  }
-
-  /// 一条消息里的图。一张就铺满，多张就排成方格。
-  ///
-  /// 多张仍然**挤在一个气泡里**，不拆成几条：它们是一次发出去的，
-  /// 拆开看就成了几件不相干的事，和发给模型时挤在同一条消息里是一个道理。
-  Widget _images(List<String> images) {
-    if (images.length == 1) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        child: _image(images.first, width: double.infinity, height: 160),
-      );
-    }
-    return Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      children: [
-        for (final image in images)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            child: _image(image, width: 92, height: 92),
-          ),
-      ],
-    );
-  }
-
-  /// 一张图。三种来源见 [ChatImages]：文件、已清理、老的内联 base64。
-  Widget _image(String image, {required double width, required double height}) {
-    Widget cleared() => Container(
-      width: width,
-      height: height,
-      color: Colors.black.withValues(alpha: 0.06),
-      alignment: Alignment.center,
-      child: const Text(
-        '图片已清理',
-        style: TextStyle(fontSize: 12, color: Colors.black45),
-      ),
-    );
-
-    if (ChatImages.isCleared(image)) return cleared();
-    if (ChatImages.isFileRef(image)) {
-      final file = ChatImages.fileOf(image);
-      if (file == null) return cleared();
-      return Image.file(
-        file,
-        width: width,
-        height: height,
-        fit: BoxFit.cover,
-        // 气泡里最大也就屏幕宽，按原图 1920 解码是白占内存。
-        cacheWidth: 720,
-        errorBuilder: (context, error, stack) => cleared(),
-      );
-    }
-    return Image.memory(
-      _decodeImage(image),
-      width: width,
-      height: height,
-      fit: BoxFit.cover,
     );
   }
 }
