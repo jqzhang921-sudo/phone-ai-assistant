@@ -24,6 +24,26 @@ class StorageService {
     ChatImages.dirPath = '${_dir.path}/chat_images';
   }
 
+  /// 删掉拆图前留的原文件备份（`conversations_pre_images/`）。
+  ///
+  /// 备份只为「拆图那一下出错能找回来」。2026-09-14 Mu5e 拆完核对过，
+  /// Cleo 说删——200MB 一直占着没有意义。启动时删：拆图发生在点进对话
+  /// 那一刻，那一轮 App 开着的期间备份都在，下次启动才清。
+  static Future<void> dropPreImageBackups() async {
+    try {
+      final dir = Directory('${_dir.path}/conversations_pre_images');
+      if (!await dir.exists()) return;
+      var bytes = 0;
+      await for (final f in dir.list()) {
+        if (f is File) bytes += await f.length();
+      }
+      await dir.delete(recursive: true);
+      debugPrint('[images] 拆图备份已删，释放 ${bytes ~/ (1024 * 1024)}MB');
+    } catch (e) {
+      debugPrint('[images] 删拆图备份失败：$e');
+    }
+  }
+
   /// 保存自定义聊天背景图片路径（传 null 清除）
   static Future<void> setBackgroundImagePath(String? path) async {
     final prefs = await SharedPreferences.getInstance();
