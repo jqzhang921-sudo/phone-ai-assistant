@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
+import '../models/mcp_tool.dart';
 import 'ai_client.dart';
 import 'app_providers.dart';
 import 'book_chat_store.dart';
@@ -34,6 +35,34 @@ import 'mcp_server.dart';
 /// 引导型的价值在于「它为什么这么问」——看见推理过程，比只看见那个问题有用。
 /// 主 App 那边思考是附加信息，这边它本身就是内容的一部分，所以思考跟着正文
 /// 一起流出来。
+/// 书聊里模型能调的工具，**白名单**。
+///
+/// ## 为什么要有
+///
+/// `McpServer` 在创建时就把全部二十几个内置工具注册好了，这份循环原来把它们
+/// 连同外接 MCP 一股脑交给模型——于是一场读书讨论里，模型能拍照、定位、读剪贴板、
+/// 读写文件、写日记、定闹钟。读书版装在别人手机上，这些没有一个说得通。
+///
+/// 2026-09-07 我还跟 Cleo 说过「读书版一个工具都没注册」，那句是错的：
+/// 没注册的是 provider 里的**开关**，工具本身一直都在。
+///
+/// 还有一个具体的坑：`send_voice` 在这里调了会真的合成、扣 ElevenLabs 的钱，
+/// 但书聊没有「把结果接成语音气泡」的那段，工具卡片又被藏起来——
+/// **屏幕上什么都没有，模型却以为自己说过了**。
+///
+/// ## 为什么只留 web_search
+///
+/// 读书讨论唯一用得上的是查书——作者、背景、它没读过的那部分。
+/// `search_news` 查的是今天发生的事，读书用不到。要加东西往这里加，
+/// 并且想清楚「这个工具在别人手机上被调用」是不是说得通。
+const bookChatToolNames = {'web_search'};
+
+/// 从全部可用工具里挑出书聊能用的那几个。
+///
+/// 外接 MCP 的工具也走这一道——名字不在白名单里就不给，不管它从哪来。
+List<McpTool> bookChatTools(Iterable<McpTool> all) =>
+    all.where((t) => bookChatToolNames.contains(t.name)).toList();
+
 mixin BookChatStreaming<T extends StatefulWidget> on State<T> {
   // ===== 每个 Screen 要实现 =====
 
@@ -124,10 +153,11 @@ mixin BookChatStreaming<T extends StatefulWidget> on State<T> {
       return;
     }
 
-    final allTools = [
+    // 只给白名单里的，见 [bookChatToolNames]。
+    final allTools = bookChatTools([
       ...mcpServer.registeredTools.map((r) => r.tool),
       ...externalTools,
-    ];
+    ]);
     final clientWithTools = AiClient(config: aiClient.config, tools: allTools);
 
     int maxRounds = 5;
@@ -212,6 +242,15 @@ mixin BookChatStreaming<T extends StatefulWidget> on State<T> {
   /// 失败路径也必须是 JSON：模型和界面都按 JSON 读，混进裸字符串
   /// （`'错误: ...'`）会让两边都拿不到结构化的失败原因。
   Future<String> executeTool(McpServer mcpServer, ToolCallInfo tc) async {
+    // 第二道闸：请求里已经不给了，但模型偶尔会凭空编一个工具名调过来
+    // （尤其是历史里出现过的）。不在白名单里的一律不执行——
+    // 光靠「没发给它」挡不住拍照、读剪贴板这类有副作用的调用。
+    if (!bookChatToolNames.contains(tc.name)) {
+      return jsonEncode({
+        'success': false,
+        'error': '读书讨论里不能用 ${tc.name}，只能用：${bookChatToolNames.join('、')}',
+      });
+    }
     final executor =
         mcpServer.registeredTools
             .where((r) => r.tool.name == tc.name)
