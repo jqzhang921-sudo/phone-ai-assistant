@@ -420,22 +420,17 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickImages(ImageSource source) async {
     final picked = <XFile>[];
     if (source == ImageSource.camera) {
-      // imageQuality：原来只限了尺寸没压画质，一张图还是几 MB。
-      // 85 肉眼看不出差别，体积能小一大截。
+      // 这里只限尺寸，**不压画质**：发送前统一转 WebP（见
+      // [ChatImages.toWebp]）。这里再压一道 JPEG，就是有损压两遍。
       final shot = await _picker.pickImage(
         source: source,
         maxWidth: 1920,
         maxHeight: 1920,
-        imageQuality: 85,
       );
       if (shot != null) picked.add(shot);
     } else {
       picked.addAll(
-        await _picker.pickMultiImage(
-          maxWidth: 1920,
-          maxHeight: 1920,
-          imageQuality: 85,
-        ),
+        await _picker.pickMultiImage(maxWidth: 1920, maxHeight: 1920),
       );
     }
     if (picked.isEmpty || !mounted) return;
@@ -629,7 +624,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 图存成文件，消息里只记引用。原来是整张 base64 塞进消息，
     // 对话文件就是这么涨到 200MB 的，见 [ChatImages]。
-    final pickedBytes = [for (final file in picked) await file.readAsBytes()];
+    final pickedBytes = [
+      for (final file in picked)
+        await ChatImages.toWebp(await file.readAsBytes()),
+    ];
     final images = [
       for (final bytes in pickedBytes) await ChatImages.save(bytes),
     ];

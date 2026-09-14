@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'ai_client.dart' show mimeOfImage;
+
 class VisionService {
   static const _keyStorage = 'mimo_api_key';
   static const _endpoint = 'https://api.xiaomimimo.com/v1/chat/completions';
@@ -37,7 +39,12 @@ class VisionService {
                 {'type': 'text', 'text': userPrompt},
                 {
                   'type': 'image_url',
-                  'image_url': {'url': 'data:image/jpeg;base64,$imageBase64'},
+                  // 按真实格式报。原来写死 jpeg：发 png 时就是错的，
+                  // 聊天图片改存 WebP 以后每张都会报错格式。
+                  'image_url': {
+                    'url':
+                        'data:${mimeOfImage(imageBase64)};base64,$imageBase64',
+                  },
                 },
               ],
             },

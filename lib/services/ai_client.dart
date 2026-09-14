@@ -28,7 +28,9 @@ String _withTimestamp(String content, DateTime t) {
 ///
 /// 拆成公开的、不依赖网络的纯函数，就是为了能直接测——认字节这件事是这里
 /// 唯一会错的地方，而它的错法（Anthropic 400）在真机上不摆弄一次看不出来。
-@visibleForTesting
+///
+/// 不再标 `@visibleForTesting`：2026-09-14 起 [VisionService] 也用它——
+/// 聊天图片改存 WebP 之后，那边原来写死的 `image/jpeg` 每张都是错的。
 String mimeOfImage(String base64Image) {
   // 只看开头一小截就够，不必把整张图解出来。截断的长度得是 4 的倍数，
   // 否则 base64.decode 会当成非法输入。

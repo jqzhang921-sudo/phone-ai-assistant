@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:uuid/uuid.dart';
 
 /// 聊天里发的图：**存成文件，消息里只记一个引用**。
@@ -64,6 +66,43 @@ class ChatImages {
       return null;
     }
   }
+
+  /// 存之前转成 WebP。
+  ///
+  /// 2026-09-14 拿三张 1080 宽的图实测：JPEG q85 69–81 KB → WebP q80
+  /// 27–34 KB，省 57–60%。省的是手机上的空间和上传的流量——**模型按像素算钱，
+  /// 费用不变**。顺带不保留 EXIF，照片里的定位不会跟着存下来、发出去。
+  ///
+  /// 转失败、转出来是空的、或者反而更大，一律用原图：转码只是为了省地方，
+  /// 不能因为它把图发不出去。
+  ///
+  /// [encoder] 给测试换掉插件用——插件要调原生那边，测试环境里调不到。
+  static Future<List<int>> toWebp(
+    List<int> bytes, {
+    @visibleForTesting Future<Uint8List?> Function(Uint8List bytes)? encoder,
+  }) async {
+    final input = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    try {
+      final out = await (encoder ?? _encodeWebp)(input);
+      if (out == null || out.isEmpty || out.length >= input.length) {
+        return bytes;
+      }
+      return out;
+    } catch (e) {
+      debugPrint('[chat_images] 转 WebP 失败，用原图：$e');
+      return bytes;
+    }
+  }
+
+  static Future<Uint8List?> _encodeWebp(Uint8List bytes) =>
+      FlutterImageCompress.compressWithList(
+        bytes,
+        // 选图时已经缩到 1920 以内了，这里给同样的数。
+        minWidth: 1920,
+        minHeight: 1920,
+        quality: 80,
+        format: CompressFormat.webp,
+      );
 
   /// 存一张新图，返回要写进消息里的引用。
   static Future<String> save(List<int> bytes) async {
