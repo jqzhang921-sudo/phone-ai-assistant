@@ -20,15 +20,19 @@ void main() {
     // anthropic 也在这边——两条路报文的装法不同（image_url vs source），
     // 但都真的把图发出去了。加档位时忘了配报文，`sendsImagesNatively` 会
     // 提前放行，图却哪儿都没去，比「转成文字」还难查。
-    for (final p in ['openai', 'gemini', 'anthropic']) {
+    //
+    // mimo 2026-09-14 挪到这一组：视觉识图那条兜底本来就是拿同一个 MIMO 地址、
+    // 同一种 image_url 报文在看图。原来留在外面，拿 MIMO 聊天时图就被转去
+    // 「视觉识图」——而那边又是 MIMO，还得另配一遍 key。
+    for (final p in ['openai', 'gemini', 'anthropic', 'mimo']) {
       expect(clientOf(p).sendsImagesNatively, isTrue, reason: p);
     }
   });
 
   test('不能收图的格式：图得先送去转成文字', () {
-    // mimo 和 custom 走的是 `_openaiChat`，报文本身没问题，只是没验过——
-    // 等哪天真拿 MIMO 发通一张图，把它挪到上面那一组就行。
-    for (final p in ['mimo', 'custom']) {
+    // custom 的默认模型是 deepseek-chat（纯文本），图原样发过去会直接报错；
+    // 任意自建地址后面是什么模型，代码也没法知道。所以它得走识图兜底。
+    for (final p in ['custom']) {
       expect(clientOf(p).sendsImagesNatively, isFalse, reason: p);
     }
   });

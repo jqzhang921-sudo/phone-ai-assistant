@@ -10,14 +10,23 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 ///
 /// 「格式」指的是**报文怎么写**，不是模型聪不聪明：同一份 base64 图，OpenAI
 /// 那条路包成 `image_url`，Claude 那条路包成 `source`。两条路现在都能发图了，
-/// 所以两个都写在表里；`mimo` 和 `custom` 走的是 `_openaiChat`，报文本身没问题，
-/// 迟迟没写进来是因为没验过——等哪天真拿 MIMO 发通一张图，把它加进来就行。
+/// 所以两个都写在表里。
+///
+/// `mimo` 2026-09-14 加进来。之前没写是因为「没验过」——其实早验过了：
+/// [VisionService] 那条识图兜底调的就是同一个地址、同一个 `mimo-v2.5`，
+/// 用的正是 `image_url` 这种报文。结果是**拿 MIMO 聊天时图被转给「视觉识图」，
+/// 而视觉识图又是 MIMO**，还得另配一遍 key，没配就等于没发。
+///
+/// `custom` 仍然不写：它的默认模型是 `deepseek-chat`（纯文本），图原样发过去
+/// 会直接报错；而一个任意自建地址后面是什么模型，代码没法知道。
+/// ⚠️ `mimo` 同理有个前提：选的是能看图的那个模型。改成纯文本的型号，
+/// 这里会照样放行。
 ///
 /// 存在的理由见 [AiClient.sendsImagesNatively]：原来那里写的是
 /// `provider == 'openai'` 一句死判断，而 `custom` 和 default 走的是同一个
 /// `_openaiChat`、同一份报文格式——一个 OpenAI 兼容、模型也确实能识图的自定义
 /// 端点，就因为名字不叫 openai 被判成「不能收图」，图被**悄悄丢掉**。
-const kImageNativeProviders = <String>{'openai', 'gemini', 'anthropic'};
+const kImageNativeProviders = <String>{'openai', 'gemini', 'anthropic', 'mimo'};
 
 class ApiKeyConfig {
   static const _keyPrefix = 'api_key_';
