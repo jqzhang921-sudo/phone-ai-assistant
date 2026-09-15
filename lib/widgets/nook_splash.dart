@@ -260,16 +260,16 @@ void _paintLamp(Canvas c, _Geo g, SplashTone tone, double dpr) {
   c.drawRect(
     all,
     Paint()
+      // ⚠️ 原型只有 4 个色标（.55/.32/.08/0），在手机上 .55 那一档折得太硬，
+      // 光团外面看得出一圈边，像个圆角方块。多铺几档，让它顺着一条曲线暗下去。
       ..shader = ui.Gradient.radial(
         center,
         w * 0.46,
         [
-          tone.light.withValues(alpha: 0.55),
-          tone.light.withValues(alpha: 0.32),
-          tone.light.withValues(alpha: 0.08),
-          tone.light.withValues(alpha: 0),
+          for (final a in const [.55, .44, .32, .21, .13, .075, .035, .01, 0.0])
+            tone.light.withValues(alpha: a),
         ],
-        const [0, 0.18, 0.55, 1],
+        const [0, 0.08, 0.18, 0.3, 0.42, 0.55, 0.7, 0.85, 1],
       ),
   );
   c.drawRect(
