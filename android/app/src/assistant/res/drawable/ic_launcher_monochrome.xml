@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 主题图标的剪影：墙角 + 一个圆点代表灯。没有光晕——系统只认轮廓。
+     比彩色版的线稍粗，染色之后才立得住。坐标和彩色版同一张 108 画布，
+     位置是「墙角往左下」那一版：墙角在 (36,74)，灯还在 (52,56)。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M36,30 L36,74 L78,74"
+        android:strokeWidth="3.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M56.5,56 A4.5,4.5 0 1,1 47.5,56 A4.5,4.5 0 1,1 56.5,56 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

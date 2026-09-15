@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知栏小图标：白色剪影，墙角 + 一个点（和桌面图标同一个位置：墙角在左下，灯在中间）。
+     原来通知用的是 @mipmap/ic_launcher，安卓把彩色图标压成一块白方块，认不出是谁。
+     放在 main 里：主 App 和读书版的通知都用它，读书版用 mipmap 的话一样是白方块。
+     从 Dart 里按名字引用（NudgeService.init），release 会做资源裁剪，靠 res/raw/keep.xml 留住。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M6,4.2 L6,18.6 L20,18.6"
+        android:strokeWidth="1.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M13.2,12.6 A1.9,1.9 0 1,1 9.4,12.6 A1.9,1.9 0 1,1 13.2,12.6 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

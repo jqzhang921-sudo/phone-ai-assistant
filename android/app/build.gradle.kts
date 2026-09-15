@@ -58,6 +58,9 @@ android {
             dimension = "app"
             // 不加后缀，保持原来的包名——已经装在她手机上的那个不能变，
             // 变了等于换了个应用，数据全丢。
+            // 桌面上显示的名字。2026-09-16 Cleo 定的名字就是 Nook；
+            // main 里那个 phone_ai_assistant 只是 Flutter 模板留下的。改名不动包名，数据不受影响。
+            resValue("string", "app_name", "Nook")
         }
         create("reading") {
             dimension = "app"

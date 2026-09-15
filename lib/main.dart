@@ -7,6 +7,8 @@ import 'screens/home_shell.dart';
 import 'services/app_providers.dart';
 import 'services/avatar_store.dart';
 import 'services/chat_images.dart';
+import 'services/glance_health.dart';
+import 'services/screen_glance.dart';
 import 'services/storage_service.dart';
 import 'services/xiaoke_channel.dart';
 import 'services/external_mcp_service.dart';
@@ -130,12 +132,46 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
     // 不弹通知——人已经在 App 里了。门槛照走，所以不会变吵。
     NudgeScheduler.runOnStartup();
     _autoStartMcpServer();
+    _checkGlanceHealth();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// 「看一眼屏幕」断了的话，在 App 里说一声，带一个「去设置」。
+  ///
+  /// 断的原因和为什么不会自己好，见 [GlanceHealth]。这里只管她人在 App 里的时候；
+  /// 后台那条通知见 [GlanceHealth.notifyIfBroken]。
+  ///
+  /// 断着的时候只说一次，直到它好了再断才会再说——她从无障碍设置页回来又是一次
+  /// resumed，要是那时已经接上了，就不该再弹一条。
+  bool _glanceWarned = false;
+
+  Future<void> _checkGlanceHealth() async {
+    // 让首屏先画完，别跟启动抢。
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    if (!await GlanceHealth.broken()) {
+      _glanceWarned = false;
+      return;
+    }
+    if (_glanceWarned) return;
+    _glanceWarned = true;
+    final ctx = appNavigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(
+      SnackBar(
+        content: const Text('「看一眼屏幕」被系统停掉了，去无障碍里关掉再打开一次就好'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: '去设置',
+          onPressed: ScreenGlance.openSettings,
+        ),
+      ),
+    );
   }
 
   /// ⚠️ 上面那句 `runOnStartup` **只在冷启动时跑**：它在 initState 里，
@@ -148,6 +184,7 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       NudgeScheduler.runOnResume();
+      _checkGlanceHealth();
     }
   }
 
@@ -232,7 +269,8 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
             final titleSerif = s.titleSerif;
             final tone = _toneFor(s, bg);
             return MaterialApp(
-              title: '手机 AI 助手',
+              // 最近任务里显示的名字，和桌面上的 Nook 对上。
+              title: 'Nook',
               // 工具是不带 context 的静态函数，但有些工具需要当场问用户
               // （比如读日历）。给它们一个能挂弹框的地方。
               navigatorKey: appNavigatorKey,

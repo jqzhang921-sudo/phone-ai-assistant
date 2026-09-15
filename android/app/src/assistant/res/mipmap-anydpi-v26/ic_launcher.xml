@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nook 的图标：深夜里墙角亮着一盏灯。2026-09-16 定的。
+     两层画在 108dp 的画布上，手机只露中间 72dp、再裁成各种形状；墙角和灯都在半径 33dp 的安全区里。
+     monochrome 是安卓 13「主题图标」用的剪影：系统拿它染成壁纸色，只看 alpha。
+     图是 scratchpad 里的 icon-export.html 用浏览器画出来的，和原型页面「图标」那块同一套画法。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

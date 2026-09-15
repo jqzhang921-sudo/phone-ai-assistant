@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../config/settings.dart';
 import '../models/chat_message.dart';
 import '../models/mcp_tool.dart';
 import 'ai_client.dart';
 import '../config/persona.dart';
 import 'chat_images.dart';
 import 'memory_context.dart';
+import 'notify_name.dart';
 import 'screen_glance.dart';
 import 'vision_service.dart';
 import 'self_notes.dart';
@@ -107,7 +107,9 @@ class NudgeService {
       const InitializationSettings(
         // 用应用图标。单色小图标更规范，但那要额外做一份 drawable，
         // 骨架阶段先不铺这个摊子。
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        // 通知栏小图标：白色剪影（墙角 + 一个点），见 res/drawable/ic_stat_nook.xml。
+        // 原来是 @mipmap/ic_launcher，彩色图标在通知栏会被压成一块白方块。
+        android: AndroidInitializationSettings('@drawable/ic_stat_nook'),
       ),
     );
     _inited = true;
@@ -1048,13 +1050,11 @@ ${await _glanceContext()}
   /// 藏起来的是锁屏上的展示，不是它说过的话。
   static Future<void> _show(String text, NudgePrefs prefs) async {
     await init();
-    var name = '';
-    try {
-      name = (await AppSettings.load()).aiName.trim();
-    } catch (_) {}
+    // 标题用她自己给它起的备注，见 [NotifyName]。
+    final title = await NotifyName.resolve('它说');
     await _plugin.show(
       _channelId.hashCode,
-      name.isEmpty ? '它说' : name,
+      title,
       prefs.hideContent ? '说了句话' : text,
       const NotificationDetails(
         android: AndroidNotificationDetails(

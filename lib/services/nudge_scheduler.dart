@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'app_providers.dart';
+import 'glance_health.dart';
 import 'letter_schedule.dart';
 import 'nudge_service.dart';
 import 'storage_service.dart';
@@ -138,6 +139,9 @@ void nudgeCallbackDispatcher() {
       // 所以一直没看出来。2026-09-15 接「看一眼屏幕」时发现的：截到的图
       // 也要靠这里设好的 ChatImages.dirPath 才存得下。
       await StorageService.init();
+      // 「看一眼屏幕」被系统停掉之后不会自己接回来，她不去设置页就不知道。
+      // 放在开关判断前面：主动说话关着，看一眼断了也该说。
+      await GlanceHealth.notifyIfBroken();
       final prefs = await NudgeService.loadPrefs();
       if (!prefs.enabled) {
         await NudgeService.noteRun('醒了，但主动说话是关着的');

@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../config/settings.dart';
+import 'notify_name.dart';
 import 'nudge_service.dart';
 
 /// 她发完消息就走开了，回复在后面写完：弹一条通知叫她回来看。
@@ -40,10 +40,8 @@ class ReplyNotifier {
       if (!await NudgeService.ensurePermission()) return;
       await NudgeService.init();
 
-      var name = '';
-      try {
-        name = (await AppSettings.load()).aiName.trim();
-      } catch (_) {}
+      // 标题用她自己给它起的备注，见 [NotifyName]。
+      final title = await NotifyName.resolve('它回你了');
       // 「通知里不显示内容」是主动说话设置页里那个开关，管的是锁屏上别人
       // 看不看得见——那个顾虑对回复一样成立，不另设一个。
       final hide = (await NudgeService.loadPrefs()).hideContent;
@@ -51,7 +49,7 @@ class ReplyNotifier {
       await FlutterLocalNotificationsPlugin().show(
         // 按对话分 id：同一段里连着回的，后一条顶掉前一条，不堆一串。
         conversationId.hashCode,
-        name.isEmpty ? '它回你了' : name,
+        title,
         hide ? '回了你一条消息' : preview(text),
         const NotificationDetails(
           android: AndroidNotificationDetails(

@@ -33,6 +33,7 @@ import '../services/nudge_gate.dart';
 import '../services/nudge_scheduler.dart';
 import '../services/nudge_service.dart';
 import '../services/screen_glance.dart';
+import '../services/notify_name.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -71,6 +72,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _wereadKeyController = TextEditingController();
   final _userNameController = TextEditingController();
   final _aiNameController = TextEditingController();
+  final _notifyRemarkController = TextEditingController();
+
+  /// 通知里怎么称呼 TA，她自己起的备注。见 [NotifyName]。
+  String _notifyRemark = '';
 
   // 密钥默认打码，点小眼睛才明文——设置页经常被截图/投屏。
   bool _showApiKey = false;
@@ -236,6 +241,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _wereadKeyController.dispose();
     _userNameController.dispose();
     _aiNameController.dispose();
+    _notifyRemarkController.dispose();
     _mcpNameController.dispose();
     _mcpUrlController.dispose();
     _mcpTokenController.dispose();
@@ -260,6 +266,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _wereadKeyController.text = await WereadService.getKey() ?? '';
     _userNameController.text = _settings.userName;
     _aiNameController.text = _settings.aiName;
+    _notifyRemark = await NotifyName.remark();
+    _notifyRemarkController.text = _notifyRemark;
     _externalServers = await ExternalMcpServerService.load();
     _nudgePrefs = await NudgeService.loadPrefs();
     _periodShared = await PeriodLog.sharedWithAi();
@@ -381,6 +389,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     hint: '留空则信里不落款',
                     controller: _aiNameController,
                     apply: (v) => _settings.aiName = v,
+                  ),
+            ),
+            // 通知标题上的称呼。和上面「你」分开：那个是它的名字、会进人设；
+            // 这个只是她这边看通知的备注，像给联系人改备注。
+            _row(
+              theme,
+              icon: PhosphorIconsRegular.bellSimple,
+              title: '通知里怎么称呼 TA',
+              value:
+                  _notifyRemark.isNotEmpty
+                      ? _notifyRemark
+                      : (_settings.aiName.isNotEmpty ? _settings.aiName : '未设置'),
+              onTap:
+                  () => _editName(
+                    title: '通知里怎么称呼 TA',
+                    hint: '像给联系人改备注，留空就用 TA 的名字',
+                    controller: _notifyRemarkController,
+                    apply: (v) {
+                      _notifyRemark = v;
+                      NotifyName.setRemark(v);
+                    },
                   ),
             ),
             _switchRow(

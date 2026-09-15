@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- release 包会裁掉「代码里没直接引用」的资源。通知小图标是 Dart 那边按名字传进去的，
+     裁剪器看不见这层引用，不留的话装上之后通知一弹就找不到图标。 -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_nook" />
