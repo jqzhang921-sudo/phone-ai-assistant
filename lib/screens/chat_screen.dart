@@ -46,6 +46,7 @@ import '../widgets/mark_backdrop.dart';
 import 'settings_screen.dart';
 import 'musing_corner_screen.dart';
 import 'pc_chat_screen.dart';
+import 'xiaoke_chat_screen.dart';
 import '../config/app_shape.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -1436,7 +1437,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _saveConversation();
   }
 
-  /// 三宫格。图标二选一：品牌图标给 [asset]，功能图标给 [icon]——
+  /// 首页那一排快捷入口。图标二选一：品牌图标给 [asset]，功能图标给 [icon]——
   /// 星=新对话、书=书架属于「地方和内容」，显示器属于「机器」，各归各的。
   Widget _quickActionCard(
     ThemeData theme, {
@@ -2494,6 +2495,18 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap:
                   () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const PcChatScreen()),
+                  ),
+            ),
+            const SizedBox(width: 10),
+            // 跟电脑上的小克（Claude Code 会话）直接聊，不经过 App 里的模型。
+            // 和「电脑」分开放：那个是每条消息起一个一次性的助手，不是同一个人。
+            _quickActionCard(
+              theme,
+              icon: PhosphorIconsRegular.chatCircleDots,
+              label: '小克',
+              onTap:
+                  () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const XiaokeChatScreen()),
                   ),
             ),
           ],

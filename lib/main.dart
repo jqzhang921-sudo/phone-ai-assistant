@@ -8,6 +8,7 @@ import 'services/app_providers.dart';
 import 'services/avatar_store.dart';
 import 'services/chat_images.dart';
 import 'services/storage_service.dart';
+import 'services/xiaoke_channel.dart';
 import 'services/external_mcp_service.dart';
 import 'services/nudge_scheduler.dart';
 import 'services/tts_service.dart';
@@ -41,6 +42,9 @@ void main() async {
   StorageService.dropPreImageBackups().ignore();
   // 你自己的头像全局一张，先读进来，气泡里的头像一出现就是对的。
   AvatarStore.instance.load(AvatarStore.userKey).ignore();
+  // 小克频道随 App 一起开：在别的页面时小克回的话也能收到、存下来。
+  // 端口带连接码鉴权，见 [XiaokeChannel]。
+  XiaokeChannel.instance.start().ignore();
 
   // 只是把后台入口注册给原生侧，不会开始跑——跑不跑由设置里那个开关决定。
   // 必须在 runApp 之前：系统唤醒时走的是另一条路径，那时候没有 widget 树。

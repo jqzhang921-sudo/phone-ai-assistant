@@ -14,6 +14,7 @@ import '../models/musing_entry.dart';
 import '../utils/dates.dart';
 import 'avatar_store.dart';
 import 'chat_images.dart';
+import 'xiaoke_channel.dart';
 
 class StorageService {
   static late Directory _dir;
@@ -24,6 +25,7 @@ class StorageService {
     _dir = await getApplicationDocumentsDirectory();
     ChatImages.dirPath = '${_dir.path}/chat_images';
     AvatarStore.dirPath = '${_dir.path}/avatars';
+    XiaokeChannel.dirPath = '${_dir.path}/xiaoke';
   }
 
   /// 删掉拆图前留的原文件备份（`conversations_pre_images/`）。
