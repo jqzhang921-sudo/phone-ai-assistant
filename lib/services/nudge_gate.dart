@@ -198,6 +198,37 @@ NudgeDecision decideNudge({
   return const NudgeDecision(true, NudgeBlock.none);
 }
 
+/// 好久没说话多久之后，它才会想看一眼屏幕。
+const glanceAfterSilence = Duration(hours: 3);
+
+/// 两次「问它想不想看」之间至少隔多久。按**问**算，不按看成没看成算——
+/// 它说不想看、或者一看是锁屏，下一轮十五分钟后又问一遍，就是一整天每刻钟
+/// 调一次模型。
+const glanceGap = Duration(hours: 3);
+
+/// 「好久没说话、它想看一眼」这条路现在开不开。纯函数。
+///
+/// ⚠️ 文件头说过这里**没有「太久没聊就推」**，这条也没有破例：安静够久只是
+/// **看一眼**的由头，不是**说话**的由头。看了之后说不说，照样过
+/// `NudgeService` 里那三条自检，多数时候该是看了、不说。
+/// 这条路是 2026-09-15 Cleo 自己要的：「长时间没说话，后台叫醒它之后，
+/// 他可能会想知道我在干什么，就看一眼屏幕」。
+///
+/// 门槛那几条（开关、静默时段、两条推送的间隔）另外照走，不在这里重复。
+bool glanceDue({
+  required DateTime now,
+  DateTime? lastChatAt,
+  DateTime? lastAskedAt,
+}) {
+  if (lastChatAt != null && now.difference(lastChatAt) < glanceAfterSilence) {
+    return false;
+  }
+  if (lastAskedAt != null && now.difference(lastAskedAt) < glanceGap) {
+    return false;
+  }
+  return true;
+}
+
 /// 这条话和最近推过的那几条是不是一个意思。
 ///
 /// 主动消息的通病是**重复**——它会反复说同一类话。单条读着没问题，

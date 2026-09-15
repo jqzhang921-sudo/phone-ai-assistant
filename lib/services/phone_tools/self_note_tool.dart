@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../../models/mcp_tool.dart';
+import '../screen_glance.dart';
 import '../self_notes.dart';
 
 /// 让他在对话当场给自己留一张便签，过一会儿回来问一句。
@@ -49,6 +50,14 @@ class SelfNoteTool {
               '过多少分钟回来。按那件事真实需要的时间估，别取整凑数。'
               '最短 5 分钟，最长 24 小时（1440）。',
         },
+        'look_at_screen': {
+          'type': 'boolean',
+          'description':
+              '到点时先看一眼 TA 的手机屏幕，看完再决定说什么。'
+              '只在**那件事的下文就在屏幕上**时用：TA 说再刷一会儿就睡、'
+              '再玩一局就去干活、看完这集就出门。看了会截一张图留在对话里，TA 看得到。'
+              '不填就是普通便签，到点不看。',
+        },
       },
       'required': ['about', 'after_minutes'],
     },
@@ -67,6 +76,15 @@ class SelfNoteTool {
       return {'success': false, 'error': 'after_minutes 要在 5 到 1440 之间'};
     }
 
+    // 她没允许看屏幕，就记成普通便签，并且**明说**——不然它以为到点会看，
+    // 话会接不上（「我刚看了一眼」，其实什么都没看）。
+    var glance = args['look_at_screen'] == true;
+    var glanceNote = '';
+    if (glance && !await ScreenGlance.allowed()) {
+      glance = false;
+      glanceNote = 'TA 没开「允许看一眼屏幕」，这张记成了普通便签，到点不会看。';
+    }
+
     final now = DateTime.now();
     final ok = await SelfNoteStore.add(
       SelfNote(
@@ -75,6 +93,7 @@ class SelfNoteTool {
         about: about,
         createdAt: now,
         dueAt: now.add(Duration(minutes: minutes)),
+        glance: glance,
       ),
     );
 
@@ -91,7 +110,10 @@ class SelfNoteTool {
     // 不给它「已提醒用户」之类的错觉：便签只是记下了，到点还要再判断一次。
     return {
       'success': true,
-      'message': '记下了，$minutes 分钟后会把这件事再拿给你看一次。',
+      'message':
+          '记下了，$minutes 分钟后'
+          '${glance ? '会先看一眼 TA 的屏幕，再' : '会'}把这件事拿给你看一次。'
+          '$glanceNote',
     };
   }
 }

@@ -15,6 +15,7 @@ import 'phone_tools/sensors_tool.dart';
 import 'phone_tools/search_tool.dart';
 import 'phone_tools/self_note_tool.dart';
 import 'phone_tools/avatar_tool.dart';
+import 'phone_tools/glance_tool.dart';
 import 'phone_tools/small_thing_tool.dart';
 import 'tool_tiers.dart';
 import 'phone_tools/weather_tool.dart';
@@ -70,6 +71,7 @@ class McpServer {
     // 后者到点兑现完就没了。
     _registerTool(SelfNoteTool.definition, SelfNoteTool.execute);
     _registerTool(AvatarTool.definition, AvatarTool.execute);
+    _registerTool(GlanceTool.definition, GlanceTool.execute);
     // 延迟层的入口。必须常驻——它要是也收起来，延迟层等于不存在。
     _registerTool(ToolFinder.definition, ToolFinder.execute);
     _registerTool(SmallThingTool.definition, SmallThingTool.execute);

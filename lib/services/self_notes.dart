@@ -31,12 +31,20 @@ class SelfNote {
   /// 他自己定的、可以回来问的时间。
   final DateTime dueAt;
 
+  /// 到点时要不要**先看一眼她的屏幕**，再决定怎么说。
+  ///
+  /// 2026-09-15 Cleo 选的：「我再刷十分钟就睡」这种事，下文就在屏幕上——
+  /// 与其到点干问一句，不如先看看她是不是还在刷。**只有它留便签时特意要了
+  /// 才看**，普通便签照旧不看。
+  final bool glance;
+
   const SelfNote({
     required this.id,
     required this.conversationId,
     required this.about,
     required this.createdAt,
     required this.dueAt,
+    this.glance = false,
   });
 
   /// 过期作废的宽限。
@@ -61,6 +69,7 @@ class SelfNote {
     'about': about,
     'createdAt': createdAt.toIso8601String(),
     'dueAt': dueAt.toIso8601String(),
+    if (glance) 'glance': true,
   };
 
   static SelfNote? fromJson(Map<String, dynamic> j) {
@@ -77,6 +86,8 @@ class SelfNote {
       about: about,
       createdAt: created,
       dueAt: due,
+      // 老便签没有这个字段，读出来就是普通便签。
+      glance: j['glance'] == true,
     );
   }
 }
@@ -101,6 +112,10 @@ TA 说了一件**有下文的事**——去做一件要花时间的事、等一�
 
 留便签是件安静的事：**不用告诉 TA 你会回来问**，那样等于先许一个承诺。
 到点了你会重新判断一次，那会儿觉得不合适，不说就是了。
+
+要是那件事的下文**就在 TA 的屏幕上**——说再刷一会儿就睡、再玩一局就去干活——
+可以让便签到点时先看一眼屏幕（look_at_screen），看完再决定说什么。
+看是为了接住 TA 自己说的那件事；TA 没说这种话的时候，不用。
 
 （等多久、什么时候别留，follow_up_later 的说明里写了。）
 ''';

@@ -23,6 +23,7 @@ import '../config/persona.dart';
 import '../services/chat_events.dart';
 import '../services/avatar_store.dart';
 import '../services/chat_images.dart';
+import '../services/reply_notifier.dart';
 import '../services/phone_tools/avatar_tool.dart';
 import '../widgets/avatar_sheet.dart';
 import '../services/mcp_server.dart';
@@ -283,14 +284,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// 还在生成回复的那几段，按 id。见 [_continueChat]。
+  ///
+  /// 她发完消息回了首页，那一轮还在跑、还在往**那个对象**里写。这时候她再点
+  /// 进同一段，从盘上读出来的是一个新对象——不接回去的话，她看到的是没写完
+  /// 的旧样子，跑完的那一轮也不会出现在屏幕上。
+  final Map<String, Conversation> _running = {};
+
   void _switchConversation(Conversation conv) {
     _saveIfChanged();
+    final live = _running[conv.id];
+    if (live != null) conv = live;
     // 刚从盘上读出来（或刚存过）的，就是存盘时的样子。
     _savedSig = _sigOf(conv);
     AvatarStore.instance.load(conv.id);
     setState(() {
       _conversation = conv;
-      _isLoading = false;
+      _isLoading = live != null;
       _textController.clear();
       _chatMode = true;
       // 换了对话，上一段的事件行不能留着——它们的时间落在这一段之外。
@@ -373,6 +383,9 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 只有索引，多了一次「按 id 去取」的机会，也就多了这一次丢消息的机会。
   Future<Conversation?> _fullConversation(String id) async {
     if (id == _conversation.id) return _conversation;
+    // 还在生成回复的那段：盘上那份是没写完的样子，拿活的。
+    final live = _running[id];
+    if (live != null) return live;
     return StorageService.loadConversation(id);
   }
 
@@ -685,41 +698,80 @@ class _ChatScreenState extends State<ChatScreen> {
   /// 没有网络连接，也没有报错。2026-09-14 晚上读书讨论先这样卡过，
   /// 接着主 App 也卡了。读书那边的同一层兜底见 `BookChatStreaming.continueTurn`。
   Future<void> _continueChat() async {
+    // ⚠️ 这一轮从头到尾只认**开始时的那段对话**，不认 `_conversation`。
+    //
+    // 她发完消息回首页，`_goHome` 会把 `_conversation` 换成一段空的。原来这一轮
+    // 接着往 `_conversation` 里写，于是回复写进了空对话，真正那段存下来是半截
+    // 的——Cleo 2026-09-15：「他正在回复的时候，我返回，回复就被打断了」。
+    final conv = _conversation;
+    _running[conv.id] = conv;
     try {
-      await _runChatTurn();
+      await _runChatTurn(conv);
     } catch (e) {
       debugPrint('[chat] 这一轮出错：$e');
-      if (!mounted) return;
-      _updateAssistantMessage('❌ 发送消息失败: $e');
-      _finalizeStreamMessage();
+      _updateAssistantMessage(conv, '❌ 发送消息失败: $e');
+      _finalizeStreamMessage(conv);
+    } finally {
+      _running.remove(conv.id);
+    }
+    _finishTurn(conv);
+  }
+
+  /// 一轮收尾：存盘；她不在这段上就弹通知，叫她回来看。
+  void _finishTurn(Conversation conv) {
+    final here = mounted && identical(conv, _conversation);
+    if (here) {
       setState(() => _isLoading = false);
-      _saveConversation();
+      _scrollToBottom();
+    }
+    _saveConversation(conv);
+
+    final last = conv.messages.lastOrNull;
+    if (last == null ||
+        last.role != MessageRole.assistant ||
+        last.content.trim().isEmpty) {
+      return;
+    }
+    if (ReplyNotifier.shouldNotify(
+      onThatConversation: here,
+      lifecycle: WidgetsBinding.instance.lifecycleState,
+    )) {
+      ReplyNotifier.show(conversationId: conv.id, text: last.content);
     }
   }
 
-  Future<void> _runChatTurn() async {
+  /// 改这一轮的对话。她还在这段上就连界面一起刷；不在了（回了首页、换了一段）
+  /// 就只改数据——那个对象还在 [_running] 里，跑完会存盘。
+  void _touch(Conversation conv, VoidCallback change) {
+    if (mounted && identical(conv, _conversation)) {
+      setState(change);
+    } else {
+      change();
+    }
+  }
+
+  Future<void> _runChatTurn(Conversation conv) async {
     final aiClient = context.read<AiClientProvider>().currentClient;
     final mcpServer = context.read<McpServerProvider>().server;
 
     if (aiClient == null) {
-      setState(() {
-        _conversation.messages.add(
+      _touch(conv, () {
+        conv.messages.add(
           ChatMessage(
             id: _uuid.v4(),
             role: MessageRole.assistant,
             content: '⚠️ 请先在设置中配置 API Key',
           ),
         );
-        _isLoading = false;
       });
       return;
     }
 
     // 便签工具要知道自己身处哪段对话，才能把「做好了吗」推回原地。
     // 工具执行器的签名只有 args，拿不到调用现场，所以在这儿放一次。
-    SelfNoteTool.currentConversationId = _conversation.id;
-    AvatarTool.currentConversationId = _conversation.id;
-    AvatarTool.latestUserImages = _latestUserImages;
+    SelfNoteTool.currentConversationId = conv.id;
+    AvatarTool.currentConversationId = conv.id;
+    AvatarTool.latestUserImages = () => _latestUserImagesIn(conv);
 
     // Build client with tools once, reuse for all rounds
     // Always include local phone tools (regardless of MCP Server toggle)
@@ -729,7 +781,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // 分两层：常驻的几个直接声明，其余的收进索引，用 find_tools 现取。
     // 实际的 tools 数组在下面的工具循环里逐轮算，理由见那儿。
-    ToolTiers.begin(_conversation.id, allTools);
+    ToolTiers.begin(conv.id, allTools);
 
     // 身份（名字 + 性格）抽到了 config/persona.dart：主动说话那条路要用
     // **同一份**，否则它开口时不是它。三层优先级和取名字的理由都写在那儿。
@@ -738,7 +790,7 @@ class _ChatScreenState extends State<ChatScreen> {
     // 出问题会整个抛。这条路在发消息的主路上，不能为了一个名字把消息卡住——
     // initState 拿到的那份旧一点，但有。
     final identity = await buildIdentityPrompt(
-      conversationPersona: _conversation.systemPrompt,
+      conversationPersona: conv.systemPrompt,
       fallbackAiName: _aiName,
       fallbackUserName: _userName,
     );
@@ -798,12 +850,9 @@ class _ChatScreenState extends State<ChatScreen> {
     //
     // 用不带工具的 aiClient：摘要任务不需要工具，带上只会多烧 token，还可能
     // 让模型在整理记录时莫名其妙去调用工具。
-    if (needsCompaction(_conversation)) {
-      final compacted = await compactHistory(
-        conv: _conversation,
-        aiClient: aiClient,
-      );
-      if (compacted) _saveConversation();
+    if (needsCompaction(conv)) {
+      final compacted = await compactHistory(conv: conv, aiClient: aiClient);
+      if (compacted) _saveConversation(conv);
     }
 
     // Loop: keep calling AI and executing tools until AI responds with text
@@ -835,10 +884,10 @@ class _ChatScreenState extends State<ChatScreen> {
         // 切片放在循环里算，不能提到外面：工具轮次会往 messages 末尾追加，
         // 提到外面就是个过期快照，后面几轮发出去的历史会缺东西。
         await for (final event in clientWithTools.chat(
-          _visibleHistory(),
+          _visibleHistory(conv),
           systemPrompt: systemPrompt,
           memoryContext: memoryContext,
-          historySummary: _conversation.summary,
+          historySummary: conv.summary,
         )) {
           switch (event.type) {
             case AiEventType.thinking:
@@ -846,6 +895,7 @@ class _ChatScreenState extends State<ChatScreen> {
               // 传空串让气泡先立起来，人就能看见它在想，而不是干等。
               thinkingBuffer = (thinkingBuffer ?? '') + (event.text ?? '');
               _updateAssistantMessage(
+                conv,
                 fullResponse ?? '',
                 thinking: thinkingBuffer,
               );
@@ -853,17 +903,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
             case AiEventType.token:
               fullResponse = (fullResponse ?? '') + (event.text ?? '');
-              _updateAssistantMessage(fullResponse);
+              _updateAssistantMessage(conv, fullResponse);
               break;
 
             case AiEventType.toolCalls:
               fullResponse = fullResponse ?? '';
               // Embed tool calls in the assistant message, then finalize
               _updateAssistantMessage(
+                conv,
                 fullResponse,
                 toolCalls: event.toolCalls ?? [],
               );
-              _finalizeStreamMessage();
+              _finalizeStreamMessage(conv);
               for (final tc in event.toolCalls ?? []) {
                 String toolResult;
                 try {
@@ -878,7 +929,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     'error': '工具执行异常: $e',
                   });
                 }
-                _conversation.messages.add(
+                conv.messages.add(
                   ChatMessage(
                     id: _uuid.v4(),
                     role: MessageRole.toolResult,
@@ -891,7 +942,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 // 工具本身只负责合成和存盘；「这条出现在对话里」是界面的事。
                 // 不这么接的话，用户看到的只是一个工具调用卡片，
                 // 那句话等于没说出口。
-                _appendVoiceMessage(tc.name, toolResult);
+                _appendVoiceMessage(conv, tc.name, toolResult);
+                // glance_screen 截到的图接成一条消息，下一轮模型才看得到。
+                await _appendGlanceShot(conv, aiClient, tc.name, toolResult);
               }
               // Break out of the stream loop to continue the outer while loop
               fullResponse = null; // signal that we need another round
@@ -899,27 +952,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
             case AiEventType.done:
               fullResponse = event.text ?? fullResponse ?? '';
-              _updateAssistantMessage(fullResponse);
+              _updateAssistantMessage(conv, fullResponse);
               break;
 
             case AiEventType.error:
               debugPrint('[chat] AI error: ${event.error}');
-              _updateAssistantMessage('⚠️ 错误: ${event.error ?? "未知"}');
-              _finalizeStreamMessage();
+              _updateAssistantMessage(conv, '⚠️ 错误: ${event.error ?? "未知"}');
+              _finalizeStreamMessage(conv);
               fullResponse = 'done';
               break;
           }
         }
       } catch (e) {
-        _updateAssistantMessage('❌ 发送消息失败: $e');
+        _updateAssistantMessage(conv, '❌ 发送消息失败: $e');
       }
 
       // 可选：自动朗读 AI 回复
-      if (fullResponse != null && fullResponse.isNotEmpty && mounted) {
-        final last =
-            _conversation.messages.isNotEmpty
-                ? _conversation.messages.last
-                : null;
+      // 自动朗读只在她还在这段上时读：人走了还在耳边念，吓人。
+      if (fullResponse != null &&
+          fullResponse.isNotEmpty &&
+          mounted &&
+          identical(conv, _conversation)) {
+        final last = conv.messages.isNotEmpty ? conv.messages.last : null;
         if (last != null &&
             last.role == MessageRole.assistant &&
             last.content.trim().isNotEmpty) {
@@ -942,28 +996,78 @@ class _ChatScreenState extends State<ChatScreen> {
       if (fullResponse != null) break;
     }
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    _scrollToBottom();
-    _saveConversation();
+    // 收尾（放下「生成中」、存盘、弹通知）在 [_finishTurn]。
   }
 
   /// 去掉已被摘要覆盖的那段，只发剩下的原文。
-  List<ChatMessage> _visibleHistory() {
-    final n = _conversation.summarizedCount;
-    if (n <= 0 || n >= _conversation.messages.length) {
-      return _conversation.messages;
+  List<ChatMessage> _visibleHistory(Conversation conv) {
+    final n = conv.summarizedCount;
+    if (n <= 0 || n >= conv.messages.length) {
+      return conv.messages;
     }
-    return _conversation.messages.sublist(n);
+    return conv.messages.sublist(n);
   }
 
   static const _toolTimeout = Duration(seconds: 60);
+
+  /// `glance_screen` 截到了：把截图接成一条消息，模型下一轮才看得到。
+  ///
+  /// 挂在 **user** 消息上，是因为工具结果只能是文字——OpenAI 兼容那一路的
+  /// tool 消息里放不了图。界面上按 `glanceShot` 画在它那一边、字不显示
+  /// （见 MessageBubble）。模型自己看不了图时走识图兜底，和她发图同一个规矩。
+  Future<void> _appendGlanceShot(
+    Conversation conv,
+    AiClient client,
+    String toolName,
+    String rawResult,
+  ) async {
+    if (toolName != 'glance_screen') return;
+    try {
+      final r = jsonDecode(rawResult);
+      if (r is! Map || r['success'] != true) return;
+      final ref = r['image'];
+      if (ref is! String) return;
+      final app = r['app'] as String?;
+      var content =
+          '（这是你刚才用 glance_screen 看到的 TA 的屏幕'
+          '${app == null ? '' : '，TA 在用「$app」'}。）';
+      if (!client.sendsImagesNatively) {
+        final b64 = ChatImages.base64Of(ref);
+        final described =
+            b64 == null
+                ? null
+                : await VisionService.analyze(
+                  b64,
+                  prompt: '这是一张手机截图。说说是哪个 App、在看什么。聊天内容、金额、账号这类私事不要抄出来。',
+                );
+        if (described != null) content = '$content\n[屏幕截图分析: $described]';
+      }
+      _touch(conv, () {
+        conv.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.user,
+            content: content,
+            images: [ref],
+            metadata: const {'glanceShot': true},
+          ),
+        );
+      });
+      if (identical(conv, _conversation)) _scrollToBottom();
+    } catch (e) {
+      debugPrint('[glance] 接截图失败：$e');
+    }
+  }
 
   /// 把 `send_voice` 的结果变成一条语音消息。
   ///
   /// 文字仍然存在 [ChatMessage.content] 里——它是「转文字」的来源，也是
   /// 发回给模型的上文（不然它不记得自己说过什么）。只是**界面上不显示**。
-  void _appendVoiceMessage(String toolName, String rawResult) {
+  void _appendVoiceMessage(
+    Conversation conv,
+    String toolName,
+    String rawResult,
+  ) {
     if (toolName != 'send_voice') return;
     try {
       final r = jsonDecode(rawResult);
@@ -971,8 +1075,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final voice = r['voice'];
       final text = r['text'];
       if (voice is! Map || text is! String || text.trim().isEmpty) return;
-      setState(() {
-        _conversation.messages.add(
+      _touch(conv, () {
+        conv.messages.add(
           ChatMessage(
             id: _uuid.v4(),
             role: MessageRole.assistant,
@@ -981,7 +1085,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       });
-      _scrollToBottom();
+      if (identical(conv, _conversation)) _scrollToBottom();
     } catch (e) {
       debugPrint('[voice] 接语音消息失败：$e');
     }
@@ -1047,6 +1151,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// [thinking] 传 null 表示「这次没有新的思考」，不是「把已有的清掉」——
   /// 正文每来一个 token 就重建一次这条消息，不保留的话思考会被后面的正文冲掉。
   void _updateAssistantMessage(
+    Conversation conv,
     String content, {
     List<ToolCallInfo>? toolCalls,
     String? thinking,
@@ -1057,19 +1162,19 @@ class _ChatScreenState extends State<ChatScreen> {
             .replaceAll(RegExp(r'\[time:[^\]]*\]'), '')
             .replaceAll(RegExp(r'\n{3,}'), '\n\n')
             .trimLeft();
-    setState(() {
-      if (_conversation.messages.isNotEmpty &&
-          _conversation.messages.last.role == MessageRole.assistant &&
-          _conversation.messages.last.id.startsWith('stream_')) {
-        _conversation.messages.last = ChatMessage(
-          id: _conversation.messages.last.id,
+    _touch(conv, () {
+      if (conv.messages.isNotEmpty &&
+          conv.messages.last.role == MessageRole.assistant &&
+          conv.messages.last.id.startsWith('stream_')) {
+        conv.messages.last = ChatMessage(
+          id: conv.messages.last.id,
           role: MessageRole.assistant,
           content: cleaned,
           toolCalls: toolCalls,
-          thinking: thinking ?? _conversation.messages.last.thinking,
+          thinking: thinking ?? conv.messages.last.thinking,
         );
       } else {
-        _conversation.messages.add(
+        conv.messages.add(
           ChatMessage(
             id: 'stream_${_uuid.v4()}',
             role: MessageRole.assistant,
@@ -1080,16 +1185,16 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
-    _scrollToBottom();
+    if (identical(conv, _conversation)) _scrollToBottom();
   }
 
-  void _finalizeStreamMessage() {
-    setState(() {
-      if (_conversation.messages.isNotEmpty &&
-          _conversation.messages.last.role == MessageRole.assistant &&
-          _conversation.messages.last.id.startsWith('stream_')) {
-        final old = _conversation.messages.last;
-        _conversation.messages.last = ChatMessage(
+  void _finalizeStreamMessage(Conversation conv) {
+    _touch(conv, () {
+      if (conv.messages.isNotEmpty &&
+          conv.messages.last.role == MessageRole.assistant &&
+          conv.messages.last.id.startsWith('stream_')) {
+        final old = conv.messages.last;
+        conv.messages.last = ChatMessage(
           id: _uuid.v4(),
           role: MessageRole.assistant,
           content: old.content,
@@ -1396,18 +1501,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _saveConversation() {
-    if (!_conversation.titleManuallySet) {
+  /// 存一段对话，不传就是屏幕上这段。
+  ///
+  /// [_savedSig] 只在存的正是屏幕上这段时才更新：它记的是「屏幕上这段上次
+  /// 存盘时的样子」。后台跑完的那一轮存的是别的对象，拿它更新，离开时的
+  /// 比对就失准了。
+  void _saveConversation([Conversation? which]) {
+    final c = which ?? _conversation;
+    if (!c.titleManuallySet) {
       // content 本身不可空，所以后面那个 `?.` 是无效的。顺手把空内容也归到
       // 「新对话」：原来第一条消息是空串时，substring(0,0) 会把标题存成空字符串。
-      final first = _conversation.messages.firstOrNull?.content;
-      _conversation.title =
+      final first = c.messages.firstOrNull?.content;
+      c.title =
           (first == null || first.isEmpty)
               ? '新对话'
               : first.substring(0, first.length.clamp(0, 30));
     }
-    _savedSig = _sigOf(_conversation);
-    StorageService.saveConversation(_conversation);
+    if (identical(c, _conversation)) _savedSig = _sigOf(c);
+    StorageService.saveConversation(c);
   }
 
   /// 上次存盘（或读盘）时这场对话的样子，见 [_saveIfChanged]。
@@ -1757,8 +1868,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// 这段对话里 TA 最近发来的那条带图消息里的图，给 `set_avatar` 用。
-  List<String> _latestUserImages() {
-    for (final m in _conversation.messages.reversed) {
+  List<String> _latestUserImagesIn(Conversation conv) {
+    for (final m in conv.messages.reversed) {
+      // 它自己截的屏幕不算 TA 发来的图——不然「拿你刚发的那张当头像」
+      // 会拿到一张截图。
+      if (m.metadata?['glanceShot'] == true) continue;
       if (m.role == MessageRole.user && m.images.isNotEmpty) return m.images;
     }
     return const [];

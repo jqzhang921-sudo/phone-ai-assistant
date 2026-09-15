@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!--
         读书版专有：把自己挂进系统的「分享」面板。
 
@@ -38,5 +39,10 @@
                 <data android:mimeType="text/plain"/>
             </intent-filter>
         </activity>
+        <!-- 看一眼屏幕是主 App 的功能。插件是两个 flavor 共用的，不删掉的话
+             无障碍列表里会多出一个「读书讨论 · 让它看一眼屏幕」。 -->
+        <service
+            android:name="com.phonetool.screen_glance.GlanceService"
+            tools:node="remove" />
     </application>
 </manifest>

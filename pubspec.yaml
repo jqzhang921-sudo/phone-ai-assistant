@@ -58,6 +58,9 @@ dependencies:
   # 只用来抽文字，抽完就丢，不存文件。
   archive: ^4.0.2
   flutter_image_compress: ^2.5.1
+  # 看一眼屏幕（无障碍截屏）。本地插件，理由见它自己的 pubspec。
+  screen_glance:
+    path: packages/screen_glance
 
 dev_dependencies:
   flutter_test:

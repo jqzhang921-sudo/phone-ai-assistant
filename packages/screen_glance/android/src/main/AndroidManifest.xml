@@ -1,0 +1,22 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 看一眼屏幕。只有她自己去「设置 → 无障碍」里打开才会被系统绑上。
+
+             BIND_ACCESSIBILITY_SERVICE 这个权限只有系统拿得到，所以
+             exported="true" 不等于谁都能连——能连它的只有系统。
+
+             读书版不带这个服务，见 android/app/src/reading/AndroidManifest.xml。 -->
+        <service
+            android:name="com.phonetool.screen_glance.GlanceService"
+            android:label="@string/screen_glance_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/screen_glance_service" />
+        </service>
+    </application>
+</manifest>

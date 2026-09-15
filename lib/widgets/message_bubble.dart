@@ -132,7 +132,11 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUser = message.role == MessageRole.user;
+    // 它在聊天里看了一眼屏幕：截图挂在一条 user 消息上（模型才看得到图，见
+    // chat_screen 的 _appendGlanceShot）。但那不是她说的话——画在它那一边，
+    // 字也不显示。
+    final isGlanceShot = message.metadata?['glanceShot'] == true;
+    final isUser = message.role == MessageRole.user && !isGlanceShot;
     final voice = VoiceMessage.fromMetadata(message.metadata);
     final isAssistant = message.role == MessageRole.assistant;
     final theme = Theme.of(context);
@@ -189,10 +193,15 @@ class MessageBubble extends StatelessWidget {
     // 只加一行小字，不换气泡样式：它说的还是同一种话，只是这句没人问它。
     final isNudge = message.metadata?['nudge'] == true;
 
+    // 它在后台看了一眼她的屏幕。图就是截到的那张，一定要标出来——
+    // 「看过一定留痕」是答应她的，痕迹认不出来等于没留。
+    final isGlance = message.metadata?['glance'] == true || isGlanceShot;
+
     // 气泡里有没有东西要画。图不算——图画在气泡外面。
+    // 截图消息的字是写给模型的说明，不画。
     final hasBody =
         voice != null ||
-        message.content.trim().isNotEmpty ||
+        (!isGlanceShot && message.content.trim().isNotEmpty) ||
         (isAssistant && (message.thinking?.trim().isNotEmpty ?? false));
 
     return Padding(
@@ -203,21 +212,23 @@ class MessageBubble extends StatelessWidget {
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (isNudge && !isUser)
+          if ((isNudge || isGlance) && !isUser)
             Padding(
               padding: const EdgeInsets.only(left: 44, bottom: 5),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    PhosphorIconsFill.butterfly,
+                    isGlance
+                        ? PhosphorIconsFill.eye
+                        : PhosphorIconsFill.butterfly,
                     size: 11,
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
                   ),
                   const SizedBox(width: 5),
                   Text(
                     // 不写「主动消息」——那是在讲机制。写它做了什么。
-                    '它自己想起来的',
+                    isGlance ? '它看了一眼你的屏幕' : '它自己想起来的',
                     style: theme.textTheme.labelSmall?.copyWith(
                       fontSize: 11,
                       color: scheme.onSurfaceVariant.withValues(alpha: 0.85),

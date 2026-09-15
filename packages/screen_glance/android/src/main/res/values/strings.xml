@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="screen_glance_label">让它看一眼屏幕</string>
+    <string name="screen_glance_description">开着的时候，它在后台醒来、想知道你在干什么时，可以截一张当前的屏幕看一眼。锁屏时不看；你在 App 里排除的应用不看；支付、输密码这类页面系统本来就不让截。每看一次，那张图都会留在对话里。</string>
+</resources>

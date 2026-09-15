@@ -124,6 +124,17 @@ List<ChatMessage> _sanitizeToolCallHistory(List<ChatMessage> messages) {
   return result;
 }
 
+/// 它看了一眼屏幕、决定不说话时留下的那条：只有截图，没有字。
+///
+/// 这条是**给她翻的痕迹**（看过一定留痕），不是它说过的一句话。发给模型就是
+/// 一条空的 assistant——有的端点直接 400，没报错的也等于教它「可以说空话」。
+/// 截图本身也不重发：assistant 的图本来就不进报文，见 [AiClient._sendableImages]。
+bool isSilentGlance(ChatMessage m) =>
+    m.role == MessageRole.assistant &&
+    m.metadata?['glance'] == true &&
+    m.content.trim().isEmpty &&
+    (m.toolCalls?.isEmpty ?? true);
+
 /// 一次回复最多生成多少 token。
 ///
 /// 原来是 4096。推理模型把**思考也算进输出**，4096 经常在它还没想完的时候
@@ -150,7 +161,9 @@ class AiClient {
     String? memoryContext,
     String? historySummary,
   }) {
-    final safeMessages = _sanitizeToolCallHistory(messages);
+    final safeMessages = _sanitizeToolCallHistory(
+      messages.where((m) => !isSilentGlance(m)).toList(),
+    );
     switch (config.provider) {
       case 'openai':
         return _openaiChat(

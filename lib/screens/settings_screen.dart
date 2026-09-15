@@ -32,6 +32,7 @@ import '../services/app_providers.dart';
 import '../services/nudge_gate.dart';
 import '../services/nudge_scheduler.dart';
 import '../services/nudge_service.dart';
+import '../services/screen_glance.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -203,6 +204,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 最近作废的便签。**过期是静默删除**，不摆出来的话，「过期了」和
   /// 「压根没触发」在她那边长得一模一样。
   List<String> _nudgeExpired = const [];
+
+  /// 「好久没说话时，允许它看一眼屏幕」。见 [ScreenGlance]。
+  bool _glanceAllowed = false;
+  GlanceStatus? _glanceStatus;
+
+  /// 「5 秒后试截一张」截到的图和说明。**只在这页上给她看**，不发给模型——
+  /// 要试的是「它到底能看到什么」，不是「它会说什么」。
+  Uint8List? _glanceTestBytes;
+  String? _glanceTestNote;
+  bool _glanceTesting = false;
 
   @override
   void initState() {
@@ -938,6 +949,154 @@ class _SettingsScreenState extends State<SettingsScreen> {
         '（按最近 ${f.cycles.length} 次算的）。';
   }
 
+  /// 「主动说话」里的一段：好久没说话时，允许它看一眼屏幕。
+  ///
+  /// 两道开关，**缺一道都不看**：系统无障碍里的服务（权限）和这里的开关（意愿）。
+  /// 状态每次重建都重读——她从系统设置页回来，这页得立刻对上。
+  List<Widget> _secGlance(ThemeData theme, StateSetter set) {
+    final scheme = theme.colorScheme;
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+
+    Future<void> refresh() async {
+      final s = await ScreenGlance.status();
+      final a = await ScreenGlance.allowed();
+      if (!mounted) return;
+      final old = _glanceStatus;
+      if (a != _glanceAllowed ||
+          old == null ||
+          old.supported != s.supported ||
+          old.enabled != s.enabled ||
+          old.bound != s.bound) {
+        set(() {
+          _glanceAllowed = a;
+          _glanceStatus = s;
+        });
+      }
+    }
+
+    refresh();
+
+    final s = _glanceStatus;
+    final String statusLine;
+    if (s == null) {
+      statusLine = '正在看无障碍那边开没开…';
+    } else if (!s.supported) {
+      statusLine = '这台手机的系统版本不支持（要安卓 11 以上）';
+    } else if (!s.enabled) {
+      statusLine = '无障碍里的「让它看一眼屏幕」还没开';
+    } else if (!s.bound) {
+      statusLine = '无障碍里开着，但系统这会儿没把它拉起来——关掉再打开一次试试';
+    } else {
+      statusLine = '无障碍那边开好了';
+    }
+
+    return [
+      const SizedBox(height: 24),
+      Text('看一眼屏幕', style: theme.textTheme.labelLarge),
+      const SizedBox(height: 6),
+      _switchRow(
+        theme,
+        icon: PhosphorIconsRegular.eye,
+        title: '好久没说话时，允许它看一眼',
+        subtitle: statusLine,
+        value: _glanceAllowed,
+        onChanged: (v) async {
+          // 无障碍还没开就先把她送过去。开关照样打开：回来不用再点一次，
+          // 没开好之前反正也看不了（原生那边查得到）。
+          if (v && !(_glanceStatus?.ready ?? false)) {
+            await ScreenGlance.openSettings();
+          }
+          await ScreenGlance.setAllowed(v);
+          set(() => _glanceAllowed = v);
+        },
+      ),
+      const SizedBox(height: 6),
+      Text(
+        '你们 3 个小时没说话、手机亮着没锁、你不在排除名单里的 App 里时，'
+        '它醒来会自己决定要不要看。看了，那张图一定会留在对话里；'
+        '看了不想说、或者没看成，都记在上面「上次」那一行。'
+        '支付、输密码这类页面系统本来就不让截。',
+        style: muted,
+      ),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          OutlinedButton.icon(
+            icon: const Icon(PhosphorIconsRegular.gearSix, size: 16),
+            label: const Text('无障碍设置'),
+            onPressed: ScreenGlance.openSettings,
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(PhosphorIconsRegular.eyeSlash, size: 16),
+            label: const Text('排除名单'),
+            onPressed:
+                () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AppUsageScreen()),
+                ),
+          ),
+          FilledButton.tonalIcon(
+            icon:
+                _glanceTesting
+                    ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(PhosphorIconsRegular.camera, size: 16),
+            label: Text(_glanceTesting ? '5 秒后截…' : '5 秒后试截一张'),
+            onPressed:
+                _glanceTesting
+                    ? null
+                    : () async {
+                      set(() {
+                        _glanceTesting = true;
+                        _glanceTestBytes = null;
+                        _glanceTestNote = null;
+                      });
+                      // 5 秒给她切到别的 App——在这页上截，截到的只会是设置页，
+                      // 而且会被「你就在 App 里」那条拦下。
+                      await Future.delayed(const Duration(seconds: 5));
+                      final shot = await ScreenGlance.capture();
+                      if (!mounted) return;
+                      final bytes = shot.bytes;
+                      set(() {
+                        _glanceTesting = false;
+                        _glanceTestBytes = bytes;
+                        _glanceTestNote =
+                            shot.ok && bytes != null
+                                ? '截到了${shot.appName == null ? '' : '（${shot.appName}）'}，'
+                                    '${(bytes.length / 1024).round()}KB。'
+                                    '这张只在这里给你看，没发给它。'
+                                : '没截到：${(shot.miss ?? GlanceMiss.failed).label}';
+                      });
+                    },
+          ),
+        ],
+      ),
+      const SizedBox(height: 6),
+      Text('点完切到别的 App，等 5 秒再回来，就能看到它会看到什么。', style: muted),
+      if (_glanceTestNote != null) ...[
+        const SizedBox(height: 10),
+        Text(_glanceTestNote!, style: theme.textTheme.bodySmall),
+      ],
+      if (_glanceTestBytes != null) ...[
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.memory(
+            _glanceTestBytes!,
+            height: 360,
+            fit: BoxFit.contain,
+          ),
+        ),
+      ],
+    ];
+  }
+
   List<Widget> _secNudge(ThemeData theme, StateSetter set) {
     final scheme = theme.colorScheme;
 
@@ -1045,6 +1204,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _nudgePrefs.hideContent,
         onChanged: (v) => save(_nudgePrefs.copyWith(hideContent: v)),
       ),
+
+      ..._secGlance(theme, set),
 
       const SizedBox(height: 24),
       Text('试一次', style: theme.textTheme.labelLarge),

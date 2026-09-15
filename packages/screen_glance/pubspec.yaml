@@ -1,0 +1,24 @@
+name: screen_glance
+description: "让它看一眼屏幕：无障碍服务截屏，后台叫醒时也能调。"
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.7.0
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+# ⚠️ 为什么是个单独的插件，而不是像 AppUsageChannel 那样写在 MainActivity 里：
+#
+# 看屏幕发生在**后台叫醒**的时候（WorkManager），那会儿跑的是另一台 Flutter
+# 引擎，MainActivity 根本没起来，挂在它身上的通道全都不存在。后台引擎只会
+# 自动注册 pubspec 里列出来的插件——所以得是插件。
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.phonetool.screen_glance
+        pluginClass: ScreenGlancePlugin

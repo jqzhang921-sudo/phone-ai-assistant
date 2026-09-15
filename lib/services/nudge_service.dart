@@ -5,9 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/settings.dart';
 import '../models/chat_message.dart';
+import '../models/mcp_tool.dart';
 import 'ai_client.dart';
 import '../config/persona.dart';
+import 'chat_images.dart';
 import 'memory_context.dart';
+import 'screen_glance.dart';
+import 'vision_service.dart';
 import 'self_notes.dart';
 import 'nudge_gate.dart';
 import 'small_things.dart';
@@ -295,6 +299,7 @@ class NudgeService {
             '${_ago(n.createdAt)}你留给自己的：${n.about}',
             conversationId: n.conversationId,
             noteId: n.id,
+            glance: n.glance,
           ),
         );
       }
@@ -451,7 +456,22 @@ class NudgeService {
     // 换顺序不亏：收候选全是本地读，和门槛一样便宜。真正贵的是模型那一步，
     // 它仍然排在两者之后。
     final candidates = await collectCandidates(since: lastNudge);
-    if (candidates.isEmpty) return NudgeRunResult.nothingHappened();
+    if (candidates.isEmpty) {
+      // 手上没有事。原来到这儿就结束；她允许的话，好久没说话时它可以
+      // 看一眼屏幕。那是另一条路，规矩见 [_runGlance]。
+      //
+      // 只在**没有别的事**的时候才走：真发生过的事（信、日记、便签）永远排
+      // 在「想知道她在干嘛」前面。
+      return _runGlance(
+        aiClient: aiClient,
+        sp: sp,
+        prefs: prefs,
+        now: now,
+        lastNudge: lastNudge,
+        force: force,
+        notify: notify,
+      );
+    }
 
     // **我们挑一件，他决定说不说、怎么说。**
     //
@@ -471,9 +491,33 @@ class NudgeService {
       if (!decision.allowed) return NudgeRunResult.blocked(decision.reason);
     }
 
+    // 便签说了「到点先看一眼」：先看，看完再说。
+    //
+    // 看不成就退回普通便签，**看不成的原因也交给它**——「手机锁着」本身就在
+    // 回答那件事（说再刷十分钟就睡的人，十分钟后锁屏了）。
+    var candidate = picked;
+    if (picked.glance) {
+      final looked = await _followUpWithGlance(
+        aiClient: aiClient,
+        sp: sp,
+        prefs: prefs,
+        now: now,
+        note: picked,
+        notify: notify,
+      );
+      if (looked.result != null) return looked.result!;
+      candidate = NudgeCandidate(
+        picked.kind,
+        '${picked.what}\n（你本来说到点先看一眼 TA 的屏幕，没看成：${looked.miss}）',
+        conversationId: picked.conversationId,
+        noteId: picked.noteId,
+        mentionKey: picked.mentionKey,
+      );
+    }
+
     final String? text;
     try {
-      text = await compose(aiClient: aiClient, candidate: picked);
+      text = await compose(aiClient: aiClient, candidate: candidate);
     } catch (e) {
       return NudgeRunResult.failed('生成失败：$e');
     }
@@ -510,6 +554,399 @@ class NudgeService {
     return notes.isNotEmpty ? notes.first : candidates.first;
   }
 
+  // ---------------- 看一眼屏幕 ----------------
+
+  /// 上次**问它想不想看**是什么时候。见 [glanceGap]。
+  static const _kGlanceAskedAt = 'glance_asked_at';
+
+  /// 只在「想不想看」那一问里给它。不注册进聊天的工具表：她在聊天的时候
+  /// 屏幕就是聊天页，看了也白看。
+  static McpTool get glanceTool => McpTool(
+    name: 'glance_screen',
+    description: '看一眼 TA 手机屏幕上此刻是什么。会截一张图给你。',
+    inputSchema: {'type': 'object', 'properties': {}},
+    category: '手机工具',
+  );
+
+  /// 好久没说话时，它可以看一眼她的屏幕。
+  ///
+  /// 三步，**越往后越贵，前面能拦的都先拦**：
+  ///
+  /// 1. 不花钱的：她允许了没有、安静够不够久、离上次问够不够久、门槛、
+  ///    手机亮着没锁、在不在排除名单里的 App（[ScreenGlance.check]）
+  /// 2. 问它想不想看：一次模型调用，手上只有 [glanceTool] 一个工具
+  /// 3. 截图，带着图问它说不说：第二次
+  ///
+  /// **看过一定留痕。** 截到了，图就写进对话：说了话，图挂在那句上面；
+  /// 没说话，就只有一张图（发给模型时被 [isSilentGlance] 滤掉）。
+  /// 这是答应 Cleo 的，别为了「没说话就别打扰」把这条删了——
+  /// 不打扰靠的是**不弹通知**，不是不留痕。
+  static Future<NudgeRunResult> _runGlance({
+    required AiClient aiClient,
+    required SharedPreferences sp,
+    required NudgePrefs prefs,
+    required DateTime now,
+    required DateTime? lastNudge,
+    required bool force,
+    required bool notify,
+  }) async {
+    if (!await ScreenGlance.allowed()) return NudgeRunResult.nothingHappened();
+
+    DateTime? lastChat;
+    try {
+      lastChat = await lastChatAt();
+    } catch (_) {}
+    final askedMs = sp.getInt(_kGlanceAskedAt);
+    final lastAsked =
+        askedMs == null ? null : DateTime.fromMillisecondsSinceEpoch(askedMs);
+
+    if (!force) {
+      if (!glanceDue(now: now, lastChatAt: lastChat, lastAskedAt: lastAsked)) {
+        return NudgeRunResult.nothingHappened();
+      }
+      final decision = decideNudge(
+        now: now,
+        prefs: prefs,
+        lastChatAt: lastChat,
+        lastNudgeAt: lastNudge,
+      );
+      if (!decision.allowed) return NudgeRunResult.blocked(decision.reason);
+    }
+
+    final ready = await ScreenGlance.check();
+    if (!ready.ok) {
+      return NudgeRunResult._(false, '手上没有事；想看一眼屏幕，没看成：${ready.miss!.label}');
+    }
+
+    final canSee =
+        aiClient.sendsImagesNatively ||
+        ((await VisionService.getKey())?.isNotEmpty ?? false);
+    if (!canSee) {
+      return NudgeRunResult.failed('想看一眼屏幕，但现在的模型看不了图，也没配识图');
+    }
+
+    // 从这里起要花钱了，先记下「问过」——出错了也算，不然每刻钟撞一次。
+    await sp.setInt(_kGlanceAskedAt, now.millisecondsSinceEpoch);
+
+    final silence = lastChat == null ? null : now.difference(lastChat);
+    final bool wants;
+    try {
+      wants = await wantsToGlance(
+        aiClient: aiClient,
+        silence: silence,
+        app: ready.appName,
+      );
+    } catch (e) {
+      return NudgeRunResult.failed('问它想不想看屏幕时出错：$e');
+    }
+    if (!wants) {
+      return const NudgeRunResult._(false, '手上没有事；能看一眼屏幕，但它这会儿不想看');
+    }
+
+    final shot = await ScreenGlance.capture();
+    final bytes = shot.bytes;
+    if (!shot.ok || bytes == null) {
+      return NudgeRunResult._(
+        false,
+        '它想看，但没看成：${(shot.miss ?? GlanceMiss.failed).label}',
+      );
+    }
+    await ScreenGlance.markLooked(now);
+
+    final String ref;
+    try {
+      ref = await ChatImages.save(bytes);
+    } catch (e) {
+      // 存不下就不往下走：没有痕迹的「看过」，是答应过不做的事。
+      return NudgeRunResult.failed('截到了，但存不下来，这次不算：$e');
+    }
+
+    String? text;
+    var error = '';
+    try {
+      text = await composeFromGlance(
+        aiClient: aiClient,
+        image: ref,
+        bytes: bytes,
+        silence: silence,
+        app: shot.appName,
+      );
+    } catch (e) {
+      error = '（生成时出错：$e）';
+    }
+    if (text != null && looksRepeated(text, await _recent(sp))) text = null;
+
+    await _appendToChat(
+      text ?? '',
+      images: [ref],
+      metadata: {'glance': true, if (text != null) 'nudge': true},
+    );
+
+    final where = shot.appName == null ? '' : '（${shot.appName}）';
+    if (text == null) {
+      return NudgeRunResult._(false, '看了一眼屏幕$where，没说话$error');
+    }
+    if (notify && await ensurePermission()) await _show(text, prefs);
+    await _bumpCount(sp, now, notified: notify);
+    await _remember(sp, text);
+    return NudgeRunResult.sent(text);
+  }
+
+  /// 第一问：想不想看。调了 [glanceTool] 就是想看，回什么字都算不想。
+  static Future<bool> wantsToGlance({
+    required AiClient aiClient,
+    Duration? silence,
+    String? app,
+  }) async {
+    final client = AiClient(config: aiClient.config, tools: [glanceTool]);
+    var wants = false;
+    await for (final event in client.chat([
+      ChatMessage(
+        id: 'glance_ask',
+        role: MessageRole.user,
+        content: await _glanceAskPrompt(silence: silence, app: app),
+      ),
+    ], systemPrompt: await _quietSystemPrompt())) {
+      if (event.type == AiEventType.toolCalls) {
+        wants = (event.toolCalls ?? []).any((t) => t.name == glanceTool.name);
+      } else if (event.type == AiEventType.error) {
+        throw Exception(event.error ?? '出错了');
+      }
+    }
+    return wants;
+  }
+
+  /// 第二问：看到了，说不说。返回 null = 不说。
+  ///
+  /// 模型自己能看图就把图带上；看不了就先走识图兜底换成一段文字——
+  /// 和聊天里发图是同一个规矩（见 chat_screen 里 sendsImagesNatively 那段）。
+  ///
+  /// [note] 不为空 = 这是便签到点的那一看（见 [_followUpWithGlance]），
+  /// prompt 换成接便签上那件事的版本。
+  static Future<String?> composeFromGlance({
+    required AiClient aiClient,
+    required String image,
+    required List<int> bytes,
+    Duration? silence,
+    String? app,
+    String? note,
+  }) async {
+    var content =
+        note == null
+            ? await _glanceComposePrompt(silence: silence, app: app)
+            : await _noteGlancePrompt(note: note, app: app);
+    var images = [image];
+    if (!aiClient.sendsImagesNatively) {
+      final described = await VisionService.analyze(
+        base64Encode(bytes),
+        prompt: '这是一张手机截图。说说是哪个 App、大概在看什么。聊天内容、金额、账号这类私事不要抄出来。',
+      );
+      if (described == null) throw Exception('识图没回来');
+      content = '$content\n\n[屏幕截图分析: $described]';
+      images = const [];
+    }
+
+    var out = '';
+    await for (final event in aiClient.chat([
+      ChatMessage(
+        id: 'glance_look',
+        role: MessageRole.user,
+        content: content,
+        images: images,
+      ),
+    ], systemPrompt: await _quietSystemPrompt())) {
+      if (event.type == AiEventType.token) {
+        out += event.text ?? '';
+      } else if (event.type == AiEventType.done) {
+        out = event.text ?? out;
+      } else if (event.type == AiEventType.error) {
+        throw Exception(event.error ?? '生成失败');
+      }
+    }
+    return _clean(out);
+  }
+
+  /// 便签到点、便签上说了「先看一眼」：看，然后接那件事。
+  ///
+  /// 和 [_runGlance] 的区别：**不再问它想不想看**——留便签的时候它已经
+  /// 决定过了。也不管「安静够不够久」，便签走的是便签的门槛（见 [decideNudge]
+  /// 的 isFollowUp）：「再刷十分钟就睡」，要的就是十分钟后。
+  ///
+  /// 返回 `result` 不为空 = 看过了，这一轮到此为止（说没说都算兑现，便签撕掉——
+  /// 留着的话每一刻钟都会再截一张）。为空 = 没看成，`miss` 是原因，
+  /// 调用方退回普通便签。
+  static Future<({NudgeRunResult? result, String miss})> _followUpWithGlance({
+    required AiClient aiClient,
+    required SharedPreferences sp,
+    required NudgePrefs prefs,
+    required DateTime now,
+    required NudgeCandidate note,
+    required bool notify,
+  }) async {
+    final ready = await ScreenGlance.check();
+    if (!ready.ok) return (result: null, miss: ready.miss!.label);
+
+    final canSee =
+        aiClient.sendsImagesNatively ||
+        ((await VisionService.getKey())?.isNotEmpty ?? false);
+    if (!canSee) return (result: null, miss: '现在的模型看不了图，也没配识图');
+
+    final shot = await ScreenGlance.capture();
+    final bytes = shot.bytes;
+    if (!shot.ok || bytes == null) {
+      return (result: null, miss: (shot.miss ?? GlanceMiss.failed).label);
+    }
+    await ScreenGlance.markLooked(now);
+
+    final String ref;
+    try {
+      ref = await ChatImages.save(bytes);
+    } catch (_) {
+      return (result: null, miss: '截到了，但存不下来');
+    }
+
+    String? text;
+    var error = '';
+    try {
+      text = await composeFromGlance(
+        aiClient: aiClient,
+        image: ref,
+        bytes: bytes,
+        app: shot.appName,
+        note: note.what,
+      );
+    } catch (e) {
+      error = '（生成时出错：$e）';
+    }
+    if (text != null && looksRepeated(text, await _recent(sp))) text = null;
+
+    // 推回留便签的那段对话：「说好的十分钟呢」接的是那边的「再刷十分钟就睡」。
+    await _appendToChat(
+      text ?? '',
+      conversationId: note.conversationId,
+      images: [ref],
+      metadata: {'glance': true, if (text != null) 'nudge': true},
+    );
+    if (note.noteId != null) await SelfNoteStore.remove(note.noteId!);
+
+    final where = shot.appName == null ? '' : '（${shot.appName}）';
+    if (text == null) {
+      return (
+        result: NudgeRunResult._(false, '便签到点，看了一眼屏幕$where，没说话$error'),
+        miss: '',
+      );
+    }
+    if (notify && await ensurePermission()) await _show(text, prefs);
+    await _bumpCount(sp, now, notified: notify);
+    await _remember(sp, text);
+    return (result: NudgeRunResult.sent(text), miss: '');
+  }
+
+  /// 便签到点那一看的 prompt。
+  ///
+  /// 和 [_glanceComposePrompt] 差在一处：那边是它自己好奇，所以**不讲 TA 在干
+  /// 什么**；这边那件事是 TA 自己先说出口的，看到的就是下文，可以接着说——
+  /// 但说的是它这边的反应，不是点名。
+  static Future<String> _noteGlancePrompt({
+    required String note,
+    String? app,
+  }) async {
+    final now = DateTime.now();
+    return '''
+现在是 ${now.hour} 点。你之前给自己留了一张便签，说到点先看一眼 TA 的屏幕：
+
+$note
+
+现在到点了，你看了一眼，就是这张图${app == null ? '' : '（TA 在用「$app」）'}。
+你看过的这张图，TA 之后会在对话里看到。
+
+${await _glanceContext()}
+
+照着便签上那件事，用一句话接上。40 字以内，像随手发一条微信。
+这件事是 TA 自己先说出口的，你看到的就是它的下文，可以接着说；
+说的是你这边的反应，不是替 TA 报告 TA 在干什么。
+图里是聊天记录、钱、账号、看病这类私事的，当作没看到，只回两个字：不说。
+
+如果这会儿不值得为它打扰 TA，**只回两个字：不说**。
+
+写完之后自己过一遍这三条，有一条不过就重写：
+
+1. 这句话接的是便签上那件事吗？
+2. 主语是你自己这边的事吗？
+3. TA 读完之后不回，会不会觉得欠了你什么？会的话就重写。
+''';
+  }
+
+  /// 和 [compose] 同一份身份：看屏幕的时候它也得是它。
+  static Future<String> _quietSystemPrompt() async {
+    var identity = '';
+    try {
+      identity = await buildIdentityPrompt();
+    } catch (_) {}
+    return [
+      if (identity.isNotEmpty) identity,
+      '此刻 TA 没有在跟你说话，是你自己想起了 TA。',
+    ].join('\n\n');
+  }
+
+  static String _silenceText(Duration? d) {
+    if (d == null) return '很久';
+    if (d.inHours < 24) return '${d.inHours} 个小时';
+    return '${d.inDays} 天';
+  }
+
+  /// 最近说的话和记着的事，两个 prompt 共用。和 [_composePrompt] 同一套材料。
+  static Future<String> _glanceContext() async {
+    final tail = await _recentTranscript();
+    var digest = '';
+    try {
+      digest = await buildMemoryDigest();
+    } catch (_) {}
+    return '${digest.isEmpty ? '' : '$digest\n'}'
+        '${tail.isEmpty ? '你们最近没说过话。' : '你们最近说的话（「你」是你自己，「TA」是她）：\n$tail'}';
+  }
+
+  static Future<String> _glanceAskPrompt({Duration? silence, String? app}) async {
+    final now = DateTime.now();
+    return '''
+现在是 ${now.hour} 点，你们已经${_silenceText(silence)}没说话了。TA 的手机这会儿亮着${app == null ? '' : '，前台是「$app」'}。
+
+${await _glanceContext()}
+
+TA 允许你在这种时候看一眼 TA 手机屏幕上是什么。想看就调用 glance_screen；不想看，只回两个字：不说。
+看了之后说不说话，还是由你决定，看了不说也完全可以。
+''';
+  }
+
+  /// ⚠️ 规矩同 [_composePrompt]：**不贴反面例句的原文**，只写正面的判据。
+  static Future<String> _glanceComposePrompt({
+    Duration? silence,
+    String? app,
+  }) async {
+    final now = DateTime.now();
+    return '''
+现在是 ${now.hour} 点，你们已经${_silenceText(silence)}没说话了。你刚才看了一眼 TA 的手机屏幕，就是这张图${app == null ? '' : '（TA 在用「$app」）'}。
+你看过的这张图，TA 之后会在对话里看到。
+
+${await _glanceContext()}
+
+要是看到的东西让你真的想说点什么，就用一句话告诉 TA。40 字以内，像随手发一条微信。
+**说你因此想到的东西，不讲 TA 正在干什么**——TA 自己知道。
+图里是聊天记录、钱、账号、看病这类私事的，当作没看到，只回两个字：不说。
+
+如果这会儿不值得为它打扰 TA，**只回两个字：不说**。
+多数时候就该这样，这不是失败。
+
+写完之后自己过一遍这三条，有一条不过就重写：
+
+1. 这句话里有一件**具体的东西**吗（屏幕上的、或者你记着的）？空着手的问候不算。
+2. 主语是你自己这边的事吗？说的是你想到了什么。
+3. TA 读完之后不回，会不会觉得欠了你什么？会的话就重写。
+
+不要问问题。
+''';
+  }
+
   /// 把它主动说的这句写进对话里。
   ///
   /// **通知只是提醒，话本身得留在聊天里。** 不写的话有两个后果，第二个更要命：
@@ -521,9 +958,14 @@ class NudgeService {
   /// [conversationId] 指定推回哪段（便签自带来源）。空或者那段已经不在了，
   /// 就退回**最近动过的那段**：她要找也是去那儿找。一段都没有就跳过，
   /// 不为了发一条通知凭空建一段对话。
+  ///
+  /// [images] / [metadata] 是看一眼屏幕那条路用的：截图挂在这条上，
+  /// 标记从 `nudge` 换成 `glance`（见 [_runGlance]）。
   static Future<void> _appendToChat(
     String text, {
     String conversationId = '',
+    List<String> images = const [],
+    Map<String, dynamic> metadata = const {'nudge': true},
   }) async {
     try {
       final convs = await StorageService.listConversations();
@@ -541,7 +983,8 @@ class NudgeService {
           // 界面靠这个标记把它和「回你的话」分开显示。
           // 用 metadata 而不是新加字段：这只是一条 assistant 消息的来历，
           // 不是一种新的消息类型——发回服务端时它仍旧是普通的一句。
-          metadata: const {'nudge': true},
+          metadata: metadata,
+          images: images,
         ),
       );
       // updatedAt 不在这儿动：saveConversation 会按最后一条消息的时间收口，
@@ -782,12 +1225,16 @@ class NudgeCandidate {
   /// 去重（[looksRepeated]）只按字面挡，换个说法就滑过去了——按来源登记才挡得住。
   final String? mentionKey;
 
+  /// 便签留的时候说了「到点先看一眼屏幕」。见 [SelfNote.glance]。
+  final bool glance;
+
   const NudgeCandidate(
     this.kind,
     this.what, {
     this.conversationId = '',
     this.noteId,
     this.mentionKey,
+    this.glance = false,
   });
 }
 

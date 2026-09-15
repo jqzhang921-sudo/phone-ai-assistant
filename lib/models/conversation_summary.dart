@@ -73,6 +73,10 @@ class ConversationSummary {
       if (m.role == MessageRole.toolCall || m.role == MessageRole.toolResult) {
         continue;
       }
+      // 它看一眼屏幕的截图挂在 user 消息上，那句说明是写给模型的，不是她说的话。
+      // 收进来的话，搜索能搜到它、「今天你说了几条」会多算、主动说话翻最近的
+      // 对话也会读到一句她没说过的话。
+      if (m.metadata?['glanceShot'] == true) continue;
       lines.add(SummaryLine(i, m.role, m.content, m.timestamp));
     }
     return ConversationSummary(

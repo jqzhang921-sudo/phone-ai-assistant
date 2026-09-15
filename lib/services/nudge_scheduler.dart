@@ -4,6 +4,7 @@ import 'package:workmanager/workmanager.dart';
 import 'app_providers.dart';
 import 'letter_schedule.dart';
 import 'nudge_service.dart';
+import 'storage_service.dart';
 
 /// 后台唤醒。让「主动说话」在 App 关着的时候也有机会发生。
 ///
@@ -129,6 +130,14 @@ void nudgeCallbackDispatcher() {
   // 的初始化，所以这里能直接用 SharedPreferences、通知插件这些。
   Workmanager().executeTask((task, inputData) async {
     try {
+      // ⚠️ 后台引擎不走 main()，StorageService 的目录没人设。
+      //
+      // 原来这里没有这一句：`lastChatAt` / 写进对话 / 列信和日记，全部碰到
+      // 没初始化的 `_dir` 就抛——于是后台醒来那条路要么记成「出错了」，要么
+      // 被各处的 catch 吞掉、候选收不上来。前台那两条入口有 main() 兜着，
+      // 所以一直没看出来。2026-09-15 接「看一眼屏幕」时发现的：截到的图
+      // 也要靠这里设好的 ChatImages.dirPath 才存得下。
+      await StorageService.init();
       final prefs = await NudgeService.loadPrefs();
       if (!prefs.enabled) {
         await NudgeService.noteRun('醒了，但主动说话是关着的');

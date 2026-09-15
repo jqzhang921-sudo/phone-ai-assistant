@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 只要两样：截屏，和「现在前台是哪个 App」。
+
+     canRetrieveWindowContent 故意是 false：那一项是读别的 App 界面上的字、
+     点它的按钮，开了系统会写「可以查看和控制屏幕」。看一眼用不着。
+
+     前台是哪个 App 从 typeWindowStateChanged 事件的包名里来，这个不用读内容。 -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/screen_glance_description"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:canTakeScreenshot="true"
+    android:notificationTimeout="100" />

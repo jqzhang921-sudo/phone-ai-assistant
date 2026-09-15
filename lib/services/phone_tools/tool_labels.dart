@@ -30,6 +30,7 @@ const _labels = <String, String>{
   'save_to_corner': 'Save to corner',
   'memory': 'Memory',
   'follow_up_later': 'Note to self',
+  'glance_screen': 'Glance at screen',
   'add_small_thing': 'Small thing',
   'set_alarm': 'Set alarm',
   'set_timer': 'Set timer',

@@ -263,6 +263,13 @@ String _baseId(String id) {
   return i < 0 ? id : id.substring(0, i);
 }
 
+/// 这条画在谁那一边。
+///
+/// 它看一眼屏幕的截图挂在 user 消息上（模型才看得到图），但画在它那边——
+/// 按角色分组的话，截图会和它后面那句回复断开，变成两次发言。
+MessageRole _speaker(ChatMessage m) =>
+    m.metadata?['glanceShot'] == true ? MessageRole.assistant : m.role;
+
 /// 相邻两条算不算同一组。
 ///
 /// 三个条件：**同一个人说的**、中间没夹着别的东西（工具卡、事件行会打断）、
@@ -272,7 +279,7 @@ bool _sameGroup(List<ChatDisplayItem> items, int a, int b) {
   final x = items[a].message;
   final y = items[b].message;
   if (x == null || y == null) return false;
-  if (x.role != y.role) return false;
+  if (_speaker(x) != _speaker(y)) return false;
   // 跨天要断开：日期分割线会插在中间，贴在一起就穿帮了。
   if (_startsNewDay(items, b)) return false;
   if (_baseId(x.id) == _baseId(y.id)) return true;

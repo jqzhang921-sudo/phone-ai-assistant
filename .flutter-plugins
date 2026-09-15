@@ -46,6 +46,7 @@ path_provider_android=/home/cleo/.pub-cache/hosted/pub.dev/path_provider_android
 path_provider_foundation=/home/cleo/.pub-cache/hosted/pub.dev/path_provider_foundation-2.4.2/
 path_provider_linux=/home/cleo/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
 path_provider_windows=/home/cleo/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
+screen_glance=/home/cleo/projects/packages/screen_glance/
 sensors_plus=/home/cleo/.pub-cache/hosted/pub.dev/sensors_plus-6.1.2/
 share_plus=/home/cleo/.pub-cache/hosted/pub.dev/share_plus-10.1.4/
 shared_preferences=/home/cleo/.pub-cache/hosted/pub.dev/shared_preferences-2.5.3/
