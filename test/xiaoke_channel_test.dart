@@ -108,6 +108,14 @@ void main() {
     );
   });
 
+  test('电脑那边的心跳：ping 了就回 pong', () async {
+    // 电脑那边靠这个发现死连接，不回的话它每 45 秒就会断一次重连。
+    final pc = await connect(token);
+    await pc.next(); // welcome
+    pc.send({'type': 'ping'});
+    expect(await pc.next(), {'type': 'pong'});
+  });
+
   test('关掉重开：聊天记录还在', () async {
     final pc = await connect(token);
     await pc.next(); // welcome

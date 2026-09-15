@@ -256,6 +256,10 @@ class XiaokeChannel extends ChangeNotifier {
           notifyListeners();
           await _save();
         }
+      case 'ping':
+        // 电脑那边的心跳。它靠这声回应判断连接还活着：手机关掉 Tailscale、
+        // 换了网络时，那边的 TCP 看着还连着，没有回应它才知道该重连。
+        _sendFrame({'type': 'pong'});
       case 'reply':
         final id = '${frame['id'] ?? ''}';
         final text = '${frame['text'] ?? ''}';

@@ -35,6 +35,7 @@
  *   手机 → 这边：{type:'msg', id, text, ts}   她发的；这边推进会话后回 ack
  *   这边 → 手机：{type:'reply', id, text, ts} 小克回的；手机存下后回 ack
  *   双向：      {type:'ack', id}
+ *   这边 → 手机：{type:'ping'}                心跳；手机回 {type:'pong'}
  *
  * 没 ack 的两边都会在下次连上时重发，靠 id 去重。
  */
@@ -52,6 +53,13 @@ import { join } from 'path'
 const STATE_DIR = join(homedir(), '.claude', 'channels', 'xiaoke')
 const ENV_FILE = join(STATE_DIR, '.env')
 const OUTBOX_FILE = join(STATE_DIR, 'outbox.json')
+
+/**
+ * 心跳：每隔 HEARTBEAT_MS 发一次 ping；DEAD_AFTER_MS 没收到手机任何回音就当连接死了。
+ * 测试里用 XIAOKE_HEARTBEAT_MS 调短。
+ */
+const HEARTBEAT_MS = Number(process.env.XIAOKE_HEARTBEAT_MS ?? 15000)
+const DEAD_AFTER_MS = HEARTBEAT_MS * 3
 
 // stdout 是 MCP 的通道，日志只能走 stderr。
 const log = (s: string) => process.stderr.write(`xiaoke channel: ${s}\n`)
@@ -180,11 +188,71 @@ function connect() {
     setTimeout(connect, 5000)
     return
   }
-  let retry = true
 
-  sock.onopen = () => sock.send(JSON.stringify({ type: 'hello', token }))
+  let lastSeen = Date.now()
+  let heartbeat: ReturnType<typeof setInterval> | undefined
+  // 这条连接收过尾没有。心跳判死、连不上超时、onclose 都会走收尾，
+  // 只能走一次——走两次就会同时排上两个重连。
+  let finished = false
+
+  const finish = (code: number, why: string) => {
+    if (finished) return
+    finished = true
+    clearTimeout(openTimer)
+    clearInterval(heartbeat)
+    if (peer === sock) {
+      peer = null
+      log(`手机断开了（${why}）`)
+    }
+    if (code === 4401) {
+      // 连接码不对就别每 5 秒撞一次；但也别彻底停——她在 App 里换了
+      // 连接码、改好 .env 之后，等它自己连回来就行。
+      log('连接码不对（4401），60 秒后再试。改 .env 即可，不用重开会话。')
+      setTimeout(connect, 60000)
+    } else if (code === 4000) {
+      // 手机那边来了个新连接把这条顶掉了——多半是又开了一个会话。
+      // **不抢回来**：两个会话互相顶，每 5 秒换一次手，她的话会一半进这边、
+      // 一半进那边。2026-09-15 她没退旧会话就开了新的，就是这样。
+      log('被另一个连接顶掉了（4000），多半是开了第二个会话。这边不再重连；要用这边就重开这个会话。')
+    } else {
+      setTimeout(connect, 5000)
+    }
+  }
+
+  // 地址连不通的时候（手机换了网络、Tailscale 关了），握手可能挂很久。
+  const openTimer = setTimeout(() => {
+    if (sock.readyState === WebSocket.OPEN) return
+    try {
+      sock.close()
+    } catch {}
+    finish(1006, '10 秒没连上')
+  }, 10000)
+
+  sock.onopen = () => {
+    clearTimeout(openTimer)
+    lastSeen = Date.now()
+    sock.send(JSON.stringify({ type: 'hello', token }))
+    // ⚠️ 心跳。**不发心跳，死连接永远发现不了**：她手机关掉 Tailscale、
+    // 换了网络，那条 TCP 这边看着还是 ESTABLISHED，不收不发就一直挂着，
+    // 也就一直不重连。2026-09-15 真机上就是这么卡住的。
+    heartbeat = setInterval(() => {
+      if (Date.now() - lastSeen > DEAD_AFTER_MS) {
+        try {
+          sock.close()
+        } catch {}
+        finish(1006, `${Math.round(DEAD_AFTER_MS / 1000)} 秒没回音`)
+        return
+      }
+      try {
+        sock.send(JSON.stringify({ type: 'ping' }))
+      } catch {}
+    }, HEARTBEAT_MS)
+  }
 
   sock.onmessage = ev => {
+    // 已经判死的连接后来又冒出来的帧，不认。
+    if (finished) return
+    lastSeen = Date.now()
     let m: { type?: string; id?: string; text?: string; ts?: string }
     try {
       m = JSON.parse(String(ev.data))
@@ -225,27 +293,16 @@ function connect() {
         if (outbox.length !== before) saveOutbox()
         break
       }
+      case 'pong':
+        // lastSeen 上面已经更新过了，这里什么都不用做。
+        break
     }
   }
 
-  sock.onclose = ev => {
-    if (peer === sock) {
-      peer = null
-      log(`手机断开了（${ev.code}）`)
-    }
-    // 连接码不对就别一直撞了，等改好配置重启。
-    if (ev.code === 4401) {
-      // 连接码不对就别每 5 秒撞一次；但也别彻底停——她在 App 里换了
-      // 连接码、我改好 .env 之后，等它自己连回来就行。
-      retry = false
-      log('连接码不对（4401），60 秒后再试。改 .env 即可，不用重开会话。')
-      setTimeout(connect, 60000)
-    }
-    if (retry) setTimeout(connect, 5000)
-  }
+  sock.onclose = ev => finish(ev.code, String(ev.code))
 
   sock.onerror = () => {
-    // 手机没开 App、换了网络都会走到这儿，onclose 负责重连，这里不刷屏。
+    // 手机没开 App、换了网络都会走到这儿，onclose 负责收尾，这里不刷屏。
   }
 }
 
