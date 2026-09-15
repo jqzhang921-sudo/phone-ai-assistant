@@ -14,6 +14,7 @@ import 'services/xiaoke_channel.dart';
 import 'services/external_mcp_service.dart';
 import 'services/nudge_scheduler.dart';
 import 'services/tts_service.dart';
+import 'widgets/nook_splash.dart';
 
 /// 让没有 context 的工具也能弹框问用户。
 ///
@@ -120,6 +121,9 @@ class PhoneAiApp extends StatefulWidget {
 
 class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
   late Future<AppSettings> _settingsFuture;
+
+  /// 冷启动演一次开屏，见 [NookSplash]。切回前台不演：进程还在就不算「回来」。
+  bool _splash = true;
 
   @override
   void initState() {
@@ -279,6 +283,17 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
               darkTheme: AppTheme.darkWith(titleSerif: titleSerif, tone: tone),
               themeMode: _modeFor(s, bg),
               home: const HomeShell(),
+              // 开屏盖在最上面，首页在底下同时建好：淡出时露出来的就是画完的第一帧，
+              // 不会「动画完了再等首页」。
+              builder: (context, child) => Stack(
+                children: [
+                  child ?? const SizedBox.shrink(),
+                  if (_splash)
+                    NookSplash(
+                      onDone: () => setState(() => _splash = false),
+                    ),
+                ],
+              ),
             );
           },
         );

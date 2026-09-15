@@ -97,3 +97,8 @@ flutter:
     - family: ZhiMangXing
       fonts:
         - asset: assets/fonts/ZhiMangXing.ttf
+    # 开屏那个小写的 nook。Fraunces Regular，只留了 n o k 三个字形（2KB），
+    # 别处要用 Fraunces 得换回完整字体。SIL OFL 1.1，可商用。
+    - family: FrauncesNook
+      fonts:
+        - asset: assets/fonts/FrauncesNook.ttf
