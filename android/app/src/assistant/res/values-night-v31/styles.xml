@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 和 values-v31/styles.xml 同一份，理由见那边。系统深色时用这份。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowSplashScreenBackground">#FF111116</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#FF111116</item>
+    </style>
+</resources>

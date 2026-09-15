@@ -32,6 +32,10 @@ class NookSplash extends StatefulWidget {
   /// 然后淡出，露出底下的 App。
   static const fade = Duration(milliseconds: 320);
 
+  /// 系统启动页的底色（android/app/src/assistant/res/values-v31/styles.xml）。
+  /// 安卓 12+ 那层关不掉，只能让它和开屏第一帧同色；开屏底色从这里渐到当时的颜色。
+  static const ground = Color(0xFF111116);
+
   @override
   State<NookSplash> createState() => _NookSplashState();
 }
@@ -460,12 +464,14 @@ class _SplashPainter extends CustomPainter {
     final w = g.w;
     final all = Offset.zero & size;
 
+    // 底色从系统启动页那片深色渐过来，接得上，不跳。
+    final ground = _easeInOutSine(_clamp(t / 360));
     canvas.drawRect(
       all,
       Paint()
         ..shader = ui.Gradient.linear(Offset.zero, Offset(0, size.height), [
-          tone.bgTop,
-          tone.bgBottom,
+          Color.lerp(NookSplash.ground, tone.bgTop, ground)!,
+          Color.lerp(NookSplash.ground, tone.bgBottom, ground)!,
         ]),
     );
 

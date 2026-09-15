@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 安卓 12+ 冷启动时系统一定会先盖一层启动页（底色 + App 图标），windowDisablePreview
+         管不住它，关不掉。2026-09-16 Cleo 看到白底上一个大图标、接着才是开屏，问「必须有这个吗」。
+
+         关不掉就让它看不出来：底色用开屏最开始那片深色，图标换成透明的。
+         这样系统那层就是一片黑，Flutter 画出第一帧后 NookSplash 从这片黑里画出墙角——
+         早上 / 傍晚那两种浅一点的底，开头 0.36s 从这个颜色渐过去，见 NookSplash.ground。
+         ⚠️ 颜色改了两边一起改。
+
+         只放在 assistant flavor：读书版不演这个开屏。
+         values-night-v31 那份必须也有：「深色模式」这个限定符比 v31 优先，
+         不写的话系统深色时会退回 main 里的 values-night，又是系统默认启动页。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowSplashScreenBackground">#FF111116</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#FF111116</item>
+    </style>
+</resources>
