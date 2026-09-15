@@ -56,15 +56,23 @@ const OUTBOX_FILE = join(STATE_DIR, 'outbox.json')
 // stdout 是 MCP 的通道，日志只能走 stderr。
 const log = (s: string) => process.stderr.write(`xiaoke channel: ${s}\n`)
 
-// 读 .env；真环境变量优先。
-if (existsSync(ENV_FILE)) {
-  for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
-    const m = /^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/.exec(line)
-    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2]
+/**
+ * 读配置。**每次重连都重读**：手机换了网络地址（家里 WiFi ↔ Tailscale）时，
+ * 改完 .env 等它自己重连就行，不用重开会话。真环境变量优先。
+ */
+function loadConfig(): { url?: string; token?: string } {
+  const env: Record<string, string> = {}
+  if (existsSync(ENV_FILE)) {
+    for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+      const m = /^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/.exec(line)
+      if (m) env[m[1]] = m[2]
+    }
+  }
+  return {
+    url: process.env.XIAOKE_PHONE_URL ?? env.XIAOKE_PHONE_URL,
+    token: process.env.XIAOKE_TOKEN ?? env.XIAOKE_TOKEN,
   }
 }
-const PHONE_URL = process.env.XIAOKE_PHONE_URL
-const TOKEN = process.env.XIAOKE_TOKEN
 
 type Reply = { id: string; text: string; ts: string }
 
@@ -158,20 +166,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 })
 
 function connect() {
-  if (!PHONE_URL || !TOKEN) {
-    log(`没配 XIAOKE_PHONE_URL / XIAOKE_TOKEN（${ENV_FILE}），不连`)
+  const { url, token } = loadConfig()
+  if (!url || !token) {
+    log(`没配 XIAOKE_PHONE_URL / XIAOKE_TOKEN（${ENV_FILE}），5 秒后再看一次`)
+    setTimeout(connect, 5000)
     return
   }
   let sock: WebSocket
   try {
-    sock = new WebSocket(PHONE_URL)
+    sock = new WebSocket(url)
   } catch (e) {
-    log(`地址不对：${e}`)
+    log(`地址不对（${url}）：${e}`)
+    setTimeout(connect, 5000)
     return
   }
   let retry = true
 
-  sock.onopen = () => sock.send(JSON.stringify({ type: 'hello', token: TOKEN }))
+  sock.onopen = () => sock.send(JSON.stringify({ type: 'hello', token }))
 
   sock.onmessage = ev => {
     let m: { type?: string; id?: string; text?: string; ts?: string }
@@ -224,8 +235,11 @@ function connect() {
     }
     // 连接码不对就别一直撞了，等改好配置重启。
     if (ev.code === 4401) {
+      // 连接码不对就别每 5 秒撞一次；但也别彻底停——她在 App 里换了
+      // 连接码、我改好 .env 之后，等它自己连回来就行。
       retry = false
-      log('连接码不对（4401），不再重连。改好 .env 后重开会话。')
+      log('连接码不对（4401），60 秒后再试。改 .env 即可，不用重开会话。')
+      setTimeout(connect, 60000)
     }
     if (retry) setTimeout(connect, 5000)
   }
