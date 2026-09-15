@@ -5,6 +5,7 @@ import 'config/settings.dart';
 import 'config/app_theme.dart';
 import 'screens/home_shell.dart';
 import 'services/app_providers.dart';
+import 'services/avatar_store.dart';
 import 'services/chat_images.dart';
 import 'services/storage_service.dart';
 import 'services/external_mcp_service.dart';
@@ -38,6 +39,8 @@ void main() async {
   // 超过 30 天的聊天图片清掉，见 [ChatImages]。不等它，也不让它拦住启动。
   ChatImages.sweep().ignore();
   StorageService.dropPreImageBackups().ignore();
+  // 你自己的头像全局一张，先读进来，气泡里的头像一出现就是对的。
+  AvatarStore.instance.load(AvatarStore.userKey).ignore();
 
   // 只是把后台入口注册给原生侧，不会开始跑——跑不跑由设置里那个开关决定。
   // 必须在 runApp 之前：系统唤醒时走的是另一条路径，那时候没有 widget 树。

@@ -9,6 +9,8 @@ import '../models/musing_entry.dart';
 import '../services/app_providers.dart';
 import '../services/tts_service.dart';
 import '../services/voice_message.dart';
+import '../services/avatar_store.dart';
+import 'avatar_sheet.dart';
 import 'chat_image_stack.dart';
 import 'voice_bubble.dart';
 import '../config/app_shape.dart';
@@ -572,7 +574,7 @@ class MessageBubble extends StatelessWidget {
   /// 品牌图标管「谁」：猫是 AI，爪印是用户。机器小人和通用 user 图标不认人。
   Widget _buildAvatar(ThemeData theme, {required bool isUser}) {
     final scheme = theme.colorScheme;
-    return CircleAvatar(
+    final fallback = CircleAvatar(
       radius: _avatarSize / 2,
       backgroundColor:
           isUser ? scheme.surfaceContainerHighest : scheme.primaryContainer,
@@ -581,6 +583,31 @@ class MessageBubble extends StatelessWidget {
         height: isUser ? 13 : 15,
         color: isUser ? scheme.onSurfaceVariant : scheme.onPrimaryContainer,
       ),
+    );
+    // 你的头像全局一张，它的按对话记，见 [AvatarStore]；没换过就是爪印和猫。
+    // 两边都听着 store：换了之后上面几条气泡当场跟着变。
+    final key = isUser ? AvatarStore.userKey : conversationId;
+    if (key == null) return fallback;
+    final avatar = ListenableBuilder(
+      listenable: AvatarStore.instance,
+      builder: (context, _) {
+        final file = AvatarStore.instance.currentFile(key);
+        if (file == null) return fallback;
+        return CircleAvatar(
+          radius: _avatarSize / 2,
+          backgroundImage: ResizeImage(FileImage(file), width: 96),
+        );
+      },
+    );
+    // 点自己的头像换你的头像。它的头像不在这儿换、在顶栏换：
+    // 气泡里的头像密密一排，点它的很容易误触。
+    if (!isUser) return avatar;
+    return Builder(
+      builder:
+          (context) => GestureDetector(
+            onTap: () => showAvatarSheet(context, AvatarStore.userKey),
+            child: avatar,
+          ),
     );
   }
 }

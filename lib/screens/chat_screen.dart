@@ -21,7 +21,10 @@ import '../services/ai_client.dart';
 import '../services/app_providers.dart';
 import '../config/persona.dart';
 import '../services/chat_events.dart';
+import '../services/avatar_store.dart';
 import '../services/chat_images.dart';
+import '../services/phone_tools/avatar_tool.dart';
+import '../widgets/avatar_sheet.dart';
 import '../services/mcp_server.dart';
 import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
@@ -283,6 +286,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _saveIfChanged();
     // 刚从盘上读出来（或刚存过）的，就是存盘时的样子。
     _savedSig = _sigOf(conv);
+    AvatarStore.instance.load(conv.id);
     setState(() {
       _conversation = conv;
       _isLoading = false;
@@ -713,6 +717,8 @@ class _ChatScreenState extends State<ChatScreen> {
     // 便签工具要知道自己身处哪段对话，才能把「做好了吗」推回原地。
     // 工具执行器的签名只有 args，拿不到调用现场，所以在这儿放一次。
     SelfNoteTool.currentConversationId = _conversation.id;
+    AvatarTool.currentConversationId = _conversation.id;
+    AvatarTool.latestUserImages = _latestUserImages;
 
     // Build client with tools once, reuse for all rounds
     // Always include local phone tools (regardless of MCP Server toggle)
@@ -1749,6 +1755,17 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// 这段对话里 TA 最近发来的那条带图消息里的图，给 `set_avatar` 用。
+  List<String> _latestUserImages() {
+    for (final m in _conversation.messages.reversed) {
+      if (m.role == MessageRole.user && m.images.isNotEmpty) return m.images;
+    }
+    return const [];
+  }
+
+  /// 点顶栏头像：换它在这段对话里的头像。菜单和换你自己头像的是同一个。
+  Future<void> _showAvatarSheet() => showAvatarSheet(context, _conversation.id);
+
   /// 对话页顶栏：猫底座 + 标题 + 一行状态。
   ///
   /// 「在线」不是写死的装饰——它读 `AiClientProvider.currentClient`：
@@ -1761,18 +1778,38 @@ class _ChatScreenState extends State<ChatScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: scheme.primary.withValues(alpha: 0.11),
-            borderRadius: BorderRadius.circular(11),
-          ),
-          child: Image.asset(
-            'assets/icons/cat.png',
-            height: 17,
-            color: scheme.primary,
+        // 点它换头像。它自己也能换（set_avatar），两边改的是同一份，
+        // 所以这里听着 AvatarStore，它一换这里跟着变。
+        GestureDetector(
+          onTap: _showAvatarSheet,
+          child: ListenableBuilder(
+            listenable: AvatarStore.instance,
+            builder: (context, _) {
+              final file = AvatarStore.instance.currentFile(_conversation.id);
+              return Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child:
+                    file != null
+                        ? Image(
+                          image: ResizeImage(FileImage(file), width: 128),
+                          width: 34,
+                          height: 34,
+                          fit: BoxFit.cover,
+                        )
+                        : Image.asset(
+                          'assets/icons/cat.png',
+                          height: 17,
+                          color: scheme.primary,
+                        ),
+              );
+            },
           ),
         ),
         const SizedBox(width: 10),

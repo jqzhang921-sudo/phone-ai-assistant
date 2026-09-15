@@ -12,6 +12,7 @@ import '../models/letter.dart';
 import '../models/memory_topic.dart';
 import '../models/musing_entry.dart';
 import '../utils/dates.dart';
+import 'avatar_store.dart';
 import 'chat_images.dart';
 
 class StorageService {
@@ -22,6 +23,7 @@ class StorageService {
   static Future<void> init() async {
     _dir = await getApplicationDocumentsDirectory();
     ChatImages.dirPath = '${_dir.path}/chat_images';
+    AvatarStore.dirPath = '${_dir.path}/avatars';
   }
 
   /// 删掉拆图前留的原文件备份（`conversations_pre_images/`）。
