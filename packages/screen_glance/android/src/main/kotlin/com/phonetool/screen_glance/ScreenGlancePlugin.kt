@@ -53,20 +53,50 @@ class ScreenGlancePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     "bound" to (GlanceService.instance != null),
                 )
             )
-            "openSettings" -> {
-                try {
-                    context.startActivity(
-                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                    result.success(true)
-                } catch (_: Exception) {
-                    result.success(false)
-                }
-            }
+            "openSettings" -> result.success(openSettings())
             "check" -> result.success(precheck(excludedOf(call), allowInAppOf(call)))
             "capture" -> capture(call, result)
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * 把她送到能重新打开这个服务的地方。
+     *
+     * 2026-09-16 Cleo：「这个无障碍是每隔一段时间就会断开，有什么解决方法不」。
+     * 断开的机制是系统定的：进程一被杀（装新包、后台被清、强行停止），系统就把这个
+     * 服务标成「出现故障」，而且**不会自己重新绑上**——只能由她把开关关掉再打开。
+     * App 这边够不着：改无障碍开关要 WRITE_SECURE_SETTINGS，那是系统应用才有的权限。
+     *
+     * 我们能做的只有让这一步别那么远：直接跳到**这个服务自己那一页**（就是带
+     * 「让它看一眼屏幕」那个开关的页面），而不是扔进无障碍服务的长列表让她自己找。
+     * 这个页面 API 30 才有，厂商也可能没实现——所以跳不过去就退回列表页。
+     */
+    private fun openSettings(): Boolean {
+        val me = ComponentName(context, GlanceService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                // ⚠️ 写字符串字面量，不用 Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS：
+                // 那个常量在公开 SDK 里够不着（编译直接 Unresolved reference），
+                // 但这个 action 本身是系统设置认的。
+                context.startActivity(
+                    Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+                        .putExtra(Intent.EXTRA_COMPONENT_NAME, me.flattenToString())
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                return true
+            } catch (_: Exception) {
+                // 厂商 ROM 没这一页，退回下面的列表页。
+            }
+        }
+        return try {
+            context.startActivity(
+                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
