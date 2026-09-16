@@ -6,6 +6,7 @@ import 'config/app_theme.dart';
 import 'screens/home_shell.dart';
 import 'services/app_providers.dart';
 import 'services/avatar_store.dart';
+import 'services/background_memory.dart';
 import 'services/chat_images.dart';
 import 'services/glance_health.dart';
 import 'services/screen_glance.dart';
@@ -189,6 +190,16 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       NudgeScheduler.runOnResume();
       _checkGlanceHealth();
+    }
+    // 退到后台就把图片缓存还回去，理由见 [freeImageCacheForBackground]：
+    // 系统清理的是「在后台占几百兆的空进程」，而进程一死，
+    // 「看一眼屏幕」就被记成故障、要她手动接回来。
+    //
+    // ⚠️ 不接 inactive：下拉通知栏、来电都会触发它，人马上就回来，
+    // 白白重解一遍图。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      freeImageCacheForBackground(PaintingBinding.instance.imageCache);
     }
   }
 
