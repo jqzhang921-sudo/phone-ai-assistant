@@ -31,6 +31,7 @@ import '../services/mcp_server.dart';
 import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
 import '../services/small_things.dart';
+import '../services/tool_run_repair.dart';
 import '../services/tool_tiers.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
@@ -387,7 +388,21 @@ class _ChatScreenState extends State<ChatScreen> {
     // 还在生成回复的那段：盘上那份是没写完的样子，拿活的。
     final live = _running[id];
     if (live != null) return live;
-    return StorageService.loadConversation(id);
+    // 盘上那份可能停在「一轮被打断」的样子：有调用没结果，那张工具卡会永远转圈。
+    // 收尾时已经补过一次（[_finishTurn]），但那一轮要是连收尾都没跑到——进程被系统
+    // 杀掉——就只剩这里能补。补完不立刻存盘：下一轮收尾自然会存，读一次多写一次盘
+    // 不划算，而且这个修补是幂等的，再打开一次照样补得上。
+    final stored = await StorageService.loadConversation(id);
+    if (stored != null && hasOrphanToolCalls(stored.messages)) {
+      final fixed = repairOrphanToolCalls(
+        stored.messages,
+        newId: () => _uuid.v4(),
+      );
+      stored.messages
+        ..clear()
+        ..addAll(fixed);
+    }
+    return stored;
   }
 
   /// 从列表/搜索结果打开一场对话。
@@ -726,6 +741,17 @@ class _ChatScreenState extends State<ChatScreen> {
     if (here) {
       setState(() => _isLoading = false);
       _scrollToBottom();
+    }
+    // 这一轮要是在半路断了（系统把 App 冻住、抛异常），会留下「有调用没结果」的
+    // 工具，那张卡就永远转圈——Cleo 2026-09-16 让它看屏幕时撞到的。理由见
+    // [repairOrphanToolCalls]：看屏幕恰恰要求她切出去，而那正是被冻的时刻。
+    if (hasOrphanToolCalls(conv.messages)) {
+      final fixed = repairOrphanToolCalls(conv.messages, newId: () => _uuid.v4());
+      _touch(conv, () {
+        conv.messages
+          ..clear()
+          ..addAll(fixed);
+      });
     }
     _saveConversation(conv);
 
