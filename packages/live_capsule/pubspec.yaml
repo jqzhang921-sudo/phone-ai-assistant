@@ -1,0 +1,24 @@
+name: live_capsule
+description: "流体云胶囊：安卓 16 的实时更新通知，正在进行的事显示在挖孔那一圈。"
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.7.0
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+# ⚠️ 为什么是个单独的插件，理由和 screen_glance 一样：
+#
+# 「它在写回复」这条路在前台（聊天页），但「它在看你的屏幕」发生在**后台叫醒**
+# 的时候（WorkManager），那会儿跑的是另一台 Flutter 引擎，MainActivity 没起来，
+# 挂在它身上的通道都不存在。后台引擎只自动注册 pubspec 里列出来的插件。
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.phonetool.live_capsule
+        pluginClass: LiveCapsulePlugin

@@ -3,6 +3,7 @@ import 'dart:ui' show FlutterView;
 import 'package:flutter/widgets.dart';
 
 import '../../models/mcp_tool.dart';
+import '../capsule_texts.dart';
 import '../chat_images.dart';
 import '../screen_glance.dart';
 
@@ -50,7 +51,12 @@ class GlanceTool {
     category: '手机工具',
   );
 
-  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
+  /// 看屏幕的整段（包括等她切出去的那最多 45 秒）都亮着流体云胶囊。
+  /// 这条路是她叫它看的，但等待期间她人在别的 App 上，胶囊是她当场唯一看得见的痕迹。
+  static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) =>
+      Capsule.whileGlancing(() => _execute(args));
+
+  static Future<Map<String, dynamic>> _execute(Map<String, dynamic> args) async {
     if (!await ScreenGlance.allowed()) {
       return {
         'success': false,

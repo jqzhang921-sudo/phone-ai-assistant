@@ -23,6 +23,7 @@ import '../config/persona.dart';
 import '../services/chat_events.dart';
 import '../services/avatar_store.dart';
 import '../services/chat_images.dart';
+import '../services/capsule_texts.dart';
 import '../services/reply_notifier.dart';
 import '../services/phone_tools/avatar_tool.dart';
 import '../widgets/avatar_sheet.dart';
@@ -706,7 +707,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final conv = _conversation;
     _running[conv.id] = conv;
     try {
-      await _runChatTurn(conv);
+      // 写回复的这一路亮着流体云胶囊：她中途返回、去刷别的，抬头就知道它还在写。
+      // 写完由 [_finishTurn] 弹通知叫她回来看，两件事接在一起。
+      await Capsule.whileReplying(() => _runChatTurn(conv));
     } catch (e) {
       debugPrint('[chat] 这一轮出错：$e');
       _updateAssistantMessage(conv, '❌ 发送消息失败: $e');

@@ -41,6 +41,7 @@ image_picker_ios=/home/cleo/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/
 image_picker_linux=/home/cleo/.pub-cache/hosted/pub.dev/image_picker_linux-0.2.2/
 image_picker_macos=/home/cleo/.pub-cache/hosted/pub.dev/image_picker_macos-0.2.2/
 image_picker_windows=/home/cleo/.pub-cache/hosted/pub.dev/image_picker_windows-0.2.2/
+live_capsule=/home/cleo/projects/packages/live_capsule/
 path_provider=/home/cleo/.pub-cache/hosted/pub.dev/path_provider-2.1.5/
 path_provider_android=/home/cleo/.pub-cache/hosted/pub.dev/path_provider_android-2.2.19/
 path_provider_foundation=/home/cleo/.pub-cache/hosted/pub.dev/path_provider_foundation-2.4.2/

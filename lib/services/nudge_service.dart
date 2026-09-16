@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:live_capsule/live_capsule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
 import '../models/mcp_tool.dart';
 import 'ai_client.dart';
 import '../config/persona.dart';
+import 'capsule_texts.dart';
 import 'chat_images.dart';
 import 'memory_context.dart';
 import 'notify_name.dart';
@@ -645,9 +647,18 @@ class NudgeService {
       return const NudgeRunResult._(false, '手上没有事；能看一眼屏幕，但它这会儿不想看');
     }
 
+    // 从这里到「想好说什么」为止，流体云上亮着「在看一眼你的屏幕」。
+    // ⚠️ 下面每个出口都要 [Capsule.end]，别留一个收不掉的胶囊。
+    final capsule = await Capsule.start(
+      id: LiveCapsule.glanceId,
+      text: Capsule.glanceText,
+      short: Capsule.glanceShort,
+    );
+
     final shot = await ScreenGlance.capture();
     final bytes = shot.bytes;
     if (!shot.ok || bytes == null) {
+      if (capsule) await Capsule.end(LiveCapsule.glanceId);
       return NudgeRunResult._(
         false,
         '它想看，但没看成：${(shot.miss ?? GlanceMiss.failed).label}',
@@ -660,6 +671,7 @@ class NudgeService {
       ref = await ChatImages.save(bytes);
     } catch (e) {
       // 存不下就不往下走：没有痕迹的「看过」，是答应过不做的事。
+      if (capsule) await Capsule.end(LiveCapsule.glanceId);
       return NudgeRunResult.failed('截到了，但存不下来，这次不算：$e');
     }
 
@@ -677,6 +689,8 @@ class NudgeService {
       error = '（生成时出错：$e）';
     }
     if (text != null && looksRepeated(text, await _recent(sp))) text = null;
+    // 看完、也想好说什么了：胶囊收起来，后面该弹通知弹通知。
+    if (capsule) await Capsule.end(LiveCapsule.glanceId);
 
     await _appendToChat(
       text ?? '',
@@ -793,9 +807,18 @@ class NudgeService {
         ((await VisionService.getKey())?.isNotEmpty ?? false);
     if (!canSee) return (result: null, miss: '现在的模型看不了图，也没配识图');
 
+    // 和上面那条自己好奇的路一样：看屏幕的时候流体云上亮着。
+    // ⚠️ 下面每个出口都要 [Capsule.end]。
+    final capsule = await Capsule.start(
+      id: LiveCapsule.glanceId,
+      text: Capsule.glanceText,
+      short: Capsule.glanceShort,
+    );
+
     final shot = await ScreenGlance.capture();
     final bytes = shot.bytes;
     if (!shot.ok || bytes == null) {
+      if (capsule) await Capsule.end(LiveCapsule.glanceId);
       return (result: null, miss: (shot.miss ?? GlanceMiss.failed).label);
     }
     await ScreenGlance.markLooked(now);
@@ -804,6 +827,7 @@ class NudgeService {
     try {
       ref = await ChatImages.save(bytes);
     } catch (_) {
+      if (capsule) await Capsule.end(LiveCapsule.glanceId);
       return (result: null, miss: '截到了，但存不下来');
     }
 
@@ -821,6 +845,7 @@ class NudgeService {
       error = '（生成时出错：$e）';
     }
     if (text != null && looksRepeated(text, await _recent(sp))) text = null;
+    if (capsule) await Capsule.end(LiveCapsule.glanceId);
 
     // 推回留便签的那段对话：「说好的十分钟呢」接的是那边的「再刷十分钟就睡」。
     await _appendToChat(

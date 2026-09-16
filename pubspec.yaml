@@ -61,6 +61,8 @@ dependencies:
   # 看一眼屏幕（无障碍截屏）。本地插件，理由见它自己的 pubspec。
   screen_glance:
     path: packages/screen_glance
+  live_capsule:
+    path: packages/live_capsule
 
 dev_dependencies:
   flutter_test:

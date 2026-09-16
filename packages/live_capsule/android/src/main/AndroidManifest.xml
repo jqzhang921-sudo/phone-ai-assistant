@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 把常驻通知升级成「实时更新」（安卓 16），ColorOS 16 的流体云显示的就是这个。
+         不是运行时权限，不会弹窗问；她可以在系统设置里单独关掉，
+         关了的话 canPostPromotedNotifications() 会是 false，我们就不发。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+</manifest>
