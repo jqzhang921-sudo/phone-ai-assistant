@@ -124,6 +124,81 @@ List<ChatMessage> _sanitizeToolCallHistory(List<ChatMessage> messages) {
   return result;
 }
 
+/// 服务端在为 `reasoning_content` 这个字段抱怨吗，抱怨哪一种。
+///
+/// 2026-09-16 Cleo 让它看一眼屏幕，那一轮 400 断在这儿：
+/// `The reasoning_content in the thinking mode must be passed back to the API`。
+///
+/// 带思考的模型（DeepSeek 系）把思路放在 `reasoning_content` 里；**一旦这一轮
+/// 出现过工具调用，后面每次请求都得把它原样带回去**。我们一直收着（存成
+/// [ChatMessage.thinking]），但拼报文时没带上——于是它调一次工具就必然 400，
+/// 再也接不下去。
+///
+/// 反过来也有：有的中转站不认这个字段，照发反而报错。所以分两种对症，
+/// 别拿一种办法治两个方向。
+enum ReasoningComplaint {
+  /// 「必须带回来」——我们漏了。
+  mustPass,
+
+  /// 「这是什么字段」——它不认。
+  notAllowed,
+
+  none,
+}
+
+ReasoningComplaint reasoningComplaintOf(String error) {
+  final e = error.toLowerCase();
+  if (!e.contains('reasoning_content') && !e.contains('reasoning content')) {
+    return ReasoningComplaint.none;
+  }
+  // 「必须传回来」那一类的说法：must be passed / must be provided / required。
+  if (e.contains('must be') || e.contains('required') || e.contains('必须')) {
+    return ReasoningComplaint.mustPass;
+  }
+  // 「不认识 / 不允许」那一类：unknown / unsupported / not allowed / invalid。
+  if (e.contains('unknown') ||
+      e.contains('unsupported') ||
+      e.contains('not allowed') ||
+      e.contains('unexpected') ||
+      e.contains('invalid')) {
+    return ReasoningComplaint.notAllowed;
+  }
+  // 认不出是哪一种：当成「它不认」。少发一个字段顶多丢一点思路，
+  // 多发一个可能整条请求发不出去。
+  return ReasoningComplaint.notAllowed;
+}
+
+/// 把 `reasoning_content` 全部摘掉。
+List<Map<String, dynamic>> stripReasoning(List<Map<String, dynamic>> messages) {
+  return [
+    for (final m in messages)
+      if (m.containsKey('reasoning_content'))
+        {
+          for (final e in m.entries)
+            if (e.key != 'reasoning_content') e.key: e.value,
+        }
+      else
+        m,
+  ];
+}
+
+/// 给缺思路的 assistant 消息补一个空的 `reasoning_content`。
+///
+/// 用在「必须带回来」那条重试上：她那段对话是这个修复之前存下来的，
+/// 有工具调用、却没有存思路——补不回真的，只能补一个空的，
+/// 好让这段历史还能接着往下聊，而不是每次发送都 400。
+List<Map<String, dynamic>> fillMissingReasoning(
+  List<Map<String, dynamic>> messages,
+) {
+  return [
+    for (final m in messages)
+      if (m['role'] == 'assistant' && m['reasoning_content'] == null)
+        {...m, 'reasoning_content': ''}
+      else
+        m,
+  ];
+}
+
 /// 它看了一眼屏幕、决定不说话时留下的那条：只有截图，没有字。
 ///
 /// 这条是**给她翻的痕迹**（看过一定留痕），不是它说过的一句话。发给模型就是
@@ -351,6 +426,11 @@ class AiClient {
                   contentText.isEmpty
                       ? null
                       : _withTimestamp(contentText, msg.timestamp),
+              // 带思考的模型要求把思路原样带回来，尤其是这一条——有工具调用的
+              // assistant。见 [ReasoningComplaint]。只有真收到过思路才发，
+              // 不思考的模型这个字段根本不会出现。
+              if (msg.thinking != null && msg.thinking!.isNotEmpty)
+                'reasoning_content': msg.thinking,
               'tool_calls':
                   msg.toolCalls!
                       .map(
@@ -369,6 +449,10 @@ class AiClient {
             apiMessages.add({
               'role': 'assistant',
               'content': _withTimestamp(msg.content, msg.timestamp),
+              // 同上：只有真收到过思路才带回去。Claude 那条路不走这里——
+              // 它的思考是另一套装法（thinking 块），别把这个字段发过去。
+              if (msg.thinking != null && msg.thinking!.isNotEmpty)
+                'reasoning_content': msg.thinking,
             });
           }
           break;
@@ -482,6 +566,29 @@ class AiClient {
             // 用 cleaned 而不是 apiMessages：后者没经过 _repairToolMessages
             body['messages'] = _stripAllToolMessages(cleaned);
             continue;
+          }
+          // 服务端在为 reasoning_content 抱怨：对症补一次或摘一次，重试。
+          //
+          // 两个方向都只可能各来一次：补过之后每条 assistant 都有这个字段，
+          // 摘过之后一条都没有——于是下一轮同样的抱怨不会再触发 continue，
+          // 不会死循环。
+          final complaint = reasoningComplaintOf(error);
+          if (complaint != ReasoningComplaint.none) {
+            final msgs = (body['messages'] as List).cast<Map<String, dynamic>>();
+            final has = msgs.any((m) => m['reasoning_content'] != null);
+            final missing = msgs.any(
+              (m) => m['role'] == 'assistant' && m['reasoning_content'] == null,
+            );
+            if (complaint == ReasoningComplaint.mustPass && missing) {
+              debugPrint('[ai_client] 服务端要 reasoning_content，补空的重试。原始错误：$error');
+              body['messages'] = fillMissingReasoning(msgs);
+              continue;
+            }
+            if (complaint == ReasoningComplaint.notAllowed && has) {
+              debugPrint('[ai_client] 服务端不认 reasoning_content，去掉重试。原始错误：$error');
+              body['messages'] = stripReasoning(msgs);
+              continue;
+            }
           }
           yield AiStreamEvent.error('API 错误 (${response.statusCode}): $error');
           return;
