@@ -32,6 +32,7 @@ import '../services/phone_tools/self_note_tool.dart';
 import '../services/self_notes.dart';
 import '../services/small_things.dart';
 import '../services/tool_run_repair.dart';
+import '../services/home_list.dart';
 import '../services/tool_tiers.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
@@ -134,6 +135,9 @@ class _ChatScreenState extends State<ChatScreen> {
   int _favoriteCount = 0;
   int _trashCount = 0;
 
+  /// 主页「最近对话」展开着没有。默认收起，见 [homeConversations]。
+  bool _homeExpanded = false;
+
   late Conversation _conversation;
 
   /// 存一份引用，dispose 时要用它摘监听——那时候 context 已经不能读 Provider 了。
@@ -148,6 +152,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadConversations();
     _loadMusing();
     _loadUserName();
+    _loadHomeExpanded();
     // 时间线上那几条灰字（写了信、记了日记）。附加信息，读失败也不影响聊天。
     _loadChatEvents();
   }
@@ -159,6 +164,14 @@ class _ChatScreenState extends State<ChatScreen> {
       _userName = settings.userName;
       _aiName = settings.aiName;
     });
+  }
+
+  /// 上次她把「最近对话」留在展开还是收起。记住的理由见
+  /// [StorageService.setHomeConversationsExpanded]。
+  Future<void> _loadHomeExpanded() async {
+    final expanded = await StorageService.getHomeConversationsExpanded();
+    if (!mounted || expanded == _homeExpanded) return;
+    setState(() => _homeExpanded = expanded);
   }
 
   Future<void> _loadDrawerCounts() async {
@@ -2487,6 +2500,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildHome(ThemeData theme) {
     final scheme = theme.colorScheme;
     final dark = theme.brightness == Brightness.dark;
+    // 平时只露置顶的和最近那条；其余收在「展开」后面，见 [homeConversations]。
+    final shownConvs = homeConversations(
+      _savedConversations,
+      expanded: _homeExpanded,
+    );
 
     return ListView(
       // 底部 96 是给悬浮导航条让的位（它现在浮在内容上面，见 HomeShell）。
@@ -2666,17 +2684,38 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(PhosphorIconsRegular.trashSimple, size: 20),
-                tooltip: '回收站',
-                onPressed: _showTrashSheet,
-              ),
+              // 这儿原来是个垃圾桶（回收站）。2026-09-16 Cleo 指出它不对：
+              // 抽屉里已经有「回收站」入口、还带数量角标，这是同一个弹层的
+              // 第二个门；而且「最近对话」是个分区标题，右边跟一个删除图标
+              // 读起来像「清空这些」，意思正好拧着。
+              //
+              // 这个位置该管的是这份列表本身，于是换成展开 / 收起。
+              if (_homeExpanded ||
+                  _savedConversations.take(20).length > shownConvs.length)
+                TextButton(
+                  onPressed: () {
+                    setState(() => _homeExpanded = !_homeExpanded);
+                    StorageService.setHomeConversationsExpanded(_homeExpanded);
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: scheme.onSurfaceVariant,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    _homeExpanded
+                        ? '收起'
+                        // 数的是「展开之后会多出来几条」，所以按同一个上限算，
+                        // 不能拿总数减——超过 20 条的那些展开也不会出现。
+                        : '展开 ${_savedConversations.take(20).length - shownConvs.length}',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 10),
-          ..._savedConversations
-              .take(20)
-              .map((conv) => _conversationTile(theme, conv)),
+          ...shownConvs.map((conv) => _conversationTile(theme, conv)),
         ],
       ],
     );

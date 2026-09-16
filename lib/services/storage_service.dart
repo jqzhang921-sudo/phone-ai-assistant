@@ -75,6 +75,22 @@ class StorageService {
     return prefs.getString(_kBackgroundPresetKey) ?? 'none';
   }
 
+  /// 主页「最近对话」是展开着还是收起着。见 [homeConversations]。
+  ///
+  /// 记住她的选择：默认收起（主页只留置顶的和最近那条），她点开之后就一直开着，
+  /// 直到再点一次。每次回主页都要重新点开的话，这个开关就成了负担。
+  static const _kHomeConversationsExpandedKey = 'home_conversations_expanded';
+
+  static Future<void> setHomeConversationsExpanded(bool expanded) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kHomeConversationsExpandedKey, expanded);
+  }
+
+  static Future<bool> getHomeConversationsExpanded() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kHomeConversationsExpandedKey) ?? false;
+  }
+
   /// 超过这么长的 JSON 挪到另一个 isolate 去解，别卡界面线程。
   ///
   /// 两千条消息的对话约 76 万字符，电脑上解一次 12ms，手机上要慢几倍——
