@@ -192,9 +192,15 @@ List<ChatDisplayItem> _groupMessages(
       // 但推理模型是**先想完再开口**的：那段时间里 content 一直是空的，只有
       // thinking 在长。这里要是照旧跳过，屏幕上就几十秒什么都没有——所以有
       // 思考就得画出来，正文晚点到没关系。
+      // ⚠️ 表情消息正文就是空的（图是 metadata 里的一个 key，见 [Sticker]），
+      // 所以必须在这条规则之前放行——否则它发的表情会被整条吞掉。
+      //
+      // 2026-09-21 Cleo：「好像它发不出来」。它确实调了 send_sticker、也确实
+      // 接成了消息，是这里把它当成「还没开口的空消息」跳过了。
       if (m.role == MessageRole.assistant &&
           m.content.trim().isEmpty &&
-          (m.thinking?.trim().isEmpty ?? true)) {
+          (m.thinking?.trim().isEmpty ?? true) &&
+          m.metadata?['sticker'] == null) {
         i++;
         continue;
       }
