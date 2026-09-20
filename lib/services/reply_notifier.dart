@@ -59,6 +59,14 @@ class ReplyNotifier {
             importance: Importance.high,
             priority: Priority.high,
             styleInformation: BigTextStyleInformation(''),
+            // 右边那张大图是 Mochi 的脸。2026-09-18 Cleo 选的用法之一
+            // （「那个通知的可以」）。左上角那个小图标不能是它——系统一律染成
+            // 单色剪影，猫会糊成一团，那儿还是墙角（见 ic_stat_nook）。
+            //
+            // ⚠️ 这是**安卓资源**不是 Flutter asset：通知是系统画的，读不到
+            // assets/。图在 res/drawable-nodpi/，并且要写进 res/raw/keep.xml，
+            // 否则 release 裁剪会把这张「代码里没直接引用」的图删掉。
+            largeIcon: DrawableResourceAndroidBitmap('mochi_notify'),
           ),
         ),
       );

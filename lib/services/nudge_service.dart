@@ -1090,6 +1090,8 @@ ${await _glanceContext()}
           priority: Priority.defaultPriority,
           // 一句话经常比通知栏一行长，展开能看全。
           styleInformation: BigTextStyleInformation(''),
+          // 它主动开口时也带上那张脸，理由和注意事项见 [ReplyNotifier]。
+          largeIcon: DrawableResourceAndroidBitmap('mochi_notify'),
         ),
       ),
     );
