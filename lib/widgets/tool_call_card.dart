@@ -60,7 +60,7 @@ class ToolEntry {
 /// `send_voice` 的产物是那条语音气泡。再画一张工具卡，一来重复，
 /// 二来展开之后会把 `text:` 原样抖出来——**而「语音不显示文字」正是这个
 /// 功能成立的前提**。藏在长按里的东西，不能从旁边的卡片漏出去。
-const _hiddenTools = {'send_voice'};
+const _hiddenTools = {'send_voice', 'send_sticker'};
 
 List<ToolEntry> toolRunEntries(List<ChatMessage> messages) {
   final entries = <ToolEntry>[];

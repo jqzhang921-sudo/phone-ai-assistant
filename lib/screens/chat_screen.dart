@@ -33,6 +33,7 @@ import '../services/self_notes.dart';
 import '../services/small_things.dart';
 import '../services/tool_run_repair.dart';
 import '../services/home_list.dart';
+import '../services/stickers.dart';
 import '../services/tool_tiers.dart';
 import '../services/storage_service.dart';
 import '../services/vision_service.dart';
@@ -526,6 +527,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       _attachmentItem(
                         ctx,
+                        PhosphorIconsRegular.smiley,
+                        '表情',
+                        () => Navigator.of(ctx).pop(),
+                        action: _showStickerSheet,
+                      ),
+                      _attachmentItem(
+                        ctx,
                         PhosphorIconsRegular.camera,
                         '拍照',
                         () => Navigator.of(ctx).pop(),
@@ -985,6 +993,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 // 不这么接的话，用户看到的只是一个工具调用卡片，
                 // 那句话等于没说出口。
                 _appendVoiceMessage(conv, tc.name, toolResult);
+                // send_sticker 成功之后，把它接成一条**真的表情消息**。
+                // 和语音同一个路子：工具只负责产出，「这条出现在对话里」是界面的事。
+                _appendStickerMessage(conv, tc.name, toolResult);
                 // glance_screen 截到的图接成一条消息，下一轮模型才看得到。
                 await _appendGlanceShot(conv, aiClient, tc.name, toolResult);
               }
@@ -1105,6 +1116,107 @@ class _ChatScreenState extends State<ChatScreen> {
   ///
   /// 文字仍然存在 [ChatMessage.content] 里——它是「转文字」的来源，也是
   /// 发回给模型的上文（不然它不记得自己说过什么）。只是**界面上不显示**。
+  /// 把 `send_sticker` 的结果变成一条表情消息。
+  ///
+  /// 消息里只记一个 key（[Sticker.key]），图是打包进 App 的资源——不走聊天图片
+  /// 那条路，所以不会被 30 天清理扫掉。正文留空：表情就是这条消息的全部内容，
+  /// 气泡那边看见 sticker 就不画气泡（见 `MessageBubble`）。
+  void _appendStickerMessage(
+    Conversation conv,
+    String toolName,
+    String rawResult,
+  ) {
+    if (toolName != 'send_sticker') return;
+    try {
+      final r = jsonDecode(rawResult);
+      if (r is! Map || r['success'] != true) return;
+      final key = r['sticker'];
+      if (key is! String || stickerOf(key) == null) return;
+      _touch(conv, () {
+        conv.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: '',
+            metadata: {'sticker': key},
+          ),
+        );
+      });
+      if (identical(conv, _conversation)) _scrollToBottom();
+    } catch (e) {
+      debugPrint('[sticker] 接表情消息失败：$e');
+    }
+  }
+
+  /// 她自己发一张表情。
+  ///
+  /// 正文写成 `[表情：困了]` 是**给模型看的**——它读不到图，不写的话它只知道
+  /// 收到一条空消息。界面上这句不显示，只画图（见 `MessageBubble`）。
+  void _sendSticker(Sticker sticker) {
+    final conv = _conversation;
+    _touch(conv, () {
+      conv.messages.add(
+        ChatMessage(
+          id: _uuid.v4(),
+          role: MessageRole.user,
+          content: '[表情：${sticker.label}]',
+          metadata: {'sticker': sticker.key},
+        ),
+      );
+    });
+    _scrollToBottom();
+    // 发表情也是说了一句话，照常让它接话。
+    _continueChat();
+  }
+
+  /// 表情面板。放在加号里，和拍照/相册/文件并列。
+  void _showStickerSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder:
+          (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (final s in kStickers)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _sendSticker(s);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.asset(
+                              s.asset,
+                              width: 64,
+                              height: 64,
+                              // 像素画：插值会把它糊成一团。
+                              filterQuality: FilterQuality.none,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              s.label,
+                              style: Theme.of(ctx).textTheme.labelSmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
   void _appendVoiceMessage(
     Conversation conv,
     String toolName,

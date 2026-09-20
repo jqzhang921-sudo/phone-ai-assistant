@@ -8,6 +8,7 @@ import '../models/chat_message.dart';
 import '../models/musing_entry.dart';
 import '../services/app_providers.dart';
 import '../services/tts_service.dart';
+import '../services/stickers.dart';
 import '../services/voice_message.dart';
 import '../services/avatar_store.dart';
 import 'avatar_sheet.dart';
@@ -136,6 +137,8 @@ class MessageBubble extends StatelessWidget {
     // chat_screen 的 _appendGlanceShot）。但那不是她说的话——画在它那一边，
     // 字也不显示。
     final isGlanceShot = message.metadata?['glanceShot'] == true;
+    // 一张表情。图是打包进 App 的资源，消息里只记一个 key，见 [Sticker]。
+    final sticker = stickerOf(message.metadata?['sticker'] as String?);
     final isUser = message.role == MessageRole.user && !isGlanceShot;
     final voice = VoiceMessage.fromMetadata(message.metadata);
     final isAssistant = message.role == MessageRole.assistant;
@@ -201,7 +204,12 @@ class MessageBubble extends StatelessWidget {
     // 截图消息的字是写给模型的说明，不画。
     final hasBody =
         voice != null ||
-        (!isGlanceShot && message.content.trim().isNotEmpty) ||
+        // 表情消息的字不画：它自己发的那条正文是空的；她发的那条正文是
+        // `[表情：困了]`，那句是写给模型看的（否则它不知道收到了什么），
+        // 显示出来只会是一行多余的方括号。
+        (!isGlanceShot &&
+            sticker == null &&
+            message.content.trim().isNotEmpty) ||
         (isAssistant && (message.thinking?.trim().isNotEmpty ?? false));
 
     return Padding(
@@ -268,6 +276,18 @@ class MessageBubble extends StatelessWidget {
                             ? CrossAxisAlignment.end
                             : CrossAxisAlignment.start,
                     children: [
+                      // 表情画在气泡外面，和图一样——贴纸裹在一块底色里就不是贴纸了。
+                      if (sticker != null)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: hasBody ? 4 : 0),
+                          child: Image.asset(
+                            sticker.asset,
+                            width: 132,
+                            height: 132,
+                            // 像素画：插值会把它糊成一团。
+                            filterQuality: FilterQuality.none,
+                          ),
+                        ),
                       if (message.images.isNotEmpty)
                         Padding(
                           padding: EdgeInsets.only(bottom: hasBody ? 4 : 0),

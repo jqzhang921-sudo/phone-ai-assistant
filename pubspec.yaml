@@ -84,6 +84,9 @@ flutter:
     # 所以叠上去只加颗粒不改亮度。真磨砂玻璃是散射的，
     # 完美平滑的高斯模糊眼睛会读成塑料。
     - assets/glass-noise.png
+    # Mochi 的表情。打包进 App，所以不会像聊天图片那样被 30 天清理扫掉，
+    # 消息里只记一个 key，见 [Sticker]。
+    - assets/stickers/
 
   # 毛玻璃边缘的折射。只在 Impeller 下可用（见 AndroidManifest）。
   shaders:
