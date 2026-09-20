@@ -23,9 +23,20 @@ void main() {
     });
 
     test('查得到，也查得出没有', () {
-      expect(stickerOf('calm')?.label, '平常');
+      expect(stickerOf('smile')?.label, '笑');
       expect(stickerOf('没有这个'), isNull);
       expect(stickerOf(null), isNull);
+    });
+
+    test('退役的旧 key 仍然查得到——她的老消息里存着', () {
+      // 删掉这几个 key，老消息就画不出东西了。见 [Sticker] 的注释。
+      for (final old in ['calm', 'wink', 'alert', 'sleepy', 'box', 'back', 'sit']) {
+        expect(stickerOf(old), isNotNull, reason: old);
+      }
+      // 但它们不该出现在面板和工具清单里。
+      final current = kStickers.map((s) => s.key).toSet();
+      expect(current.contains('calm'), isFalse);
+      expect(current.contains('sleepy'), isFalse);
     });
   });
 
@@ -44,9 +55,15 @@ void main() {
     });
 
     test('发对了返回 key', () async {
-      final r = await StickerTool.execute({'name': 'sleepy'});
+      final r = await StickerTool.execute({'name': 'sleep'});
       expect(r['success'], true);
-      expect(r['sticker'], 'sleepy');
+      expect(r['sticker'], 'sleep');
+    });
+
+    test('退役的表情它发不出来', () async {
+      // 老消息还得靠这些 key 画出来，但不该让它继续发这批旧图。
+      final r = await StickerTool.execute({'name': 'sleepy'});
+      expect(r['success'], false);
     });
 
     test('名字写错了，把清单还回去让它自己挑', () async {
@@ -54,7 +71,7 @@ void main() {
       expect(r['success'], false);
       // ⚠️ 只回一句「没有这个表情」会把路堵死：它只会改用文字描述表情，
       // 那正是这个工具要避免的。
-      expect(r['error'], contains('sleepy'));
+      expect(r['error'], contains('sleep'));
     });
 
     test('不给名字也不崩', () async {

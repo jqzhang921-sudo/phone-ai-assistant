@@ -49,7 +49,10 @@ class StickerTool {
 
   static Future<Map<String, dynamic>> execute(Map<String, dynamic> args) async {
     final key = args['name']?.toString().trim() ?? '';
-    final sticker = stickerOf(key);
+    // ⚠️ 只认正式清单，不用 [stickerOf]——那个会连退役的旧表情一起查到，
+    // 而那几个 key 留着只是为了把老消息画出来（见 [Sticker] 的注释），
+    // 不该让它继续发那批画风不统一的图。
+    final sticker = kStickers.where((s) => s.key == key).firstOrNull;
     if (sticker == null) {
       // 名字写错了就把清单原样还回去，让它自己挑一个——回一句「没有这个表情」
       // 等于把路堵死，它只会改用文字描述表情，那正是这个工具要避免的东西。

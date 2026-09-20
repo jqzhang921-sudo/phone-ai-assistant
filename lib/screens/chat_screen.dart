@@ -767,7 +767,10 @@ class _ChatScreenState extends State<ChatScreen> {
     // 工具，那张卡就永远转圈——Cleo 2026-09-16 让它看屏幕时撞到的。理由见
     // [repairOrphanToolCalls]：看屏幕恰恰要求她切出去，而那正是被冻的时刻。
     if (hasOrphanToolCalls(conv.messages)) {
-      final fixed = repairOrphanToolCalls(conv.messages, newId: () => _uuid.v4());
+      final fixed = repairOrphanToolCalls(
+        conv.messages,
+        newId: () => _uuid.v4(),
+      );
       _touch(conv, () {
         conv.messages
           ..clear()
@@ -1173,44 +1176,52 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showStickerSheet() {
     showModalBottomSheet(
       context: context,
+      // 三十六张排下来六排开外，默认高度会把后面几排截掉——要能滚，
+      // 并且封顶在屏幕六成，不然整屏被它占满。
+      isScrollControlled: true,
       builder:
           (ctx) => SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.center,
-                children: [
-                  for (final s in kStickers)
-                    InkWell(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        _sendSticker(s);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Image.asset(
-                              s.asset,
-                              width: 64,
-                              height: 64,
-                              // 像素画：插值会把它糊成一团。
-                              filterQuality: FilterQuality.none,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              s.label,
-                              style: Theme.of(ctx).textTheme.labelSmall,
-                            ),
-                          ],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.6,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final s in kStickers)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _sendSticker(s);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Image.asset(
+                                s.asset,
+                                width: 64,
+                                height: 64,
+                                // 像素画：插值会把它糊成一团。
+                                filterQuality: FilterQuality.none,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                s.label,
+                                style: Theme.of(ctx).textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

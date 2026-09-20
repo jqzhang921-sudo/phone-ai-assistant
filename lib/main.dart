@@ -8,8 +8,6 @@ import 'services/app_providers.dart';
 import 'services/avatar_store.dart';
 import 'services/background_memory.dart';
 import 'services/chat_images.dart';
-import 'services/glance_health.dart';
-import 'services/screen_glance.dart';
 import 'services/storage_service.dart';
 import 'services/xiaoke_channel.dart';
 import 'services/external_mcp_service.dart';
@@ -137,7 +135,6 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
     // 不弹通知——人已经在 App 里了。门槛照走，所以不会变吵。
     NudgeScheduler.runOnStartup();
     _autoStartMcpServer();
-    _checkGlanceHealth();
   }
 
   @override
@@ -146,38 +143,17 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  /// 「看一眼屏幕」断了的话，在 App 里说一声，带一个「去设置」。
-  ///
-  /// 断的原因和为什么不会自己好，见 [GlanceHealth]。这里只管她人在 App 里的时候；
-  /// 后台那条通知见 [GlanceHealth.notifyIfBroken]。
-  ///
-  /// 断着的时候只说一次，直到它好了再断才会再说——她从无障碍设置页回来又是一次
-  /// resumed，要是那时已经接上了，就不该再弹一条。
-  bool _glanceWarned = false;
-
-  Future<void> _checkGlanceHealth() async {
-    // 让首屏先画完，别跟启动抢。
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-    if (!await GlanceHealth.broken()) {
-      _glanceWarned = false;
-      return;
-    }
-    if (_glanceWarned) return;
-    _glanceWarned = true;
-    final ctx = appNavigatorKey.currentContext;
-    if (ctx == null || !ctx.mounted) return;
-    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(
-      SnackBar(
-        content: const Text('「看一眼屏幕」被系统停掉了，去无障碍里关掉再打开一次就好'),
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: '去设置',
-          onPressed: ScreenGlance.openSettings,
-        ),
-      ),
-    );
-  }
+  // ⚠️ 这里曾经有过一个 `_checkGlanceHealth`：进 App 两秒后，如果「看一眼屏幕」
+  // 被系统停掉了，就在底部弹一条带「去设置」的横幅。**2026-09-20 整个删掉了。**
+  //
+  // 它的本意是帮她把服务接回来，实际效果是反的：横幅正好压在输入框上，每次冷启动
+  // 都来一次，于是她为了不被挡住，干脆把整个无障碍服务关了——
+  // 「无障碍关掉是因为她老是被系统关掉。每次打开 app 及会有提示，这个提示挡在我的
+  // 输入框，所以我必须去打开一下」。
+  //
+  // 一个为了救功能而存在的提示，逼得用户把功能关掉，那它就是净负分。
+  // 现在只剩两条路：后台那条通知（[GlanceHealth.notifyIfBroken]，12 小时最多一次，
+  // 不打断她正在做的事），和设置页里那一行状态。**别再往前台加这种东西。**
 
   /// ⚠️ 上面那句 `runOnStartup` **只在冷启动时跑**：它在 initState 里，
   /// 而 Android 不会因为她切走就杀进程。连着用一整天的话，那条兜底一次都
@@ -189,7 +165,6 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       NudgeScheduler.runOnResume();
-      _checkGlanceHealth();
     }
     // 退到后台就把图片缓存还回去，理由见 [freeImageCacheForBackground]：
     // 系统清理的是「在后台占几百兆的空进程」，而进程一死，
