@@ -271,9 +271,9 @@ class _HabitatScreenState extends State<HabitatScreen> {
               icon: PhosphorIcons.calendarBlank(PhosphorIconsStyle.regular),
               title: '日子',
               onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const DaysScreen()),
-                );
+                await Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const DaysScreen()));
                 _load();
               },
             ),
@@ -515,9 +515,10 @@ class _HabitatScreenState extends State<HabitatScreen> {
     // 昨天刚坑过书封。直接拿它当实心块，一贴壁纸又是透的，所以要
     // alphaBlend 到 surface 上。
     final dark = theme.brightness == Brightness.dark;
-    final fill = dark
-        ? Color.alphaBlend(scheme.primaryContainer, scheme.surface)
-        : scheme.primary;
+    final fill =
+        dark
+            ? Color.alphaBlend(scheme.primaryContainer, scheme.surface)
+            : scheme.primary;
 
     // ⚠️ 这里原来写死 `scheme.onPrimary`（白）。底色现在是旋转后的 primary，
     // 色相跟着壁纸走、亮度不固定——绿和黄那几档旋转出来明显更亮，白字压上去
@@ -767,7 +768,9 @@ class _HabitatScreenState extends State<HabitatScreen> {
     // 四种纸色轮着来。**按 id 的哈希取，不按 index**——按 index 的话，
     // 撕掉一张，剩下几张的颜色会集体跳一格，像是它把便签重写了一遍。
     // 认哪张纸是靠颜色的，颜色跟着 id 走才稳。
-    final paper = tone.shift(_paperTones[n.id.hashCode.abs() % _paperTones.length]);
+    final paper = tone.shift(
+      _paperTones[n.id.hashCode.abs() % _paperTones.length],
+    );
     final ink = tone.shift(const Color(0xFF3D3529));
     final due = n.isDue(DateTime.now());
 
@@ -914,19 +917,28 @@ class _HabitatScreenState extends State<HabitatScreen> {
     await SmallThingStore.markDone(s.id);
     if (!mounted) return;
     _load();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('做完了'),
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: '撤销',
-          onPressed: () async {
-            await SmallThingStore.undone(s.id);
-            if (mounted) _load();
-          },
+    // ⚠️ 先清掉上一条：连着勾两件小事会排队，第二条得等第一条走完才出现，
+    // 于是「做完了」在屏幕底下赖着好几秒。
+    //
+    // 2026-09-20 Cleo：「我自己的待办如果我打勾了，就是也会提醒一下，
+    // 这个提醒时间太久了，返回到主页还会有」。4 秒 → 2 秒；跟着她回主页
+    // 那件事在 HomeShell 切标签时清掉（SnackBar 挂在整个 App 的层级上，
+    // 不是某一页自己的）。
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('做完了'),
+          duration: const Duration(seconds: 2),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () async {
+              await SmallThingStore.undone(s.id);
+              if (mounted) _load();
+            },
+          ),
         ),
-      ),
-    );
+      );
   }
 
   /// 截止那行。**过期了也只是陈述，不催**——「过期」两个字本身就够重了，
@@ -976,10 +988,7 @@ class _HabitatScreenState extends State<HabitatScreen> {
                           for (final e in <(String, DateTime?)>[
                             ('不设', null),
                             ('今天', DateTime.now()),
-                            (
-                              '明天',
-                              DateTime.now().add(const Duration(days: 1)),
-                            ),
+                            ('明天', DateTime.now().add(const Duration(days: 1))),
                             (
                               '这周内',
                               DateTime.now().add(const Duration(days: 7)),

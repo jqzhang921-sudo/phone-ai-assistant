@@ -51,6 +51,9 @@ class _HomeShellState extends State<HomeShell> {
     // 放在早退之后：重复点当前 Tab 不该震。
     HapticFeedback.selectionClick();
     FocusManager.instance.primaryFocus?.unfocus();
+    // 换了页就把上一页的提示收掉。SnackBar 挂在整个 App 的层级上，不属于某一页——
+    // 不清的话，在栖息页勾完一件小事，那条「做完了」会跟着她回到主页。
+    ScaffoldMessenger.of(context).clearSnackBars();
     setState(() => _index = index);
   }
 
