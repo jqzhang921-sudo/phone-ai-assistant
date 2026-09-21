@@ -60,6 +60,8 @@ void main() {
     });
   });
 
+  _blinkTests();
+
   group('拖到屏幕外面要拉回来', () {
     const pet = Size(72, 72);
     const screen = Size(400, 800);
@@ -98,6 +100,37 @@ void main() {
       final at = clampSpot(const Offset(10, 10), pet, const Size(40, 40));
       expect(at.dx.isFinite, isTrue);
       expect(at.dy.isFinite, isTrue);
+    });
+  });
+}
+
+void _blinkTests() {
+  group('眨眼', () {
+    tearDown(() => PetBlink.have = {});
+
+    test('只有备了闭眼帧的姿势才眨', () {
+      PetBlink.have = {'sit_up'};
+      expect(PetBlink.has('sit_up'), isTrue);
+      // ⚠️ 没有闭眼帧就别眨：拿别的姿势顶替看起来是猫跳了一下。
+      expect(PetBlink.has('lying'), isFalse);
+    });
+
+    test('闭眼帧的文件名约定', () {
+      expect(PetBlink.assetFor('sit_up'), 'assets/stickers/mochi_sit_up_blink.png');
+    });
+
+    test('间隔在 3 到 7 秒之间绕，且不会连着两次一样', () {
+      var last = Duration.zero;
+      for (var i = 0; i < 12; i++) {
+        final g = blinkGap(i);
+        expect(g.inMilliseconds, inInclusiveRange(3000, 7000), reason: '第 $i 次');
+        expect(g, isNot(last), reason: '第 $i 次和上一次一样长');
+        last = g;
+      }
+    });
+
+    test('闭眼那一下是真猫的量级', () {
+      expect(blinkHold.inMilliseconds, inInclusiveRange(80, 200));
     });
   });
 }

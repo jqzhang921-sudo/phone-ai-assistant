@@ -39,6 +39,11 @@ class _MochiPetState extends State<MochiPet>
   String? _reaction;
   Timer? _reactionTimer;
 
+  /// 眨眼：闭着眼的那一下为 true。见 [PetBlink]。
+  bool _blinking = false;
+  int _blinks = 0;
+  Timer? _blinkTimer;
+
   /// 待机时轻轻起伏。不是走动——走动会抢注意力，这只是「活着」。
   late final AnimationController _bob = AnimationController(
     vsync: this,
@@ -49,6 +54,22 @@ class _MochiPetState extends State<MochiPet>
   void initState() {
     super.initState();
     _restore();
+    _scheduleBlink();
+  }
+
+  /// 下一次眨眼。**只在待机时眨**——它在写回复或看屏幕时该显得专注，
+  /// 那会儿眨眼反而像走神。
+  void _scheduleBlink() {
+    _blinkTimer?.cancel();
+    _blinkTimer = Timer(blinkGap(_blinks++), () {
+      if (!mounted) return;
+      setState(() => _blinking = true);
+      _blinkTimer = Timer(blinkHold, () {
+        if (!mounted) return;
+        setState(() => _blinking = false);
+        _scheduleBlink();
+      });
+    });
   }
 
   Future<void> _restore() async {
@@ -70,6 +91,7 @@ class _MochiPetState extends State<MochiPet>
 
   @override
   void dispose() {
+    _blinkTimer?.cancel();
     _reactionTimer?.cancel();
     _bob.dispose();
     super.dispose();
@@ -124,10 +146,19 @@ class _MochiPetState extends State<MochiPet>
           child: ValueListenableBuilder<PetMood>(
             valueListenable: PetState.mood,
             builder: (context, mood, _) {
-              final key =
-                  _reaction ?? stickerForMood(mood, DateTime.now());
+              final key = _reaction ?? stickerForMood(mood, DateTime.now());
+              // 闭眼帧只在**待机**、而且这个姿势确实备了闭眼图的时候用。
+              // 没备就老实睁着眼——拿别的姿势顶替看起来是猫跳了一下。
+              final blink =
+                  _blinking &&
+                  _reaction == null &&
+                  mood == PetMood.idle &&
+                  PetBlink.has(key);
               final asset =
-                  stickerOf(key)?.asset ?? 'assets/stickers/mochi_sit_up.png';
+                  blink
+                      ? PetBlink.assetFor(key)
+                      : (stickerOf(key)?.asset ??
+                          'assets/stickers/mochi_sit_up.png');
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _tapped,

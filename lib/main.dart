@@ -139,6 +139,8 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
     _autoStartMcpServer();
     // 浮在界面上那只小猫露没露着。默认不露，见 [PetState.visible]。
     PetState.load();
+    // 扫一遍有哪些姿势备了闭眼帧，见 [PetBlink]。
+    PetBlink.load();
   }
 
   @override

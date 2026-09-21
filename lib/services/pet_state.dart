@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -137,3 +138,49 @@ Offset clampSpot(
     want.dy.clamp(minY, maxY < minY ? minY : maxY),
   );
 }
+
+
+/// 眨眼。
+///
+/// 2026-09-21 Cleo：「可以让小猫眨眼睛吗」。可以，但**闭眼帧必须是同一个姿势**——
+/// 拿另一张闭着眼的图顶替，看起来是猫跳了一下，比不眨还糟。
+///
+/// 所以约定一个文件名：`assets/stickers/mochi_<key>_blink.png`。
+/// 有这一帧的姿势才眨，没有的就老老实实睁着眼——这样她慢慢补图，
+/// 补一张就多一个姿势会眨，不用改代码。
+class PetBlink {
+  static Set<String> _have = {};
+
+  /// App 起来时扫一遍打包进去的资源。失败就当作一张都没有（不眨，不报错）。
+  static Future<void> load() async {
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      _have = {
+        for (final a in manifest.listAssets())
+          if (a.startsWith(_prefix) && a.endsWith(_suffix))
+            a.substring(_prefix.length, a.length - _suffix.length),
+      };
+    } catch (_) {
+      _have = {};
+    }
+  }
+
+  static const _prefix = 'assets/stickers/mochi_';
+  static const _suffix = '_blink.png';
+
+  static bool has(String key) => _have.contains(key);
+
+  static String assetFor(String key) => '$_prefix$key$_suffix';
+
+  @visibleForTesting
+  static set have(Set<String> keys) => _have = keys;
+}
+
+/// 两次眨眼之间隔多久。
+///
+/// 真猫不是节拍器：固定 4 秒眨一下，看久了像秒针。所以按次数在 3~7 秒之间绕，
+/// 但**不用随机数**——随机会出现连着两次间隔极短，那看着像抽搐。
+Duration blinkGap(int n) => Duration(milliseconds: 3000 + (n * 1300) % 4000);
+
+/// 闭着眼那一下有多长。真猫眨眼约 100~150 毫秒。
+const blinkHold = Duration(milliseconds: 130);
