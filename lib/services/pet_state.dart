@@ -109,6 +109,10 @@ String stickerForMood(PetMood mood, DateTime now) => switch (mood) {
 const petTapReactions = <String>[
   'smile',
   'wave',
+  // 2026-09-21 Cleo 挑的那张：冒星星和爱心、最夸张开心的一张。
+  // 它在 assets/pet/ 里（小猫专用），不进表情面板——她要的是「点一下的反应」，
+  // 而且它和三十六格表的比例不是一路的。
+  'happy',
   'shy',
   'startled',
   'sparkle',
