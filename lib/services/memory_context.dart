@@ -161,7 +161,9 @@ Future<String> buildMemoryDigest() async {
   if (topics.isEmpty) return '';
 
   final buf = StringBuffer();
-  buf.writeln('## 你长期记着的、关于 TA 的事');
+  // ⚠️ 标题不能再写死「关于 TA」：2026-09-22 起多了「关于自己」那一类，
+  // 它写下的自己的事会被这个标题贴错标签。
+  buf.writeln('## 你长期记着的事（关于 TA，也关于你自己）');
   buf.writeln(
     '下面每行只说**这条讲什么**，不是内容本身。'
     '要用到具体内容，用 memory（action=open）把那条的细节取出来再说，'
