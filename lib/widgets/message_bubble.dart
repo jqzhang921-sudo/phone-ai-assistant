@@ -90,13 +90,15 @@ class MessageBubble extends StatelessWidget {
 
   /// 这条是不是一组的头一条。
   ///
-  /// ## 为什么头像和尖角给的是「头一条」，不是 Telegram 的「最后一条」
+  /// ## 为什么头像给的是「头一条」，不是 Telegram 的「最后一条」
   ///
-  /// Telegram 把头像和尖角放在一组的**底部**——它的头像是贴着气泡下沿的。
-  /// 这里不一样：头像贴的是气泡**顶部**（见下面尖角那段注释），所以同样的
-  /// 「指着说话的人」这个规则，落到这套布局上就是给第一条。
+  /// Telegram 把头像放在一组的**底部**——它的头像贴着气泡下沿。这里不一样：
+  /// 头像贴的是气泡**顶部**，所以同样的「指着说话的人」这个规则，落到这套
+  /// 布局上就是给第一条。照抄位置会得到一个指着空气的头像。借的是规则，
+  /// 不是坐标。
   ///
-  /// 照抄位置会得到一个指着空气的尖角。借的是规则，不是坐标。
+  /// ⚠️ 2026-09-21 起**尖角没有了**（四角统一 20，理由见 build 里那段）。
+  /// 这个标记现在只管头像和间距。
   final bool isGroupStart;
 
   /// 这条是不是一组的最后一条。决定下面留 14 还是 3，以及操作按钮出不出现。
@@ -162,30 +164,17 @@ class MessageBubble extends StatelessWidget {
     final bgColor = colors.fill;
     final textColor = colors.text;
 
-    // 尖角落在靠头像那一侧的**上角**。
+    // 四角一样圆，**没有尖角**。
     //
-    // 设计稿画的是下角（`20px 20px 6px 20px`），但那一版聊天页没有头像，
-    // 气泡旁边是空的，尖角朝哪都行。这里头像贴在气泡顶部，尖角朝下就
-    // 和头像脱节了——它得指着说话的人。
-    const full = Radius.circular(AppRadius.md);
-    const tail = Radius.circular(6);
-    // 组里第二条起，那个角也补成圆的——尖角是「这一串的开头」的标记，
-    // 每条都带就等于没标。
-    final headCorner = isGroupStart ? tail : full;
-    final radius =
-        isUser
-            ? BorderRadius.only(
-              topLeft: full,
-              topRight: headCorner,
-              bottomLeft: full,
-              bottomRight: full,
-            )
-            : BorderRadius.only(
-              topLeft: headCorner,
-              topRight: full,
-              bottomLeft: full,
-              bottomRight: full,
-            );
+    // 2026-09-21 Cleo 提的。这里原来把靠头像那一侧的上角从 20 收到 6，
+    // 当作「这一串的开头」的标记。去掉的理由是它冗余：「这句是谁说的」
+    // 已经被说了三遍——头像、左右位置、底色深浅，尖角是第四遍。
+    // 而它又是「聊天软件」最强的那个符号，和这个 App 想要的安静调子打架
+    // （和主页那摞会话卡片是同一类问题）。
+    //
+    // 成组不靠它：同一个人连着说的间隔 3、换人 14（见下面那段 padding），
+    // 那个差别比一个 6 像素的角明显得多。
+    const radius = BorderRadius.all(Radius.circular(AppRadius.md));
 
     // 它自己开口说的那句，要和「回你的话」看得出区别。
     //
