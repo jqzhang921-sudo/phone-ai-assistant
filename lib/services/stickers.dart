@@ -73,7 +73,11 @@ const kStickers = <Sticker>[
     label: '无语',
     when: '半眯着眼平视 ‖ 她又那样了、你无话可说。带笑的那种无语，不是生气。',
   ),
-  Sticker(key: 'shy', label: '不好意思', when: '闭眼偏头，脸边几颗心 ‖ 被夸了、有点受用又不好意思承认。'),
+  Sticker(
+    key: 'shy',
+    label: '害羞',
+    when: '闭眼偏头，脸边几颗心 ‖ 害羞、被夸了、被说中心事、有点受用又不想承认。',
+  ),
   Sticker(key: 'panic', label: '慌了', when: '瞳孔缩紧、周身抖线 ‖ 出岔子了、自己搞砸了、来不及了。'),
   Sticker(key: 'gloomy', label: '乌云', when: '低着头，头顶一团乱糟糟的乌云 ‖ 挨说了、心虚、自己也知道理亏。'),
   Sticker(
@@ -106,15 +110,21 @@ const kStickers = <Sticker>[
     label: '写东西',
     when: '抱着一台银色笔记本 ‖ 在写日记、写信、整理记录这类「它自己的事」。',
   ),
-  Sticker(key: 'drawing', label: '画画', when: '拿笔在手写板上画 ‖ 在琢磨样子、聊到设计和画。'),
+  Sticker(
+    key: 'drawing',
+    label: '写写画画',
+    when: '拿笔在手写板上画 ‖ 任何「在纸上动手」的事：写作业、写东西、画画、琢磨样子。',
+  ),
   Sticker(key: 'study', label: '啃资料', when: '趴在一摞书和散开的纸中间 ‖ 要读的东西太多、正在硬啃。'),
   Sticker(key: 'gaming', label: '打游戏', when: '戴着耳机、捧着手柄 ‖ 聊到游戏、陪她玩。'),
   Sticker(key: 'coffee', label: '咖啡', when: '双爪捧着一只冒热气的杯子 ‖ 深夜提神、歇一会儿、陪她熬着。'),
-  Sticker(key: 'snack', label: '吃点心', when: '嘴里叼着一块饼干 ‖ 聊到吃的、嘴馋、偷个懒。'),
+  Sticker(key: 'snack', label: '吃东西', when: '嘴里叼着一块饼干 ‖ 聊到吃的：吃饭、点心、嘴馋、歇下来垫一口。'),
   Sticker(
     key: 'card',
-    label: '举卡片',
-    when: '坐着举起一张画着心的卡片 ‖ 想郑重地送她一句话。别滥用，用多了就不郑重了。',
+    label: '喜欢',
+    when:
+        '坐着举起一张画着心的卡片 ‖ 表示喜欢：喜欢她说的这件事、喜欢这个东西，'
+        '或者想郑重地送她一句话。别滥用，用多了就不郑重了。',
   ),
   Sticker(
     key: 'loading',
