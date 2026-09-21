@@ -149,16 +149,19 @@ class _MochiPetState extends State<MochiPet>
               final key = _reaction ?? stickerForMood(mood, DateTime.now());
               // 闭眼帧只在**待机**、而且这个姿势确实备了闭眼图的时候用。
               // 没备就老实睁着眼——拿别的姿势顶替看起来是猫跳了一下。
+              // 优先用小猫专用那套图（她单独让人画的，睁眼/闭眼同源）；
+              // 没有就退回表情包里那张。
+              final base =
+                  PetArt.baseAsset(key) ??
+                  stickerOf(key)?.asset ??
+                  'assets/stickers/mochi_sit_up.png';
+              // 闭眼帧只在**待机**、而且这个姿势确实备了闭眼图时才用。
               final blink =
                   _blinking &&
                   _reaction == null &&
                   mood == PetMood.idle &&
-                  PetBlink.has(key);
-              final asset =
-                  blink
-                      ? PetBlink.assetFor(key)
-                      : (stickerOf(key)?.asset ??
-                          'assets/stickers/mochi_sit_up.png');
+                  PetArt.canBlink(key);
+              final asset = blink ? (PetArt.blinkAsset(key) ?? base) : base;
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _tapped,
@@ -192,8 +195,9 @@ class _MochiPetState extends State<MochiPet>
                     asset,
                     width: _size,
                     height: _size,
-                    // 像素画：插值会把它糊成一团。
-                    filterQuality: FilterQuality.none,
+                    // ⚠️ 限解码尺寸：小猫专用图是 639 像素宽的原画，显示只有 72，
+                    // 不限的话白解一大片像素——内存那趟查出来的教训。
+                    cacheWidth: (_size * MediaQuery.devicePixelRatioOf(context)).round(),
                   ),
                 ),
               );

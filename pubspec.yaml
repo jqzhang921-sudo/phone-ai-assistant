@@ -87,6 +87,10 @@ flutter:
     # Mochi 的表情。打包进 App，所以不会像聊天图片那样被 30 天清理扫掉，
     # 消息里只记一个 key，见 [Sticker]。
     - assets/stickers/
+    # 浮在界面上那只小猫专用的图（睁眼 / 闭眼一对）。
+    # ⚠️ 和表情包**分开放**：这套是单独画的，比例和三十六格那张表不一样，
+    # 混进表情面板会显得格格不入；她历史消息里的 sit_up 也不该被悄悄换掉。
+    - assets/pet/
 
   # 毛玻璃边缘的折射。只在 Impeller 下可用（见 AndroidManifest）。
   shaders:

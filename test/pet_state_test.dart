@@ -106,17 +106,25 @@ void main() {
 
 void _blinkTests() {
   group('眨眼', () {
-    tearDown(() => PetBlink.have = {});
+    tearDown(() => PetArt.setForTest());
 
     test('只有备了闭眼帧的姿势才眨', () {
-      PetBlink.have = {'sit_up'};
-      expect(PetBlink.has('sit_up'), isTrue);
+      PetArt.setForTest(base: {'sit_up'}, blink: {'sit_up'});
+      expect(PetArt.canBlink('sit_up'), isTrue);
       // ⚠️ 没有闭眼帧就别眨：拿别的姿势顶替看起来是猫跳了一下。
-      expect(PetBlink.has('lying'), isFalse);
+      expect(PetArt.canBlink('lying'), isFalse);
     });
 
-    test('闭眼帧的文件名约定', () {
-      expect(PetBlink.assetFor('sit_up'), 'assets/stickers/mochi_sit_up_blink.png');
+    test('文件名约定', () {
+      PetArt.setForTest(base: {'sit_up'}, blink: {'sit_up'});
+      expect(PetArt.baseAsset('sit_up'), 'assets/pet/mochi_sit_up.png');
+      expect(PetArt.blinkAsset('sit_up'), 'assets/pet/mochi_sit_up_blink.png');
+    });
+
+    test('没有专用图就退回表情包那张（返回 null 让调用方决定）', () {
+      PetArt.setForTest();
+      expect(PetArt.baseAsset('sit_up'), isNull);
+      expect(PetArt.blinkAsset('sit_up'), isNull);
     });
 
     test('间隔在 3 到 7 秒之间绕，且不会连着两次一样', () {

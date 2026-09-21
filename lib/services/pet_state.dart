@@ -140,40 +140,59 @@ Offset clampSpot(
 }
 
 
-/// 眨眼。
+/// 小猫专用的那套图。
 ///
-/// 2026-09-21 Cleo：「可以让小猫眨眼睛吗」。可以，但**闭眼帧必须是同一个姿势**——
-/// 拿另一张闭着眼的图顶替，看起来是猫跳了一下，比不眨还糟。
+/// 2026-09-21 Cleo 让 GPT 画了一对**同一张画**的睁眼 / 闭眼（`assets/pet/`）。
+/// 和表情包分开放：那套是从三十六格表里切的，比例不一样，混在一起会格格不入；
+/// 她历史消息里的 sit_up 也不该被悄悄换掉。
 ///
-/// 所以约定一个文件名：`assets/stickers/mochi_<key>_blink.png`。
-/// 有这一帧的姿势才眨，没有的就老老实实睁着眼——这样她慢慢补图，
-/// 补一张就多一个姿势会眨，不用改代码。
-class PetBlink {
-  static Set<String> _have = {};
+/// 约定：`assets/pet/mochi_<key>.png`，闭眼是 `..._blink.png`。
+/// **有闭眼帧的姿势才眨**——拿别的姿势顶替看起来是猫跳了一下，比不眨还糟。
+/// 她以后补一对，就多一个姿势会眨，不用改代码。
+class PetArt {
+  static Set<String> _base = {};
+  static Set<String> _blink = {};
 
-  /// App 起来时扫一遍打包进去的资源。失败就当作一张都没有（不眨，不报错）。
+  static const _dir = 'assets/pet/mochi_';
+  static const _png = '.png';
+  static const _blinkSuffix = '_blink.png';
+
+  /// App 起来时扫一遍打包进去的资源。失败就当作没有这套图（退回表情包，不报错）。
   static Future<void> load() async {
     try {
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      _have = {
-        for (final a in manifest.listAssets())
-          if (a.startsWith(_prefix) && a.endsWith(_suffix))
-            a.substring(_prefix.length, a.length - _suffix.length),
-      };
+      final base = <String>{};
+      final blink = <String>{};
+      for (final a in manifest.listAssets()) {
+        if (!a.startsWith(_dir)) continue;
+        if (a.endsWith(_blinkSuffix)) {
+          blink.add(a.substring(_dir.length, a.length - _blinkSuffix.length));
+        } else if (a.endsWith(_png)) {
+          base.add(a.substring(_dir.length, a.length - _png.length));
+        }
+      }
+      _base = base;
+      _blink = blink;
     } catch (_) {
-      _have = {};
+      _base = {};
+      _blink = {};
     }
   }
 
-  static const _prefix = 'assets/stickers/mochi_';
-  static const _suffix = '_blink.png';
+  /// 这个姿势有没有小猫专用图；没有就返回 null，调用方退回表情包那张。
+  static String? baseAsset(String key) =>
+      _base.contains(key) ? '$_dir$key$_png' : null;
 
-  static bool has(String key) => _have.contains(key);
+  static String? blinkAsset(String key) =>
+      _blink.contains(key) ? '$_dir$key$_blinkSuffix' : null;
 
-  static String assetFor(String key) => '$_prefix$key$_suffix';
+  static bool canBlink(String key) => _blink.contains(key);
 
   @visibleForTesting
-  static set have(Set<String> keys) => _have = keys;
+  static void setForTest({Set<String> base = const {}, Set<String> blink = const {}}) {
+    _base = base;
+    _blink = blink;
+  }
 }
 
 /// 两次眨眼之间隔多久。
