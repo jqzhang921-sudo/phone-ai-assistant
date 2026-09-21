@@ -34,6 +34,7 @@ import '../services/nudge_scheduler.dart';
 import '../services/nudge_service.dart';
 import '../services/screen_glance.dart';
 import '../services/notify_name.dart';
+import '../services/pet_state.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -76,6 +77,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 通知里怎么称呼 TA，她自己起的备注。见 [NotifyName]。
   String _notifyRemark = '';
+
+  /// 浮在界面上那只小猫露没露着。存在偏好设置里，不在 AppSettings——
+  /// 它和「配色」「字体」不是一类东西，见 [PetState]。
+  bool _petVisible = false;
 
   // 密钥默认打码，点小眼睛才明文——设置页经常被截图/投屏。
   bool _showApiKey = false;
@@ -267,6 +272,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _userNameController.text = _settings.userName;
     _aiNameController.text = _settings.aiName;
     _notifyRemark = await NotifyName.remark();
+    _petVisible = await PetState.visible();
     _notifyRemarkController.text = _notifyRemark;
     _externalServers = await ExternalMcpServerService.load();
     _nudgePrefs = await NudgeService.loadPrefs();
@@ -462,6 +468,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
 
           _group(theme, '外观与陪伴', [
+            // 2026-09-20 Cleo 要的「住在手机上的小生命」。**只在 App 里浮着**，
+            // 不是系统悬浮窗——所以不要权限、不被后台策略管、也挡不到别的 App。
+            // 默认关着：会一直挡在屏幕上的东西，得她自己打开。
+            _switchRow(
+              theme,
+              icon: PhosphorIconsRegular.pawPrint,
+              title: '那只小猫',
+              subtitle: _petVisible ? '拖着换位置，长按收起来' : 'Mochi 浮在界面上陪着你',
+              value: _petVisible,
+              onChanged: (v) async {
+                setState(() => _petVisible = v);
+                await PetState.setVisible(v);
+              },
+            ),
             _row(
               theme,
               asset: 'cat',

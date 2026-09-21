@@ -13,6 +13,8 @@ import 'services/xiaoke_channel.dart';
 import 'services/external_mcp_service.dart';
 import 'services/nudge_scheduler.dart';
 import 'services/tts_service.dart';
+import 'services/pet_state.dart';
+import 'widgets/mochi_pet.dart';
 import 'widgets/nook_splash.dart';
 
 /// 让没有 context 的工具也能弹框问用户。
@@ -135,6 +137,8 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
     // 不弹通知——人已经在 App 里了。门槛照走，所以不会变吵。
     NudgeScheduler.runOnStartup();
     _autoStartMcpServer();
+    // 浮在界面上那只小猫露没露着。默认不露，见 [PetState.visible]。
+    PetState.load();
   }
 
   @override
@@ -274,6 +278,9 @@ class _PhoneAiAppState extends State<PhoneAiApp> with WidgetsBindingObserver {
               builder: (context, child) => Stack(
                 children: [
                   child ?? const SizedBox.shrink(),
+                  // ⚠️ 顺序：界面 → 小猫 → 开屏。开屏必须盖住小猫，
+                  // 否则启动那一下会看到一只猫飘在墙角动画上面。
+                  const MochiPet(),
                   if (_splash)
                     NookSplash(
                       onDone: () => setState(() => _splash = false),

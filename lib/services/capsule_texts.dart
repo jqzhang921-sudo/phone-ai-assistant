@@ -1,6 +1,7 @@
 import 'package:live_capsule/live_capsule.dart';
 
 import 'notify_name.dart';
+import 'pet_state.dart';
 
 /// 流体云胶囊里写什么、什么时候收。
 ///
@@ -65,12 +66,25 @@ class Capsule {
     }
   }
 
+  /// 浮在 App 里那只小猫跟着变。
+  ///
+  /// 搭胶囊的车：下面两段本来就把「正在做这件事」括起来了，小猫不另拉一套
+  /// 开始/结束——两套括号迟早有一套忘了收。
+  static Future<T> _withMood<T>(PetMood mood, Future<T> Function() body) async {
+    PetState.mood.value = mood;
+    try {
+      return await body();
+    } finally {
+      PetState.mood.value = PetMood.idle;
+    }
+  }
+
   /// 它在写回复：她走开了也看得见写到哪儿了。
   static Future<T> whileReplying<T>(Future<T> Function() body) => around(
     id: LiveCapsule.replyId,
     text: replyText,
     short: replyShort,
-    body: body,
+    body: () => _withMood(PetMood.typing, body),
   );
 
   /// 它在看一眼屏幕。**这个尤其该有**：看屏幕这件事本来就答应过「看过一定留痕」，
@@ -79,6 +93,6 @@ class Capsule {
     id: LiveCapsule.glanceId,
     text: glanceText,
     short: glanceShort,
-    body: body,
+    body: () => _withMood(PetMood.glancing, body),
   );
 }
