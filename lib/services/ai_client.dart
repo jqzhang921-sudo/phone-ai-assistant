@@ -199,6 +199,32 @@ List<Map<String, dynamic>> fillMissingReasoning(
   ];
 }
 
+/// 这个端点看着像不像 DeepSeek 官方。
+///
+/// 只按地址和模型名认。**认错的代价是发出一个对方不认识的字段**，所以宁可漏认：
+/// 漏了只是继续每次都思考，认错了可能整条请求被拒。真被拒也有兜底，
+/// 见 [thinkingComplaint]。
+bool looksLikeDeepSeek({String? endpoint, String? model}) {
+  final e = (endpoint ?? '').toLowerCase();
+  final m = (model ?? '').toLowerCase();
+  return e.contains('deepseek') || m.startsWith('deepseek');
+}
+
+/// 服务端是不是在抱怨 `thinking` 这个字段。
+///
+/// 和 [reasoningComplaintOf] 分开写：那个管「思路要不要回传」，这个管
+/// 「让不让我调思考档位」。两件事，错法也不一样。
+bool thinkingComplaint(String error) {
+  final e = error.toLowerCase();
+  if (!e.contains('thinking')) return false;
+  return e.contains('unknown') ||
+      e.contains('unsupported') ||
+      e.contains('not allowed') ||
+      e.contains('unexpected') ||
+      e.contains('invalid') ||
+      e.contains('不支持');
+}
+
 /// 它看了一眼屏幕、决定不说话时留下的那条：只有截图，没有字。
 ///
 /// 这条是**给她翻的痕迹**（看过一定留痕），不是它说过的一句话。发给模型就是
@@ -495,6 +521,18 @@ class AiClient {
       'messages': cleaned,
       'stream': true,
       'max_tokens': _maxOutputTokens,
+      // 让它**按需思考**，而不是每句话都先想一遍。
+      //
+      // 2026-09-22 Cleo：「以前没有启用深度推理，后来才开的，当时她就是自己
+      // 按需思考，现在可能因为模型更新了所以每次都会思考？」——是的，不是模型
+      // 变了性子，是默认值变了：DeepSeek 的 thinking 默认 enabled、强度 high。
+      // 三档是 enabled / disabled / adaptive，adaptive 正是她记得的那种。
+      //
+      // 只发给看着像 DeepSeek 的端点（见 [looksLikeDeepSeek]）；别家不认这个
+      // 字段，发过去可能整条请求被拒。真被拒也有兜底：下面按 [thinkingComplaint]
+      // 去掉它重试一次。
+      if (looksLikeDeepSeek(endpoint: endpoint, model: model))
+        'thinking': {'type': 'adaptive'},
     };
 
     if (tools != null && tools!.isNotEmpty) {
@@ -574,6 +612,15 @@ class AiClient {
             );
             // 用 cleaned 而不是 apiMessages：后者没经过 _repairToolMessages
             body['messages'] = _stripAllToolMessages(cleaned);
+            continue;
+          }
+          // 端点不认 `thinking` 这个字段：去掉重试一次。
+          //
+          // 只可能发生一次——去掉之后 body 里就没有它了，同样的抱怨不会再触发。
+          // 代价只是退回「每次都思考」，不影响能不能聊。
+          if (thinkingComplaint(error) && body.containsKey('thinking')) {
+            debugPrint('[ai_client] 端点不认 thinking 档位，去掉重试。原始错误：$error');
+            body.remove('thinking');
             continue;
           }
           // 服务端在为 reasoning_content 抱怨：对症补一次或摘一次，重试。
