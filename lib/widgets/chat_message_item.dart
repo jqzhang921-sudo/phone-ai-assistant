@@ -297,6 +297,8 @@ Widget chatDisplayItem(
   List<ChatDisplayItem> items,
   int index, {
   String? conversationId,
+  /// 她点了选项卡上的某一项。不传就是死卡片——读书版那边没有这个工具。
+  void Function(ChatMessage message, String label)? onPickChoice,
 }) {
   final item = items[index];
   final Widget body;
@@ -315,6 +317,7 @@ Widget chatDisplayItem(
       conversationId: conversationId,
       isGroupStart: !_sameGroup(items, index - 1, index),
       isGroupEnd: !_sameGroup(items, index, index + 1),
+      onPickChoice: onPickChoice,
     );
   }
   if (!_startsNewDay(items, index)) return body;

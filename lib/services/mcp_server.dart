@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../models/mcp_tool.dart';
+import 'phone_tools/choice_tool.dart';
 import 'phone_tools/sticker_tool.dart';
 import 'phone_tools/voice_tool.dart';
 import 'phone_tools/camera_tool.dart';
@@ -48,6 +49,7 @@ class McpServer {
   void _registerBuiltinTools() {
     _registerTool(VoiceTool.definition, VoiceTool.execute);
     _registerTool(StickerTool.definition, StickerTool.execute);
+    _registerTool(ChoiceTool.definition, ChoiceTool.execute);
     _registerTool(CameraTool.definition, CameraTool.execute);
     _registerTool(GalleryTool.definition, GalleryTool.execute);
     _registerTool(FileTool.definition, FileTool.execute);

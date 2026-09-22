@@ -107,6 +107,9 @@ class MessageBubble extends StatelessWidget {
   /// 收藏要记住这句话出自哪个对话，之后才跳得回来
   final String? conversationId;
 
+  /// 她点了选项卡上的某一项。不传就是死卡片——读书版那边没有 ask_choice。
+  final void Function(ChatMessage message, String label)? onPickChoice;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -114,6 +117,7 @@ class MessageBubble extends StatelessWidget {
     this.isGroupStart = true,
     this.isGroupEnd = true,
     this.conversationId,
+    this.onPickChoice,
   });
 
   /// 气泡最大宽度。放开了让它占满一行，长句子会横着铺开、读起来费劲。
@@ -141,6 +145,17 @@ class MessageBubble extends StatelessWidget {
     final isGlanceShot = message.metadata?['glanceShot'] == true;
     // 一张表情。图是打包进 App 的资源，消息里只记一个 key，见 [Sticker]。
     final sticker = stickerOf(message.metadata?['sticker'] as String?);
+    // 一张选项卡。正文是那句问题，选项挂在这儿。
+    final choiceMeta = message.metadata?['choice'] as Map?;
+    final choice =
+        choiceMeta == null
+            ? null
+            : [
+              for (final o in (choiceMeta['options'] as List? ?? const []))
+                if (o is Map)
+                  (label: '${o['label']}', note: o['note']?.toString()),
+            ];
+    final pickedChoice = choiceMeta?['picked'] as String?;
     final isUser = message.role == MessageRole.user && !isGlanceShot;
     final voice = VoiceMessage.fromMetadata(message.metadata);
     final isAssistant = message.role == MessageRole.assistant;
@@ -388,6 +403,19 @@ class MessageBubble extends StatelessWidget {
           // 复制，只缺朗读，补上就齐了。
           //
           // 去掉之后聊天页从「一个 App」变回「一段对话」。
+          // 选项卡：问题在气泡里，选项排在下面。
+          //
+          // 2026-09-22 Cleo 要的。放在气泡外面是有意的——它是**可以点的东西**，
+          // 混进气泡里会被读成正文的一部分。
+          if (choice != null)
+            _ChoiceCard(
+              options: choice,
+              picked: pickedChoice,
+              onPick:
+                  onPickChoice == null
+                      ? null
+                      : (label) => onPickChoice!(message, label),
+            ),
           if (showTimestamp)
             Padding(
               padding: EdgeInsets.only(
@@ -754,6 +782,108 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// 选项卡上那一排可点的选项。
+///
+/// 点过之后整张卡变只读：选中的那个留个标记，其余淡下去。**不隐藏没选的**——
+/// 以后翻上去要能看懂当时是在几条路里挑的，只留结果就丢了上下文。
+class _ChoiceCard extends StatelessWidget {
+  const _ChoiceCard({
+    required this.options,
+    required this.picked,
+    required this.onPick,
+  });
+
+  final List<({String label, String? note})> options;
+  final String? picked;
+  final void Function(String label)? onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final done = picked != null;
+    return Padding(
+      padding: const EdgeInsets.only(left: 36, top: 8, right: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final o in options)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _one(theme, scheme, o, done),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _one(
+    ThemeData theme,
+    ColorScheme scheme,
+    ({String label, String? note}) o,
+    bool done,
+  ) {
+    final chosen = picked == o.label;
+    final canTap = !done && onPick != null;
+    return Opacity(
+      opacity: done && !chosen ? 0.45 : 1,
+      child: Material(
+        color: chosen ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          onTap: canTap ? () => onPick!(o.label) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        o.label,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color:
+                              chosen
+                                  ? scheme.onPrimaryContainer
+                                  : scheme.onSurface,
+                        ),
+                      ),
+                      if (o.note != null && o.note!.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            o.note!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (chosen)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, top: 2),
+                    child: Icon(
+                      PhosphorIconsFill.checkCircle,
+                      size: 16,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

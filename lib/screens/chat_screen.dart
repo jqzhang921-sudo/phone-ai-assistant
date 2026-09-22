@@ -999,6 +999,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 // send_sticker 成功之后，把它接成一条**真的表情消息**。
                 // 和语音同一个路子：工具只负责产出，「这条出现在对话里」是界面的事。
                 _appendStickerMessage(conv, tc.name, toolResult);
+                // ask_choice 的结果接成一张选项卡，见 [_appendChoiceMessage]。
+                _appendChoiceMessage(conv, tc.name, toolResult);
                 // glance_screen 截到的图接成一条消息，下一轮模型才看得到。
                 await _appendGlanceShot(conv, aiClient, tc.name, toolResult);
               }
@@ -1119,6 +1121,100 @@ class _ChatScreenState extends State<ChatScreen> {
   ///
   /// 文字仍然存在 [ChatMessage.content] 里——它是「转文字」的来源，也是
   /// 发回给模型的上文（不然它不记得自己说过什么）。只是**界面上不显示**。
+  /// 把 `ask_choice` 的结果变成一张选项卡。
+  ///
+  /// 正文就是那句问题——**不藏进 metadata**。这样即使以后卡片渲染坏了，
+  /// 聊天记录读起来仍然是通顺的：它问了一句，她答了一句。选项挂在 metadata 上，
+  /// 画在气泡下面。
+  ///
+  /// 和语音、表情同一条路：工具只负责产出，「这条出现在对话里」是界面的事。
+  /// 工具**不等她点**——聊天里的工具有 60 秒超时，真等她点，她去倒杯水回来
+  /// 这一轮就报错了。
+  void _appendChoiceMessage(
+    Conversation conv,
+    String toolName,
+    String rawResult,
+  ) {
+    if (toolName != 'ask_choice') return;
+    try {
+      final r = jsonDecode(rawResult);
+      if (r is! Map || r['success'] != true) return;
+      final question = r['question'];
+      final options = r['options'];
+      if (question is! String || options is! List || options.length < 2) return;
+      _touch(conv, () {
+        conv.messages.add(
+          ChatMessage(
+            id: _uuid.v4(),
+            role: MessageRole.assistant,
+            content: question,
+            metadata: {
+              'choice': {
+                'options': [
+                  for (final o in options)
+                    if (o is Map)
+                      {
+                        'label': '${o['label']}',
+                        if (o['note'] != null) 'note': '${o['note']}',
+                      },
+                ],
+              },
+            },
+          ),
+        );
+      });
+      if (identical(conv, _conversation)) _scrollToBottom();
+    } catch (e) {
+      debugPrint('[choice] 接选项卡失败：$e');
+    }
+  }
+
+  /// 她点了选项卡上的某一项。
+  ///
+  /// 两件事：把那条标成「选了哪个」（以后翻上去看得懂当时选的是什么），
+  /// 然后**作为她的一条消息发出去**，对话照常往下走。
+  ///
+  /// 她也可以不点、直接打字说别的——卡片是建议，不是拦路的弹窗。
+  void _pickChoice(ChatMessage card, String label) {
+    final conv = _conversation;
+    final i = conv.messages.indexWhere((m) => m.id == card.id);
+    if (i >= 0) {
+      final old = conv.messages[i];
+      final meta = Map<String, dynamic>.from(old.metadata ?? {});
+      final choice = Map<String, dynamic>.from(
+        (meta['choice'] as Map?) ?? const {},
+      );
+      // 已经点过就不再受理：重复点一次会再发一条一样的消息。
+      if (choice['picked'] != null) return;
+      choice['picked'] = label;
+      meta['choice'] = choice;
+      _touch(conv, () {
+        conv.messages[i] = ChatMessage(
+          id: old.id,
+          role: old.role,
+          content: old.content,
+          timestamp: old.timestamp,
+          toolCalls: old.toolCalls,
+          toolCallId: old.toolCallId,
+          metadata: meta,
+          images: old.images,
+          thinking: old.thinking,
+        );
+      });
+    }
+    _touch(conv, () {
+      conv.messages.add(
+        ChatMessage(
+          id: _uuid.v4(),
+          role: MessageRole.user,
+          content: label,
+        ),
+      );
+    });
+    _scrollToBottom();
+    _continueChat();
+  }
+
   /// 把 `send_sticker` 的结果变成一条表情消息。
   ///
   /// 消息里只记一个 key（[Sticker.key]），图是打包进 App 的资源——不走聊天图片
@@ -2001,6 +2097,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         items,
                                         index,
                                         conversationId: _conversation.id,
+                                        onPickChoice: _pickChoice,
                                       ),
                                     );
                                   },
