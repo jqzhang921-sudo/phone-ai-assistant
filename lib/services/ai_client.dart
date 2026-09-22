@@ -446,13 +446,22 @@ class AiClient {
                       .toList(),
             });
           } else {
+            // ⚠️ 纯文字的回复**不回传思考**。
+            //
+            // 2026-09-21 加回传是为了修「调过工具之后必然 400」，但当时给
+            // 历史里每一条带思考的 assistant 都带上了。2026-09-22 Cleo 发现
+            // 「它的心声被当成正文发出来」——它开始把内心独白写进回复里。
+            //
+            // 最可能的原因就在这儿：整段历史的内心独白一直摆在对话里，
+            // 模型会把那种口吻读成「可以说出口的话」。顺带还每轮白付一次钱——
+            // 思考通常比正文长得多。
+            //
+            // 服务端真正要求的只是**带工具调用的那条**（见上面那个分支）。
+            // 万一某个端点仍然报「必须带」，[ReasoningComplaint] 那道补上重试
+            // 的保险还在，不会退回 400。
             apiMessages.add({
               'role': 'assistant',
               'content': _withTimestamp(msg.content, msg.timestamp),
-              // 同上：只有真收到过思路才带回去。Claude 那条路不走这里——
-              // 它的思考是另一套装法（thinking 块），别把这个字段发过去。
-              if (msg.thinking != null && msg.thinking!.isNotEmpty)
-                'reasoning_content': msg.thinking,
             });
           }
           break;
